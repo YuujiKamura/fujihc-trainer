@@ -53,14 +53,17 @@
     color: #aaa; font: 12px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
   }
-  /* brief 28: minimap を上半分 (MapLibre 2nd instance = OSM 地図) と
-     下半分 (canvas = 標高プロファイル) の 2 領域に分割。 旧単一 canvas 廃止。 */
+  /* brief 29: minimap 上半分を旧 OSM 直叩き方式 (= canvas + loadOsmTile + drawImage)
+     に rollback。 brief 28 の MapLibre 2nd instance は撤回、 上下 2 canvas 構造は維持。
+     上半分: course bbox を覆う z=11 周辺 9-16 OSM タイルを起動時 1-shot fetch、
+            ride 中は base 画像 + rider 三角形のみ。
+     下半分: 標高プロファイル (= brief 28 と同じ buildMinimapBottom 仕様)。 */
   #minimap-container {
     position: fixed; left: 1rem; top: 1rem; z-index: 999;
     width: 320px; height: 720px;
     background: rgba(0, 0, 0, 0.8); border-radius: 6px; overflow: hidden;
   }
-  #minimap-top    { width: 100%; height: 561px; }   /* 78% = 平面マップ */
+  #minimap-top    { display: block; width: 100%; height: 561px; }   /* 78% = 平面マップ */
   #minimap-bottom { display: block; width: 100%; height: 159px; } /* 22% = 標高 */
 
   #setup-overlay {
@@ -255,7 +258,7 @@
 </div>
 
 <div id="minimap-container">
-  <div id="minimap-top"></div>
+  <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
 <script type="module" src="viewer-maplibre.js?v=30"></script>

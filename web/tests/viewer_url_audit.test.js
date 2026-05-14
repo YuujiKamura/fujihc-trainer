@@ -13,11 +13,22 @@ const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
-  it('tile.openstreetmap.org を直接叩いていない', () => {
-    expect(viewer).not.toMatch(/https?:\/\/tile\.openstreetmap\.org/);
+  // brief 29: minimap 限定で OSM 直叩きを許可 (= ToS 範囲内 1-shot 9-16 タイル、 z=11)。
+  // ride hot path / prefetch 復活は依然禁止、 grep gate は loadOsmTile 関数内に限定する。
+  it('tile.openstreetmap.org は loadOsmTile 関数内のみ (= minimap 1-shot 例外、 brief 29)', () => {
+    // 全 viewer source 内の OSM URL 出現箇所を数える
+    const allMatches = viewer.match(/tile\.openstreetmap\.org/g) || [];
+    // loadOsmTile 関数 body を抽出して、 そこにだけ OSM URL が現れることを確認
+    // `function loadOsmTile(...) { ... }` の body を非貪欲で取る
+    const loadOsmTileBody = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(loadOsmTileBody).not.toBeNull();
+    const insideMatches = (loadOsmTileBody[0].match(/tile\.openstreetmap\.org/g) || []).length;
+    // 全出現が loadOsmTile 内に閉じている (= ride hot path / prefetch 復活なし)
+    expect(insideMatches).toBe(allMatches.length);
+    expect(insideMatches).toBeGreaterThan(0);
   });
 
-  it('cyberjapandata.gsi.go.jp を直接叩いていない', () => {
+  it('cyberjapandata.gsi.go.jp を直接叩いていない (= minimap には GSI 不要、 brief 29 で維持)', () => {
     expect(viewer).not.toMatch(/https?:\/\/cyberjapandata\.gsi\.go\.jp/);
   });
 
@@ -260,22 +271,7 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
   });
 });
 
-// brief 28: minimap MapLibre 化 regression gate (= 17b 単色制約解除を物理化)。
-// 旧 buildMinimapBase 復活 / 単一 canvas 復活 / OSM source 共有 helper 退化 を grep で止める。
-describe('brief 28: minimap MapLibre 化 regression gate', () => {
-  const viewer = readFileSync(VIEWER_PATH, 'utf8');
-  const INDEX_PATH = resolve(__dirname, '..', 'index.html');
-  const indexHtml = readFileSync(INDEX_PATH, 'utf8');
-
-  it('index.html に #minimap-top div が存在する (= 2nd MapLibre instance container)', () => {
-    expect(indexHtml).toMatch(/<div\s+id="minimap-top"/);
-  });
-
-  it('viewer に function initMinimapMap 定義が存在する (= 上半分の MapLibre 化)', () => {
-    expect(viewer).toMatch(/function\s+initMinimapMap\s*\(/);
-  });
-
-  it('viewer に ctx.fillStyle = \'#e8e8e8\' の単色塗り literal が無い (= 17b 制約解除を物理 pin)', () => {
-    expect(viewer).not.toMatch(/ctx\.fillStyle\s*=\s*['"]#e8e8e8['"]/);
-  });
-});
+// brief 29: brief 28 describe block (= MapLibre 2nd instance を pin する gate) は削除済。
+// rollback 後の minimap 構造は web/tests/minimap_osm_direct.test.js (= rename 元 minimap_maplibre.test.js)
+// に集約。 旧 buildMinimapBase / loadOsmTile が viewer に存在し、 #minimap-top が canvas であり、
+// brief 28 の initMinimapMap / buildMapStyle が viewer に存在しないことを minimap_osm_direct で pin。

@@ -12,6 +12,9 @@ import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
 import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
 import { createRideState } from './lib/ride_state.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
+// brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
+// (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
+import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -63,11 +66,13 @@ maplibregl.addProtocol('gsidem', (params) => {
   });
 });
 
-// === Map style 定義 (= 共有 helper) ===
-// brief 28: main map と minimap (2nd MapLibre instance) で同 style を共有。
-// inline 二重定義は NG-R1-11 (= Cesium/MapLibre 双子コピペ) と同型再演になる。
-function buildMapStyle() {
-  return {
+// === Map 初期化 ===
+// brief 29: brief 28 の buildMapStyle helper は廃止 (= MapLibre 2nd instance を minimap で
+// 立てる構造を撤回したため、 main map のみで style を共有する必要がない)。
+// style はここに inline 定義、 minimap は別系統 (= canvas + loadOsmTile) で描画する。
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
     version: 8,
     sources: {
       'osm': {
@@ -109,13 +114,7 @@ function buildMapStyle() {
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
     sky: { 'sky-color': '#87ceeb', 'horizon-color': '#ffd6a5', 'fog-color': '#cccccc' },
-  };
-}
-
-// === Map 初期化 ===
-const map = new maplibregl.Map({
-  container: 'map',
-  style: buildMapStyle(),
+  },
   center: [138.7587, 35.4521],
   zoom: 13,
   pitch: 60,
@@ -166,13 +165,13 @@ const POSITION_SEND_INTERVAL_MS = 1000;
 let scanMode = 'ftms';
 
 let riderMarker = null;
-// brief 28: minimap は上半分 (MapLibre 2nd instance) + 下半分 (canvas 標高) に分割。
-// minimapMap: 上半分の 2nd MapLibre instance、 fitBounds(course) で固定俯瞰。
-// minimapRider: maplibregl.Marker (cyan)、 初回 updateMinimap で addTo、 以後 setLngLat。
-// minimapBottomBase: 下半分の標高プロファイル base 画像 (off-screen canvas)、 1 回作成。
-// minimapStats: 下半分の幾何 (= botInnerW / botInnerH / botBaseY / botTopY / PAD / minE / maxE / totalD)。
-let minimapMap = null;
-let minimapRider = null;
+// brief 29: minimap を旧 OSM 直叩き方式に rollback。 brief 28 の MapLibre 2nd instance は撤回。
+// minimapTopBase: 上半分 (#minimap-top canvas) の base 画像 (off-screen canvas)、
+//   = z=11 周辺 9-16 OSM タイル + course polyline + start/goal dot + 180度回転、 起動時 1 回作成。
+// minimapBottomBase: 下半分 (#minimap-bottom canvas) の標高プロファイル base 画像、 1 回作成。
+// minimapStats: 上下共有の幾何 (= 上半分は projectLatLon / rotateTop、 下半分は
+//   botInnerW / botInnerH / botBaseY / botTopY / PAD / minE / maxE / totalD)。
+let minimapTopBase = null;
 let minimapBottomBase = null;
 let minimapStats = null;
 // user が操作した zoom / pitch を覚えておく、 tick の jumpTo はこの値を使う
@@ -676,10 +675,13 @@ async function loadCourse() {
     },
   });
 
-  // brief 28: minimap を上下分割で初期化。 上半分は MapLibre 2nd instance、
-  // 下半分は標高プロファイル canvas。 course load 完了後 1 回だけ。
-  initMinimapMap();
-  buildMinimapBottom();
+  // brief 29: minimap を旧 OSM 直叩き方式に rollback。 上半分 = canvas + loadOsmTile (1-shot)、
+  // 下半分 = 標高プロファイル canvas。 course load 完了後 1 回だけ。
+  // buildMinimapTopBase は async (= 9-16 OSM タイル fetch 完了待ち)、 await はせず fire-and-forget。
+  // fetch 完了前は polyline + dot だけが見える状態 (= polylines は同期 ctx.stroke で先に描く)、
+  // fetch 完了後に drawImage で OSM が overlay される。 ride 開始は OSM 完了に依存しない。
+  buildMinimapTopBase();
+  buildMinimapBottomBase();
 
   // brief 17b: prefetch を完全削除。 タイルは MapLibre が on-demand で
   // localhost /tiles/... から fetch する。 外部 fetch ゼロ。
@@ -700,22 +702,71 @@ async function loadCourse() {
   requestAnimationFrame(tick);
 }
 
-// === minimap (course polyline + 標高プロファイル) ===
-// brief 17b: タイル座標変換ヘルパ (lonToTileX 等) は loadOsmTile / prefetchTilesAlongCourse
-// が消えた時点で参照ゼロになったため削除。 必要になったら web/lib/tile_math.js を使う。
+// === minimap (course polyline + OSM 1-shot + 標高プロファイル) ===
+// brief 29: brief 28 の MapLibre 2nd instance 撤回、 旧 OSM 直叩き方式 (= canvas + loadOsmTile)
+// に rollback。 ToS 範囲内 1-shot 9-16 タイル fetch、 ride 中 再 fetch ゼロ。
+// 上半分 (= #minimap-top canvas): z=11 周辺 OSM タイル + course polyline + start/goal dot + 180度回転。
+// 下半分 (= #minimap-bottom canvas): 標高プロファイル (= brief 28 と同仕様、 関数名 rename のみ)。
+// 注意: ここで OSM 直叩きが復活している (= viewer_url_audit.test.js は loadOsmTile 限定で例外緩和)。
+// ride hot path には絶対戻さない、 prefetchTilesAlongCourse 復活も絶対 NG (= brief 13 物理 freeze)。
 
-// brief 17b: loadOsmTile は完全削除。 minimap は外部 OSM 直叩きを止め、
-// 単色背景 + course polyline + 標高曲線で全体俯瞰の責務を果たす。
-// (外部 fetch ゼロを優先、 minimap 改善 ── ローカルタイル経由化 ── は別 brief)
+// loadOsmTile: 旧版踏襲。 1 タイル fetch + drawImage、 失敗時は resolve のみ (= reject しない)。
+// crossOrigin='anonymous' は canvas tainted 回避用 (= drawImage 後 getImageData は呼ばないので
+// 必須ではないが旧版踏襲、 OSM 側は CORS 許可ヘッダを返すので無害)。
+// User-Agent は browser が自動で `Mozilla/5.0 ...` を送る (= OSM Tile Usage Policy 識別要件を満たす)。
+function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const lonW = tileXToLon(tx, z), lonE = tileXToLon(tx + 1, z);
+      const latN = tileYToLat(ty, z), latS = tileYToLat(ty + 1, z);
+      const [x1, y1] = projectLatLon(latN, lonW);
+      const [x2, y2] = projectLatLon(latS, lonE);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h);
+      ctx.clip();
+      ctx.drawImage(img, x1, y1, x2 - x1, y2 - y1);
+      ctx.restore();
+      resolve();
+    };
+    img.onerror = () => resolve();
+    // brief 29: ToS 範囲内 1-shot 9-16 タイル fetch (= z=11)、 起動時 1 回限り。
+    // ride hot path / prefetch には絶対使わない (= brief 13 物理 freeze)、 minimap 専用。
+    img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
+  });
+}
 
-// brief 28: minimap 上半分 = 2nd MapLibre instance に OSM vector layer を載せ、
-// course polyline と start/goal marker を overlay、 fitBounds で course 全体固定俯瞰。
-// 旧 buildMinimapBase の canvas 単色塗り '#e8e8e8' (= brief 17b の苦肉策) は廃止、
-// 「作ったら使え」(= NG-R3-1 系) でローカル経由 vector tile を活用する。
-function initMinimapMap() {
-  const topEl = document.getElementById('minimap-top');
-  if (!topEl || course.length === 0) return;
-  // course の bbox を求めて fitBounds に渡す
+// drawDirTriangle: 旧版踏襲。 rider の進行方向を示す三角形を canvas 上半分に描画。
+// 180度回転後の上半分内で描くので、 heading は反転考慮済の値を渡す側で処理する。
+function drawDirTriangle(ctx, x, y, heading, size) {
+  const cosH = Math.cos(heading), sinH = Math.sin(heading);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  // 三角形 (= 進行方向の先端 + 後ろ 2 点)
+  ctx.moveTo(sinH * size, -cosH * size);
+  ctx.lineTo(sinH * -size * 0.6 + cosH * size * 0.6, -cosH * -size * 0.6 + sinH * size * 0.6);
+  ctx.lineTo(sinH * -size * 0.6 - cosH * size * 0.6, -cosH * -size * 0.6 - sinH * size * 0.6);
+  ctx.closePath();
+  ctx.fillStyle = 'cyan';
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 2;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// brief 29: 上半分 (#minimap-top canvas) の base 画像を生成。 旧 buildMinimapBase のうち
+// 上半分処理だけを抽出 (= 下半分は buildMinimapBottomBase に分離)、 結果は minimapTopBase に保存。
+// 9-16 OSM タイル (= z=11) を 1-shot 並列 fetch、 fetch 失敗時は単色 + polyline + dot は残す。
+async function buildMinimapTopBase() {
+  const onscreen = document.getElementById('minimap-top');
+  if (!onscreen || course.length === 0) return;
+  const W = onscreen.width, H = onscreen.height;
+  const PAD = 12;
+  // course bbox を 20% margin で広げる
   let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
   for (const p of course) {
     if (p.lat < minLat) minLat = p.lat;
@@ -723,51 +774,91 @@ function initMinimapMap() {
     if (p.lon < minLon) minLon = p.lon;
     if (p.lon > maxLon) maxLon = p.lon;
   }
-  minimapMap = new maplibregl.Map({
-    container: 'minimap-top',
-    style: buildMapStyle(),
-    bounds: [[minLon, minLat], [maxLon, maxLat]],
-    fitBoundsOptions: { padding: 20, animate: false },
-    // 表示専用 = MapLibre instance のキー消費を抑える
-    attributionControl: false,
-    maxTileCacheSize: 16,    // 4-9 tile を覆えれば足りる
-    fadeDuration: 0,
+  const latM = (maxLat - minLat) * 0.20, lonM = (maxLon - minLon) * 0.20;
+  minLat -= latM; maxLat += latM; minLon -= lonM; maxLon += lonM;
+  const midLat = (minLat + maxLat) / 2;
+  const lonScale = Math.cos(midLat * Math.PI / 180);
+  const dLat = maxLat - minLat, dLon = (maxLon - minLon) * lonScale;
+  const innerW = W - 2 * PAD, innerH = H - 2 * PAD;
+  const scale = Math.min(innerW / dLon, innerH / dLat);
+  const projW = dLon * scale, projH = dLat * scale;
+  const offsetX = PAD + (innerW - projW) / 2;
+  const offsetY = PAD + (innerH - projH) / 2;
+  // 普通の projection (北上向き)、 180 度回転は最後に canvas 全体に rotate を掛けて実現
+  function project(lat, lon) {
+    const x = offsetX + (lon - minLon) * lonScale * scale;
+    const y = offsetY + (maxLat - lat) * scale;
+    return [x, y];
+  }
+  // 上半分の minimapStats は projectLatLon を含む (= updateMinimap の rider 描画で使う)
+  // 下半分の stats は buildMinimapBottomBase が後で setup する。
+  minimapStats = Object.assign(minimapStats || {}, {
+    projectLatLon: project,
+    rotateTop: { W, H },
   });
-  // brief 28 ハマる罠対策: interaction 7 系を全 disable (= fitBounds 維持を壊さない)
-  minimapMap.dragRotate.disable();
-  minimapMap.scrollZoom.disable();
-  minimapMap.dragPan.disable();
-  minimapMap.keyboard.disable();
-  minimapMap.doubleClickZoom.disable();
-  minimapMap.boxZoom.disable();
-  minimapMap.touchZoomRotate.disable();
-  minimapMap.on('load', () => {
-    // course polyline (= LineString) を minimap-route source / layer で重ねる
-    const coords = course.map(p => [p.lon, p.lat]);
-    minimapMap.addSource('minimap-route', {
-      type: 'geojson',
-      data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } },
-    });
-    minimapMap.addLayer({
-      id: 'minimap-route',
-      type: 'line',
-      source: 'minimap-route',
-      paint: { 'line-color': '#ffd54a', 'line-width': 3 },
-    });
-    // start / goal markers (= main map と同じ色規約)
-    new maplibregl.Marker({ color: '#7fff00' })
-      .setLngLat([course[0].lon, course[0].lat]).addTo(minimapMap);
-    new maplibregl.Marker({ color: '#ff3030' })
-      .setLngLat([course[course.length - 1].lon, course[course.length - 1].lat]).addTo(minimapMap);
-  });
-  // rider marker は生成だけ、 ride 開始 (= updateMinimap 初回呼出) で addTo
-  minimapRider = new maplibregl.Marker({ color: '#00ffff' });
+
+  // off-screen canvas に描画して minimapTopBase に保存
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const ctx = off.getContext('2d');
+  ctx.fillStyle = 'rgba(15,15,20,0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  // OSM タイル 1-shot 並列 fetch (= z=11 周辺、 buffer=1 で 9-16 タイル)
+  // ToS 範囲内: 起動時 1 回、 ride 中 再 fetch ゼロ。 brief 29 / Rule 11 class B 扱い。
+  const z = 11;
+  const buffer = 1;
+  const minTx = Math.floor(lonToTileX(minLon, z)) - buffer;
+  const maxTx = Math.floor(lonToTileX(maxLon, z)) + buffer;
+  const minTy = Math.floor(latToTileY(maxLat, z)) - buffer;
+  const maxTy = Math.floor(latToTileY(minLat, z)) + buffer;
+  const clip = { x: PAD, y: PAD, w: W - 2 * PAD, h: H - 2 * PAD };
+  const ps = [];
+  for (let tx = minTx; tx <= maxTx; tx++) {
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      ps.push(loadOsmTile(ctx, tx, ty, z, project, clip));
+    }
+  }
+  await Promise.all(ps);
+
+  // course polyline (= 黄)
+  ctx.beginPath();
+  for (let i = 0; i < course.length; i++) {
+    const [x, y] = project(course[i].lat, course[i].lon);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#ffd54a';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // start dot (= 緑)
+  const [sx, sy] = project(course[0].lat, course[0].lon);
+  ctx.fillStyle = '#7fff00';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  // goal dot (= 赤)
+  const [gx, gy] = project(course[course.length - 1].lat, course[course.length - 1].lon);
+  ctx.fillStyle = '#ff3030';
+  ctx.beginPath(); ctx.arc(gx, gy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+
+  // 180 度回転 (= 画面下が進行方向前方になる視覚整合、 旧版踏襲)
+  const copy = document.createElement('canvas');
+  copy.width = W; copy.height = H;
+  copy.getContext('2d').drawImage(off, 0, 0);
+  ctx.save();
+  ctx.clearRect(0, 0, W, H);
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(Math.PI);
+  ctx.translate(-W / 2, -H / 2);
+  ctx.drawImage(copy, 0, 0);
+  ctx.restore();
+
+  minimapTopBase = off;
 }
 
-// brief 28: 下半分 (canvas) に標高プロファイルだけ描画。
-// 旧 buildMinimapBase の上半分処理 (project / clip / 180度回転 / start/goal dot) は廃止、
-// 標高曲線の塗り + 白線 + min/max ラベル のみ。 rider 縦線 / dot は updateMinimap が毎フレーム書く。
-function buildMinimapBottom() {
+// brief 29: 下半分 (= #minimap-bottom canvas) の標高プロファイル base 画像。
+// brief 28 の buildMinimapBottom と同仕様、 関数名のみ rename (= buildMinimapTopBase との対称性)。
+function buildMinimapBottomBase() {
   const onscreen = document.getElementById('minimap-bottom');
   if (!onscreen || course.length === 0) return;
   const W = onscreen.width, H = onscreen.height;
@@ -779,9 +870,10 @@ function buildMinimapBottom() {
   const botInnerH = H - 2 * PAD;
   const botBaseY = H - PAD;
   const botTopY = PAD;
-  minimapStats = { minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY };
+  minimapStats = Object.assign(minimapStats || {}, {
+    minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY,
+  });
 
-  // 下半分 base 画像を off-screen で 1 回だけ作る (= updateMinimap で毎フレーム再描画コスト回避)
   const off = document.createElement('canvas'); off.width = W; off.height = H;
   const ctx = off.getContext('2d');
   ctx.fillStyle = 'rgba(15,15,20,0.85)'; ctx.fillRect(0, 0, W, H);
@@ -816,7 +908,9 @@ function buildMinimapBottom() {
 
 // brief 17b: prefetchTilesAlongCourse は完全削除。 関連する seenOsm / seenDem 等の
 // 変数も使用箇所が無いため定義しない。 タイルは MapLibre の on-demand fetch (= localhost
-// /tiles/... 経由) で読み込み、 外部第三者 endpoint には一切 fetch しない。
+// /tiles/... 経由) で読み込み、 外部第三者 endpoint には一切 fetch しない (= main viewer)。
+// brief 29: minimap だけ例外で OSM 直叩き (= 起動時 1-shot 9-16 タイル、 z=11)、
+// ride 中の再 fetch ゼロ。 prefetchTilesAlongCourse 復活は絶対 NG。
 
 // rider の 3D 豆腐 = 0.5m 角の正方形、 heading に合わせて 4 辺が進行方向の前後左右を向く。
 function buildRiderFeatures(lat, lon, heading, spin) {
@@ -837,22 +931,35 @@ function buildRiderFeatures(lat, lon, heading, spin) {
   };
 }
 
-// brief 28: 上半分は maplibregl.Marker.setLngLat で rider 位置を更新 (= map 自体は北上固定俯瞰)、
-// 下半分は base 画像の上に rider 縦線 + dot だけ毎フレーム書き直し。
+// brief 29: 上下 2 canvas にそれぞれ base 画像を drawImage + rider 描画。
+// 上半分: 180度回転後の座標で rider 三角形を描く (= 進行方向を画面下向きに)。
+// 下半分: 標高プロファイル base 画像の上に rider 縦線 + dot。
 function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
-  // 上半分: rider marker を MapLibre 経由で更新。 初回呼出時のみ addTo。
-  if (minimapRider && minimapMap) {
-    minimapRider.setLngLat([curLon, curLat]);
-    if (!minimapRider._addedToMinimap) {
-      minimapRider.addTo(minimapMap);
-      minimapRider._addedToMinimap = true;
-    }
+  if (!minimapStats) return;
+
+  // 上半分: #minimap-top
+  const topCanvas = document.getElementById('minimap-top');
+  if (topCanvas && minimapTopBase && minimapStats.projectLatLon) {
+    const tctx = topCanvas.getContext('2d');
+    tctx.clearRect(0, 0, topCanvas.width, topCanvas.height);
+    tctx.drawImage(minimapTopBase, 0, 0);
+    // rider 三角形を 180度回転後の座標系で描画
+    // (= base 画像が既に 180度回転済なので、 rider 位置も同じ rotate を適用する)
+    const [rx, ry] = minimapStats.projectLatLon(curLat, curLon);
+    const { W, H } = minimapStats.rotateTop;
+    tctx.save();
+    tctx.translate(W / 2, H / 2);
+    tctx.rotate(Math.PI);
+    tctx.translate(-W / 2, -H / 2);
+    drawDirTriangle(tctx, rx, ry, heading, 9);
+    tctx.restore();
   }
-  // 下半分: 標高プロファイル base 画像 + rider 縦線 + dot
-  const onscreen = document.getElementById('minimap-bottom');
-  if (!onscreen || !minimapBottomBase || !minimapStats) return;
-  const ctx = onscreen.getContext('2d');
-  ctx.clearRect(0, 0, onscreen.width, onscreen.height);
+
+  // 下半分: #minimap-bottom
+  const botCanvas = document.getElementById('minimap-bottom');
+  if (!botCanvas || !minimapBottomBase) return;
+  const ctx = botCanvas.getContext('2d');
+  ctx.clearRect(0, 0, botCanvas.width, botCanvas.height);
   ctx.drawImage(minimapBottomBase, 0, 0);
   const { minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY } = minimapStats;
   const px = PAD + (curDistM / totalD) * botInnerW;
@@ -860,7 +967,7 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   ctx.strokeStyle = 'rgba(0,220,220,0.5)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(px, botTopY); ctx.lineTo(px, botBaseY); ctx.stroke();
   ctx.fillStyle = 'cyan'; ctx.strokeStyle = 'black'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(px, py, 8, 0, 2*Math.PI); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
 }
 
 function tick(t) {
