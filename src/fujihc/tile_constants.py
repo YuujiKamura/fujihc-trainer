@@ -16,12 +16,12 @@ DEFAULT_BUFFER_M = 1000  # 1 km
 # zoom 範囲 (brief 15/16 で source 別に override 可)
 GSI_DEM_ZOOMS = [14]  # 標高は 14 で十分 (= MapLibre terrain 要求最大)
 
-# OSM は zoom 17 1 段に固定 (2026-05-15 user 判断).
-# MapLibre が ride 視点 zoom 23 を表示する時は overzoom (= ベクトル拡大、
-# 粗くならない) で対応.
-# 効果: DB 1185 タイル/59 MB -> 300 タイル/15 MB、 ride 中 GPU texture
-# upload 頻度激減.
-OSM_VECTOR_ZOOMS = [17]
+# OSM は zoom 13/14/15 の 3 段持つ (2026-05-15 再改).
+# 理由: viewer は minzoom=13/maxzoom=15 で OSM source を declare、 ride 開始前の
+# 俯瞰 (z=13 周辺) でも z=13 タイルが必要、 ride 視点 (z=23) は z=15 を overzoom 拡大.
+# Protomaps planet build の上限 z=15、 z=16/17 は存在しない (= maxzoom: 15 で固定).
+# 数値: 富士スバルライン 24km, corridor 3 で z=13: ~6 / z=14: ~20 / z=15: ~70 = 計 ~100 タイル.
+OSM_VECTOR_ZOOMS = [13, 14, 15]
 
 # レート制限 (GSI のみ、 OSM PMTiles 抽出は適用外)
 GSI_RATE_LIMIT_SEC = 1.0  # 地理院規約「大量アクセス自粛」の安全側、 1 req/s

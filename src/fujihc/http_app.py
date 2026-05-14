@@ -71,8 +71,13 @@ def make_http_app(
         status, ctype, data = handlers["tile"](source, z, x, y)
         if status != 200 or data is None:
             return web.Response(status=status)
-        return web.Response(status=200, body=data, content_type=ctype,
-                            headers={"Cache-Control": "public, max-age=31536000"})
+        headers = {"Cache-Control": "public, max-age=31536000"}
+        # Protomaps PMTiles の vector tile は gzip 圧縮されたまま DB に保存される.
+        # MapLibre は Content-Encoding: gzip を見て decompress するため、 検知して header を付与.
+        # PNG は magic 0x89 0x50 で始まる、 gzip は 0x1f 0x8b、 後者なら encoding 明示.
+        if len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B:
+            headers["Content-Encoding"] = "gzip"
+        return web.Response(status=200, body=data, content_type=ctype, headers=headers)
 
     async def h_metadata(request: web.Request) -> web.Response:
         source = request.match_info["source"]
