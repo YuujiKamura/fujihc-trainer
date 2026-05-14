@@ -9,3 +9,8 @@ data/*.pmtiles
 
 node_modules/
 .omc/
+
+# brief 31: GitHub Pages 静的サイト export 成果物 (= Actions / export_static.py が再生成).
+# .gitkeep のみ track、 中身 (tiles/ / map.pmtiles / course.json) は build 成果物。
+web/static/*
+!web/static/.gitkeep

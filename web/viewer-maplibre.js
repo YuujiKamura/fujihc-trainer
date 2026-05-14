@@ -15,6 +15,10 @@ import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_contr
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
 import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
+// brief 31: pmtiles:// protocol を MapLibre に登録 (= GitHub Pages 静的 mode 用)。
+// vendored pmtiles.js は web/lib/vendor/pmtiles.js (BSD-3-Clause)、 index.html の
+// <script> で window.pmtiles を IIFE 化、 ここでは window 経由で参照する。
+import { registerPmtilesProtocol } from './lib/pmtiles_loader.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -26,7 +30,19 @@ const status = (msg) => { document.getElementById('status').textContent = msg; }
 // brief 17b: 外部第三者 endpoint への runtime fetch を物理的にゼロにする。
 // web/tests/viewer_url_audit.test.js が source-grep gate で固定する。
 // 違反した瞬間に CI が落ちる。
-const TILE_BASE_URL = `${location.origin}/tiles`;
+//
+// brief 31: GitHub Pages 静的 mode との 2-way 化。
+// - BRIDGE_TILE_BASE_URL: 従来 (= localhost で bridge.py 起動済) の /tiles/...
+// - STATIC_TILE_BASE_URL: GitHub Pages 等 bridge 不在で、 ${BASE_PATH}static/ から
+//   PNG / PMTiles / course.json を直接 fetch する path
+// - BASE_PATH: GitHub Pages の project page prefix (= /fujihc-trainer/) 追従、
+//   localhost (= /) でも動く。 `location.pathname.replace(/\/[^/]*$/, '/')` で
+//   末尾 file 名を除いて parent path を取る。
+// - TILE_BASE_URL: 旧 const、 viewer_url_audit が grep する後方互換用 alias (= bridge 値)
+const BASE_PATH = location.pathname.replace(/\/[^/]*$/, '/');
+const BRIDGE_TILE_BASE_URL = `${location.origin}/tiles`;
+const STATIC_TILE_BASE_URL = `${location.origin}${BASE_PATH}static`;
+const TILE_BASE_URL = BRIDGE_TILE_BASE_URL;
 
 // === GSI 標高 PNG を terrarium 形式 PNG に変換するカスタムプロトコル ===
 // brief 21: 変換ロジックは web/lib/terrain_mesh.js に切出し済 (= test 6 件で pin)、
@@ -67,107 +83,145 @@ maplibregl.addProtocol('gsidem', (params) => {
 });
 
 // === Map 初期化 ===
-// brief 29: brief 28 の buildMapStyle helper は廃止 (= MapLibre 2nd instance を minimap で
-// 立てる構造を撤回したため、 main map のみで style を共有する必要がない)。
-// style はここに inline 定義、 minimap は別系統 (= canvas + loadOsmTile) で描画する。
-const map = new maplibregl.Map({
-  container: 'map',
-  style: {
-    version: 8,
-    sources: {
-      'osm': {
-        type: 'vector',
-        tiles: [`${TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
-        minzoom: 13,    // tile_constants.OSM_VECTOR_ZOOMS の min 周辺 (= 15 単一だが overzoom で 13 まで使う)
-        maxzoom: 15,    // tile_constants.OSM_VECTOR_ZOOMS の max と整合 (Protomaps planet build の上限)
-        attribution: '© OpenStreetMap contributors',
-      },
-      'gsi-terrain': {
-        type: 'raster-dem',
-        // addProtocol('gsidem', ...) が GSI 独自符号 (R*65536+G*256+B)/100 を
-        // terrarium 形式に変換する。 fetch URL は localhost 経由のみ。
-        tiles: [`gsidem://${TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png`],
-        tileSize: 256,
-        encoding: 'terrarium',
-        // minzoom=8 に拡張: 遠景 (= ride 視点 pitch 80° 先) の terrain を描画させるため
-        // 低 zoom dem も MapLibre に提供する必要 (= 元 maxzoom 14 only で遠景 clip 発生).
-        minzoom: 8,
-        maxzoom: 14,
-        attribution: '国土地理院 標高タイル',
-        volatile: false,
-      },
-    },
-    layers: [
-      // 背景の単色 (= PMTiles 未整備時の fallback、 灰白で地形の凹凸が見える)
-      { id: 'bg', type: 'background', paint: { 'background-color': '#e8e8e8' } },
-      // Protomaps の標準 vector layer (= name は Protomaps OpenMapTiles 互換 schema 前提)
-      // PMTiles に layer が存在しない場合は MapLibre が silent skip、 fallback bg が見える
-      { id: 'earth', type: 'fill', source: 'osm', 'source-layer': 'earth',
-        paint: { 'fill-color': '#f5f5f0' } },
-      { id: 'water', type: 'fill', source: 'osm', 'source-layer': 'water',
-        paint: { 'fill-color': '#a8d8ea' } },
-      { id: 'landuse-forest', type: 'fill', source: 'osm', 'source-layer': 'landuse',
-        filter: ['in', 'kind', 'forest', 'wood', 'park'],
-        paint: { 'fill-color': '#cfe7c8', 'fill-opacity': 0.7 } },
-      { id: 'roads', type: 'line', source: 'osm', 'source-layer': 'roads',
-        paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6] } },
-      { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
-        filter: ['in', 'kind', 'highway', 'major_road'],
-        paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
-      // 地形シェーディング + 光源方向 (= 朝の太陽を南東から、 山の片面を明るく / 反対面を陰に).
-      // illumination-direction 135 = 南東 (= 0=北、 90=東、 180=南、 270=西)、
-      // illumination-anchor 'map' で地理北基準 (= viewport rotate に追従しない).
-      // exaggeration 1.0 + shadow #000000 + highlight #ffffff で凹凸クッキリ.
-      { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
-        paint: {
-          'hillshade-exaggeration': 1.0,
-          'hillshade-shadow-color': '#000000',
-          'hillshade-highlight-color': '#ffffff',
-          'hillshade-accent-color': '#404040',
-          'hillshade-illumination-direction': 135,
-          'hillshade-illumination-anchor': 'map',
-        } },
-      // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
-    ],
-    // 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
-    sky: { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' },
-  },
-  center: [138.7587, 35.4521],
-  zoom: 13,
-  pitch: 60,
-  bearing: 0,
-  // pitch を default 60 → 85 まで拡張、 zoom 上限も MapLibre の最大 22 まで開放
-  maxPitch: 85,
-  minPitch: 0,
-  maxZoom: 24,
-  minZoom: 13,
-  // タイル memory cache. brief 21 で GSI dem を 4x upsample (1024x1024 RGBA = 4 MB/tile)、
-  // 200 だと 800 MB VRAM 圧迫. 50 で 200 MB 上限、 ride viewport (= 9 タイル) には十分.
-  maxTileCacheSize: 50,
-  // タイルのクロスフェード短縮、 GPU 負荷軽減
-  fadeDuration: 0,
-});
+// brief 31: bridge mode と GitHub Pages 静的 mode で source URL が違うため、
+// style 構築を `buildMapStyle({bridgeReachable})` に切り出して 2 mode 共有。
+// COMMON_LAYERS / COMMON_SKY は mode 非依存 (= layers は source.id 名で参照、
+// 物理化された 1 コピー、 NG-R1-11 双子コピペ回避)。
+// 旧 const map = new maplibregl.Map(...) は撤回、 `bootCheckSetupStatus` で
+// bridgeReachable を確定してから `bootMap(bridgeReachable)` で生成する遅延化。
+const COMMON_LAYERS = [
+  // 背景の単色 (= PMTiles 未整備時の fallback、 灰白で地形の凹凸が見える)
+  { id: 'bg', type: 'background', paint: { 'background-color': '#e8e8e8' } },
+  // Protomaps の標準 vector layer (= name は Protomaps OpenMapTiles 互換 schema 前提)
+  // PMTiles に layer が存在しない場合は MapLibre が silent skip、 fallback bg が見える
+  { id: 'earth', type: 'fill', source: 'osm', 'source-layer': 'earth',
+    paint: { 'fill-color': '#f5f5f0' } },
+  { id: 'water', type: 'fill', source: 'osm', 'source-layer': 'water',
+    paint: { 'fill-color': '#a8d8ea' } },
+  { id: 'landuse-forest', type: 'fill', source: 'osm', 'source-layer': 'landuse',
+    filter: ['in', 'kind', 'forest', 'wood', 'park'],
+    paint: { 'fill-color': '#cfe7c8', 'fill-opacity': 0.7 } },
+  { id: 'roads', type: 'line', source: 'osm', 'source-layer': 'roads',
+    paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6] } },
+  { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
+    filter: ['in', 'kind', 'highway', 'major_road'],
+    paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
+  // 地形シェーディング + 光源方向 (= 朝の太陽を南東から、 山の片面を明るく / 反対面を陰に).
+  // illumination-direction 135 = 南東 (= 0=北、 90=東、 180=南、 270=西)、
+  // illumination-anchor 'map' で地理北基準 (= viewport rotate に追従しない).
+  // exaggeration 1.0 + shadow #000000 + highlight #ffffff で凹凸クッキリ.
+  { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
+    paint: {
+      'hillshade-exaggeration': 1.0,
+      'hillshade-shadow-color': '#000000',
+      'hillshade-highlight-color': '#ffffff',
+      'hillshade-accent-color': '#404040',
+      'hillshade-illumination-direction': 135,
+      'hillshade-illumination-anchor': 'map',
+    } },
+  // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
+];
 
-map.on('load', () => {
-  map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 });
-  status('map loaded');
-  // 操作系: マウスホイールで zoom (default 維持)、 縦ドラッグで pitch だけ変更、
-  // 横ドラッグ (bearing 回転) は AI が進行方向に自動セットするので無効化
-  map.dragRotate.disable();
-  map.touchZoomRotate.disableRotation();
-  map.dragPan.disable();
-  // MapLibre 標準の scrollZoom は「マウスポインタ位置を中心に zoom」する。 これだと
-  // tick で rider に center を戻すまでに毎フレーム rider がズレて見える。
-  // scrollZoom を切って、 自前で「wheel → userZoom を増減 → map.setZoom (現 center 維持)」に。
-  map.scrollZoom.disable();
-  setupWheelZoom();
-  setupPitchDrag();
-  loadCourse();
-});
+// 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
+const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' };
 
-map.on('error', (e) => {
-  console.warn('maplibre error:', e && e.error);
-});
+export function buildMapStyle({ bridgeReachable }) {
+  // bridge mode: 個別 PBF / PNG file ツリーを localhost /tiles から fetch (= 従来)。
+  // static mode: PMTiles 単一 file (pmtiles:// scheme) + ${BASE_PATH}static/tiles/gsi_dem 配下 PNG。
+  const sources = bridgeReachable
+    ? {
+        'osm': {
+          type: 'vector',
+          tiles: [`${BRIDGE_TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
+          minzoom: 13,
+          maxzoom: 15,
+          attribution: '© OpenStreetMap contributors',
+        },
+        'gsi-terrain': {
+          type: 'raster-dem',
+          tiles: [`gsidem://${BRIDGE_TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png`],
+          tileSize: 256,
+          encoding: 'terrarium',
+          minzoom: 8,
+          maxzoom: 14,
+          attribution: '国土地理院 標高タイル',
+          volatile: false,
+        },
+      }
+    : {
+        'osm': {
+          type: 'vector',
+          url: `pmtiles://${STATIC_TILE_BASE_URL}/map.pmtiles`,
+          attribution: '© OpenStreetMap contributors',
+        },
+        'gsi-terrain': {
+          type: 'raster-dem',
+          tiles: [`gsidem://${STATIC_TILE_BASE_URL}/tiles/gsi_dem/{z}/{x}/{y}.png`],
+          tileSize: 256,
+          encoding: 'terrarium',
+          minzoom: 8,
+          maxzoom: 14,
+          attribution: '国土地理院 標高タイル',
+          volatile: false,
+        },
+      };
+  return { version: 8, sources, layers: COMMON_LAYERS, sky: COMMON_SKY };
+}
+
+// map は `bootMap` で生成、 それまで null。 全 caller (= setupWheelZoom / loadCourse 等)
+// は bootMap 完了後に呼ばれるため、 null 参照は起きない。
+let map = null;
+// static mode (= bridge 不在、 GitHub Pages) でも兼用するため、 module top で flag を保持。
+// loadCourse() の fetch URL 分岐や、 ride 中の position-send skip 判定で参照。
+let _bridgeReachable = true;
+
+function bootMap(bridgeReachable) {
+  _bridgeReachable = bridgeReachable;
+  // pmtiles:// protocol は idempotent (= 冪等)、 bridge mode でも害なし。
+  // index.html の <script src="./lib/vendor/pmtiles.js"> で window.pmtiles が IIFE 化済。
+  if (typeof window !== 'undefined' && window.pmtiles) {
+    try { registerPmtilesProtocol(maplibregl, window.pmtiles); }
+    catch (e) { console.warn('pmtiles protocol register failed:', e && e.message); }
+  }
+  map = new maplibregl.Map({
+    container: 'map',
+    style: buildMapStyle({ bridgeReachable }),
+    center: [138.7587, 35.4521],
+    zoom: 13,
+    pitch: 60,
+    bearing: 0,
+    // pitch を default 60 → 85 まで拡張、 zoom 上限も MapLibre の最大 22 まで開放
+    maxPitch: 85,
+    minPitch: 0,
+    maxZoom: 24,
+    minZoom: 13,
+    // タイル memory cache. brief 21 で GSI dem を 4x upsample (1024x1024 RGBA = 4 MB/tile)、
+    // 200 だと 800 MB VRAM 圧迫. 50 で 200 MB 上限、 ride viewport (= 9 タイル) には十分.
+    maxTileCacheSize: 50,
+    // タイルのクロスフェード短縮、 GPU 負荷軽減
+    fadeDuration: 0,
+  });
+  map.on('load', () => {
+    map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 });
+    status('map loaded');
+    // 操作系: マウスホイールで zoom (default 維持)、 縦ドラッグで pitch だけ変更、
+    // 横ドラッグ (bearing 回転) は AI が進行方向に自動セットするので無効化
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.dragPan.disable();
+    // MapLibre 標準の scrollZoom は「マウスポインタ位置を中心に zoom」する。 これだと
+    // tick で rider に center を戻すまでに毎フレーム rider がズレて見える。
+    // scrollZoom を切って、 自前で「wheel → userZoom を増減 → map.setZoom (現 center 維持)」に。
+    map.scrollZoom.disable();
+    setupWheelZoom();
+    setupPitchDrag();
+    loadCourse();
+  });
+  map.on('error', (e) => {
+    console.warn('maplibre error:', e && e.error);
+  });
+  return map;
+}
 
 let course = [];
 let totalDist = 0;
@@ -258,14 +312,21 @@ setAppState('checking');
 const HTTP_BASE_URL = location.origin;
 
 async function checkSetupStatus() {
+  // brief 31: bridge 不在 (= GitHub Pages 等) 判定のため AbortSignal.timeout(500) を追加。
+  // 戻り値に `bridgeReachable` flag (= bridge mode / static mode の単一判定軸) を含める。
+  // 既存 caller (= showDbinit / maybeAdvanceToPairing) は `overall` のみ参照、 後方互換。
   try {
-    const resp = await fetch(`${HTTP_BASE_URL}/tiles/_setup_status`);
-    if (resp.status === 503) return { overall: 'empty', sources: {} };
-    if (!resp.ok) return { overall: 'empty', sources: {} };
-    return await resp.json();
+    const resp = await fetch(
+      `${HTTP_BASE_URL}/tiles/_setup_status`,
+      { signal: AbortSignal.timeout(500) },
+    );
+    if (resp.status === 503) return { overall: 'empty', sources: {}, bridgeReachable: true };
+    if (!resp.ok) return { overall: 'empty', sources: {}, bridgeReachable: true };
+    const body = await resp.json();
+    return { ...body, bridgeReachable: true };
   } catch (err) {
-    // bridge 未起動 (= TEST_MODE 以外で http が無い) でも黒画面を避けたい
-    return { overall: 'empty', sources: {} };
+    // timeout / 404 / network error: bridge 未到達 = static mode 確定
+    return { overall: 'empty', sources: {}, bridgeReachable: false };
   }
 }
 
@@ -531,7 +592,19 @@ function connectBridge() {
 
 // brief 22: trainer / bridge 不要の画面操作確認モード.
 // brief 19b: createTestModeClient に置換、 fake send / state push は lib 側に集約.
+// brief 31: map 未生成なら checkSetupStatus 経由で bridgeReachable 確定 + bootMap、
+// 既生成なら no-op。 initMapMode / initTestMode は ?map / ?test query 経路でも
+// bootCheckSetupStatus 経路でも同じ map state を期待するため、 ここで統一。
+async function ensureMapBooted() {
+  if (map) return;
+  const s = await checkSetupStatus();
+  bootMap(s.bridgeReachable);
+}
+
 function initTestMode() {
+  // brief 31: bootMap が未呼出なら map を先に立ち上げる (= ?test=1 経路、 module top dispatch)。
+  // 既存 bootCheckSetupStatus 経路から呼ばれた場合 map は既生成、 ensureMapBooted は no-op。
+  if (!map) { ensureMapBooted().then(() => initTestMode()); return; }
   status('TEST MODE: bridge/trainer 不要、 fake state 1Hz でループ');
   setText('setup-status', 'TEST MODE: 接続スキップ、 ride 開始ボタンが押せる');
   setText('p-device', 'TEST MODE (no trainer)');
@@ -570,29 +643,47 @@ function maybeSendSlope(slope_pct) {
 
 // brief 26b: 起動時の DB 充足度チェック → 不足なら dbinit overlay、 ready なら従来 BLE.
 // TEST_MODE は従来通り checking を skip (= ?test=1 は trainer / DB 不要 demo).
+//
+// brief 31: bridge 不在 (= s.bridgeReachable === false) なら static mode 確定、
+// dbinit-overlay は出さず initMapMode() に直行 (= 視覚デモ完結)。
 function bootCheckSetupStatus() {
   checkSetupStatus().then((s) => {
+    if (!s.bridgeReachable) {
+      // GitHub Pages 等、 bridge 未到達 = static mode、 MAP_MODE 相当に倒す。
+      // dbinit-overlay は bridge mode 専用 (= 「bridge 立ち上げて」と促す UI)、
+      // static mode では bridge.py 起動を促しても無意味なため一切表示しない。
+      bootMap(false);
+      initMapMode();
+      return;
+    }
+    bootMap(true);
     if (s.overall === 'ready') {
       setAppState('pairing');
       connectBridge();
     } else {
-      // overall === 'empty' / 'partial' / fetch 失敗時 fallback も全部 dbinit
-      // bridge が未起動でも overlay は出る (= user に「bridge 立ち上げて」と促せる)
+      // overall === 'empty' / 'partial': bridge は到達したが DB 不足、 dbinit overlay
       showDbinit(s);
       // bridge への WS は dbinit 中も繋ぐ (= dbinit_progress を受け取るため)
       connectBridge();
     }
   });
 }
-// brief 22 系: 3 つのモードを分岐
-// - MAP_MODE (?map=1): 全 overlay を即 hide + ride 自動 start + fake state。 UI 操作ゼロで地図 visual 検証.
+
+// brief 22 + 31: 3 つのモードを分岐
+// - MAP_MODE (?map=1): 全 overlay を即 hide + ride 自動 start + fake state。
+//   tile origin は bridgeReachable に従う (= localhost で bridge 起動済なら bridge、 不在なら static)。
 // - TEST_MODE (?test=1): overlay は出すが BLE/DB を skip、 ride 開始ボタンは user 操作.
-// - default: 通常起動、 setup 充足度を見て分岐.
+// - default: 通常起動、 setup 充足度 + bridgeReachable を見て分岐.
+//
+// brief 31: MAP_MODE / TEST_MODE でも tile origin 確定のために checkSetupStatus は必須、
+// その結果から bootMap(bridgeReachable) を 1 回だけ呼ぶ。 map 生成は initMapMode /
+// initTestMode の入口で `if (!map) ...` 経由 (= 既存 dispatch 行のリテラルを保持)。
 if (MAP_MODE) initMapMode();
 else if (TEST_MODE) initTestMode();
 else bootCheckSetupStatus();
 
 function initMapMode() {
+  if (!map) { ensureMapBooted().then(() => initMapMode()); return; }  // brief 31
   status('MAP MODE: UI 操作なしで地図表示のみ確認');
   // 全 overlay を hide (= 視界をクリアにして地図 + HUD + minimap だけ見せる)
   hideDbinit();
@@ -677,8 +768,13 @@ function skipDbinit() {
 
 // === コース読み込み ===
 async function loadCourse() {
+  // brief 31: course.json は static mode では web/static/course.json、
+  // bridge mode では web root (= web/course.json、 既存)。
+  // GitHub Pages の project page prefix は BASE_PATH に含まれる、 静的経路では
+  // `${BASE_PATH}static/course.json` を、 bridge では従来通り相対 'course.json' を fetch。
+  const url = _bridgeReachable ? 'course.json' : `${BASE_PATH}static/course.json`;
   try {
-    const resp = await fetch('course.json');
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     course = await resp.json();
   } catch (err) { status(`course.json load failed: ${err.message}`); return; }

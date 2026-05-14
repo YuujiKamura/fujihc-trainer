@@ -1,0 +1,62 @@
+# brief 31: GitHub Pages 静的サイト配信 workflow。
+# trigger: push to main + 手動 (workflow_dispatch)。
+# pipeline: checkout -> setup-python -> pip install -e . -> export_static.py
+#           -> _site/ staging (web/archived / web/tests を除外) -> upload + deploy.
+#
+# 注意: data/tiles.sqlite + data/fuji.pmtiles は repo committed が前提
+# (= brief 31 redraft の判断、 LFS 化は phase 2 検討)。
+# action 全て major version 完全 pin (= NG-R3-7 floating tag 禁止)。
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時 deploy を 1 つに制限 (= 連続 push でも最新だけが反映)
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install -e .
+
+      - name: Export static assets
+        run: python scripts/export_static.py
+
+      - name: Stage Pages payload
+        run: |
+          mkdir -p _site
+          cp web/index.html _site/
+          cp web/viewer-maplibre.js _site/
+          cp web/course.json _site/
+          cp -r web/lib _site/lib
+          cp -r web/static _site/static
+
+      - uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

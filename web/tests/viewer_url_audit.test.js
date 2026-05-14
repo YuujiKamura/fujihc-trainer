@@ -248,8 +248,9 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
   });
 
   it('initMapMode は createTestModeClient を使う (= bridge 不要)', () => {
-    // initMapMode の body 内で createTestModeClient を呼ぶ
-    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,800}createTestModeClient\(/);
+    // initMapMode の body 内で createTestModeClient を呼ぶ。
+    // brief 31 で先頭に `if (!map) { ensureMapBooted... }` ガードが入ったため上限を 1000 に拡張。
+    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,1000}createTestModeClient\(/);
   });
 
   it('initMapMode は rideState.start を呼ぶ (= 自動 ride start)', () => {
@@ -299,3 +300,18 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
 // rollback 後の minimap 構造は web/tests/minimap_osm_direct.test.js (= rename 元 minimap_maplibre.test.js)
 // に集約。 旧 buildMinimapBase / loadOsmTile が viewer に存在し、 #minimap-top が canvas であり、
 // brief 28 の initMinimapMap / buildMapStyle が viewer に存在しないことを minimap_osm_direct で pin。
+
+// brief 31: GitHub Pages 静的サイト化に伴う外部 URL gate の拡張。
+// pmtiles の CDN 経由化は NG-R3-7 / NG-R1-15 と境界が曖昧になるため block。
+describe('brief 31: 外部 fetch ゼロ規律の拡張 (= pmtiles CDN 経由 block)', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+
+  it('viewer source 内に pmtiles の floating tag CDN URL が現れない', () => {
+    expect(viewer).not.toMatch(/https?:\/\/unpkg\.com\/pmtiles/);
+    expect(viewer).not.toMatch(/https?:\/\/cdn\.jsdelivr\.net\/npm\/pmtiles/);
+  });
+
+  it('STATIC_TILE_BASE_URL は ${BASE_PATH}static の path 構成 (= GitHub Pages prefix 追従)', () => {
+    expect(viewer).toMatch(/STATIC_TILE_BASE_URL\s*=\s*`\$\{location\.origin\}\$\{BASE_PATH\}static`/);
+  });
+});
