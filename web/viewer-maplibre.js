@@ -89,6 +89,9 @@ const map = new maplibregl.Map({
         tiles: [`gsidem://${TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png`],
         tileSize: 256,
         encoding: 'terrarium',
+        // minzoom=8 に拡張: 遠景 (= ride 視点 pitch 80° 先) の terrain を描画させるため
+        // 低 zoom dem も MapLibre に提供する必要 (= 元 maxzoom 14 only で遠景 clip 発生).
+        minzoom: 8,
         maxzoom: 14,
         attribution: '国土地理院 標高タイル',
         volatile: false,
@@ -111,6 +114,14 @@ const map = new maplibregl.Map({
       { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
         filter: ['in', 'kind', 'highway', 'major_road'],
         paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
+      // 地形シェーディング (= 最低限の陰影で山体の起伏を見せる、 brief 後段で再強度調整可)
+      { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
+        paint: {
+          'hillshade-exaggeration': 0.5,
+          'hillshade-shadow-color': '#202020',
+          'hillshade-highlight-color': '#ffffff',
+          'hillshade-accent-color': '#5a5a5a',
+        } },
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
     sky: { 'sky-color': '#87ceeb', 'horizon-color': '#ffd6a5', 'fog-color': '#cccccc' },
@@ -644,7 +655,10 @@ async function loadCourse() {
       source: 'route',
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.85,
+        'fill-opacity': 0.95,
+        // audit Round 2: anti-alias を切ると隣接 polygon 縁の半透明 compositing が消え、
+        // 共有 edge での白隙 (= 背景 #e8e8e8 漏れ) が出なくなる。
+        'fill-antialias': false,
       },
     });
     // 細い線で polygon の縁取り (= zoom out 時の視認性確保)
