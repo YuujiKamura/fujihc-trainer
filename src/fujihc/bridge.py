@@ -30,7 +30,10 @@ from bleak.exc import BleakError
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from aiohttp import web
+
 from fujihc.gpx_export import csv_to_gpx
+from fujihc import tile_server
 
 log = logging.getLogger("fujihc.bridge")
 
@@ -269,12 +272,16 @@ def _encode_set_indoor_bike_simulation(
 
 class Bridge:
     def __init__(self, *, device: Optional[str], dummy: bool, port: int, log_dir: Path,
-                 fake_trainer: bool = False):
+                 fake_trainer: bool = False, http_port: int = 8000,
+                 db_path: Optional[Path] = None):
         self.device = device
         self.dummy = dummy
         self.port = port
         self.log_dir = log_dir
         self.fake_trainer = fake_trainer
+        # brief 17a: ローカル tile DB を HTTP で配信 (= 127.0.0.1 限定)
+        self.http_port = http_port
+        self.db_path = db_path or Path("data/tiles.sqlite")
 
         self.state = RideState()
         self._state_lock = asyncio.Lock()
@@ -782,8 +789,64 @@ class Bridge:
 
     # ---------- top-level ----------
 
+    def _make_http_app(self) -> web.Application:
+        """brief 17a: ローカル tile DB を HTTP で配信する aiohttp app を組み立て.
+
+        route:
+          GET  /tiles/{source}/{z}/{x}/{y}.{ext}    タイル binary
+          GET  /tiles/{source}/metadata.json         metadata dict (JSON)
+          GET  /tiles/_style.json                    MapLibre style (JSON)
+          GET  /tiles/_metrics                       hit/miss カウンタ (brief 20)
+        bind: 127.0.0.1 限定 (LAN 内 ODbL 再配布事故防止)
+        """
+        handlers = tile_server.register_tile_routes(str(self.db_path))
+        app = web.Application()
+
+        async def h_tile(request: web.Request) -> web.Response:
+            source = request.match_info["source"]
+            try:
+                z = int(request.match_info["z"])
+                x = int(request.match_info["x"])
+                y = int(request.match_info["y"])
+            except ValueError:
+                return web.Response(status=400, text="bad coord")
+            status, ctype, data = handlers["tile"](source, z, x, y)
+            if status != 200 or data is None:
+                return web.Response(status=status)
+            return web.Response(status=200, body=data, content_type=ctype,
+                                headers={"Cache-Control": "public, max-age=31536000"})
+
+        async def h_metadata(request: web.Request) -> web.Response:
+            source = request.match_info["source"]
+            status, meta = handlers["metadata"](source)
+            if status != 200 or meta is None:
+                return web.Response(status=status)
+            return web.json_response(meta)
+
+        async def h_style(request: web.Request) -> web.Response:
+            status, style = handlers["style"]()
+            if status != 200 or style is None:
+                return web.Response(status=status)
+            return web.json_response(style)
+
+        async def h_metrics(request: web.Request) -> web.Response:
+            return web.json_response(handlers["metrics"]())
+
+        app.router.add_get("/tiles/{source}/metadata.json", h_metadata)
+        app.router.add_get("/tiles/_style.json", h_style)
+        app.router.add_get("/tiles/_metrics", h_metrics)
+        app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
+        return app
+
     async def run(self) -> None:
         # CSV は ride_start で開く (起動だけでは log を作らない、 user 指示「明示 ON のみ」)
+        # brief 17a: HTTP server (aiohttp) を WebSocket と並走、 127.0.0.1 限定
+        http_app = self._make_http_app()
+        http_runner = web.AppRunner(http_app)
+        await http_runner.setup()
+        http_site = web.TCPSite(http_runner, "127.0.0.1", self.http_port)
+        await http_site.start()
+        log.info("HTTP tile server listening on http://127.0.0.1:%d/tiles/", self.http_port)
         try:
             async with websockets.serve(self._ws_handler, "localhost", self.port):
                 log.info("WebSocket server listening on ws://localhost:%d", self.port)
@@ -834,6 +897,9 @@ class Bridge:
                     await push_task
         finally:
             self._close_csv()
+            # brief 17a: HTTP server cleanup
+            with contextlib.suppress(Exception):
+                await http_runner.cleanup()
 
     def stop(self) -> None:
         self._stopping.set()
@@ -846,6 +912,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--fake-trainer", action="store_true",
                         help="BLE を使わず内蔵の fake trainer で full loop を simulate")
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port (default 8765)")
+    parser.add_argument("--http-port", type=int, default=8000,
+                        help="HTTP tile server port (default 8000, 127.0.0.1 only)")
+    parser.add_argument("--db-path", default="data/tiles.sqlite",
+                        help="ローカル tile DB の path (brief 14)")
     parser.add_argument("--log-dir", default="~/fujihc-trainer/logs", help="CSV output dir")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args(argv)
@@ -861,6 +931,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         port=args.port,
         log_dir=Path(os.path.expanduser(args.log_dir)),
         fake_trainer=args.fake_trainer,
+        http_port=args.http_port,
+        db_path=Path(os.path.expanduser(args.db_path)),
     )
     if args.fake_trainer:
         # fake trainer は実 BLE 不要なので default device を fake address に

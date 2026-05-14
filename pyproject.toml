@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Indoor trainer driver for the Mt.Fuji hill climb GPX. Phase 0: discover BLE trainers."
 requires-python = ">=3.10"
 dependencies = [
+    "aiohttp>=3.9",
     "bleak>=0.22.0",
     "gpxpy>=1.6.0",
     "pmtiles>=3.0",
