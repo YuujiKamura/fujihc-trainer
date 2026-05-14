@@ -400,9 +400,11 @@ async function loadCourse() {
 
   buildMinimapBase();
 
-  // 走行時に必要な地図タイルを pairing 画面の裏でプリロード (ブラウザ HTTP cache に乗せる)
-  // ride 開始直後の「タイル読み込み待ち」を消す
-  prefetchTilesAlongCourse();
+  // FROZEN brief 13 (2026-05-15): prefetchTilesAlongCourse は OSM Tile Usage Policy +
+  // GSI 地理院タイル利用規約に違反 (最大 2700 OSM + 450 GSI タイル並列 fetch、 rate limit / UA 無し).
+  // brief 14-17 で local SQLite + Protomaps PMTiles 経由に置換、 関数本体は brief 17b で削除.
+  // prefetchTilesAlongCourse();
+  console.info('[fujihc] prefetch frozen (brief 13). Tiles load on-demand by MapLibre.');
 
   // 初期 camera: start 地点に寄せる、 起動直後から走行視点っぽい絵にする
   // (全体俯瞰だと goal 側ばかり映って rider が画面外になる、 user 不満を生む)
