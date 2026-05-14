@@ -30,17 +30,25 @@ from bleak.exc import BleakError
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from fujihc.gpx_export import csv_to_gpx
+
 log = logging.getLogger("fujihc.bridge")
 
 FTMS_SERVICE_UUID = "00001826-0000-1000-8000-00805f9b34fb"
 INDOOR_BIKE_DATA_UUID = "00002ad2-0000-1000-8000-00805f9b34fb"
 FITNESS_MACHINE_CONTROL_POINT_UUID = "00002ad9-0000-1000-8000-00805f9b34fb"
 
+# Heart Rate Service (HRM = Heart Rate Monitor)
+HEART_RATE_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
+HEART_RATE_MEASUREMENT_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
+
 FTMS_OP_REQUEST_CONTROL = 0x00
+FTMS_OP_RESET = 0x01
 FTMS_OP_START = 0x07
 FTMS_OP_SET_INDOOR_BIKE_SIMULATION = 0x11
 
-CONNECT_TIMEOUT_S = 5.0
+CONNECT_TIMEOUT_S = 10.0   # Wahoo 系の初回 connect が遅いので余裕を取る (review 11-pair-tech)
+SCAN_TIMEOUT_S = 7.0
 PUSH_HZ = 1.0
 
 
@@ -53,6 +61,14 @@ class RideState:
     cadence_rpm: Optional[float] = None
     slope_sent_pct: float = 0.0
 
+    last_ack: Optional[str] = None     # trainer の最新応答 (= "OK"、 "Op-Not-Supported" 等)
+    # ride 中の現在地 (viewer の position メッセージで更新、 GPX 書き出しに使う)
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    elevation_m: Optional[float] = None
+    # 心拍計 (HRM、 別 BLE 接続経由)
+    hr_bpm: Optional[int] = None
+
     def to_payload(self) -> dict:
         return {
             "distance_m": round(self.distance_m, 2),
@@ -62,7 +78,31 @@ class RideState:
                 round(self.cadence_rpm, 1) if self.cadence_rpm is not None else None
             ),
             "slope_sent_pct": round(self.slope_sent_pct, 2),
+            "last_ack": self.last_ack,
+            "hr_bpm": self.hr_bpm,
         }
+
+
+def _parse_heart_rate(data: bytes) -> dict:
+    """BLE Heart Rate Measurement (UUID 0x2A37) を decode する。
+    flags byte の bit0 で BPM が uint8 か uint16 か判別、 bit3 で energy、 bit4 で RR-interval を含む。
+    返り値: {"hr_bpm": int} もしくは空 dict (parse 不可)。
+    """
+    if not data:
+        return {}
+    flags = data[0]
+    offset = 1
+    out: dict = {}
+    if flags & 0x01:
+        # uint16 little-endian
+        if len(data) >= offset + 2:
+            out["hr_bpm"] = struct.unpack_from("<H", data, offset)[0]
+            offset += 2
+    else:
+        if len(data) >= offset + 1:
+            out["hr_bpm"] = data[offset]
+            offset += 1
+    return out
 
 
 def _parse_indoor_bike_data(data: bytes) -> dict:
@@ -108,6 +148,103 @@ def _parse_indoor_bike_data(data: bytes) -> dict:
     return out
 
 
+class FakeBleakClient:
+    """Test 用の trainer emulator。bleak 互換 API、 BLE には繋がない。
+    Indoor Bike Data を 1Hz で notify、Control Point write を受けたら ack を即返す。
+    yuuji の手を介さず viewer ↔ bridge ↔ fake-trainer の full loop を走らせるため。
+    """
+
+    def __init__(self, address: str, timeout: float = 10.0):
+        self.address = address
+        self.is_connected = False
+        self._notify_callbacks: dict = {}
+        self._tasks: list[asyncio.Task] = []
+        self._stopping = False
+        self._current_slope_pct = 0.0
+
+    async def connect(self) -> None:
+        await asyncio.sleep(0.1)
+        self.is_connected = True
+
+    async def disconnect(self) -> None:
+        self.is_connected = False
+        self._stopping = True
+        for t in self._tasks:
+            t.cancel()
+
+    async def start_notify(self, uuid: str, callback) -> None:
+        self._notify_callbacks[uuid.lower()] = callback
+        # Indoor Bike Data なら定期 push を開始
+        if uuid.lower() == INDOOR_BIKE_DATA_UUID.lower():
+            self._tasks.append(asyncio.create_task(self._indoor_bike_pump(callback)))
+
+    async def stop_notify(self, uuid: str) -> None:
+        self._notify_callbacks.pop(uuid.lower(), None)
+
+    async def write_gatt_char(self, uuid: str, data, response: bool = False) -> None:
+        # Control Point に書かれた opcode を即 ack で返す (= 模擬 trainer)
+        if uuid.lower() != FITNESS_MACHINE_CONTROL_POINT_UUID.lower():
+            return
+        if not data:
+            return
+        opcode = data[0]
+        # slope 設定なら内部状態を更新
+        if opcode == FTMS_OP_SET_INDOOR_BIKE_SIMULATION and len(data) >= 5:
+            grade_raw = struct.unpack_from("<h", bytes(data), 3)[0]
+            self._current_slope_pct = grade_raw / 100.0
+        # ack を 50ms 遅延で notify (= 実機の往復遅延に近い)
+        cb = self._notify_callbacks.get(FITNESS_MACHINE_CONTROL_POINT_UUID.lower())
+        if cb:
+            self._tasks.append(asyncio.create_task(self._delayed_ack(cb, opcode)))
+
+    async def _delayed_ack(self, cb, opcode: int) -> None:
+        await asyncio.sleep(0.05)
+        try:
+            cb(0, bytearray([0x80, opcode, 0x01]))  # Result=OK
+        except Exception:
+            pass
+
+    async def _indoor_bike_pump(self, cb) -> None:
+        """毎秒 Indoor Bike Data を notify。 slope が大きいほど speed が落ちる単純モデル。"""
+        try:
+            while not self._stopping:
+                # 25 km/h ベース、勾配 1% ごとに -1 km/h、 power は slope に比例
+                speed_kmh = max(5.0, 25.0 - self._current_slope_pct * 1.0)
+                speed_raw = int(speed_kmh * 100)
+                power_w = int(150 + self._current_slope_pct * 12)
+                cadence_raw = int(85 * 2)   # FTMS は 0.5 rpm 単位
+                # flag bit2 = instantaneous cadence, bit6 = instantaneous power、bit が 0 で速度プレゼント
+                flags = 0x0044
+                payload = struct.pack("<HHHh", flags, speed_raw, cadence_raw, power_w)
+                try:
+                    cb(0, bytearray(payload))
+                except Exception:
+                    pass
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+
+
+def _parse_control_response(data: bytes) -> Optional[tuple[int, int, str]]:
+    """FTMS Control Point indication payload を (req_op, result, result_name) に分解。
+
+    spec § 4.16: Response Op Code 0x80, Request Op Code, Result Code [, ...].
+    spec に合わない packet は None を返す (落ちない)。
+    """
+    if len(data) < 3 or data[0] != 0x80:
+        return None
+    req_op = data[1]
+    result = data[2]
+    result_name = {
+        0x01: "OK",
+        0x02: "Op-Not-Supported",
+        0x03: "Invalid-Parameter",
+        0x04: "Operation-Failed",
+        0x05: "Control-Not-Permitted",
+    }.get(result, f"Result=0x{result:02X}")
+    return (req_op, result, result_name)
+
+
 def _encode_set_indoor_bike_simulation(
     grade_pct: float,
     wind_mps: float = 0.0,
@@ -131,11 +268,13 @@ def _encode_set_indoor_bike_simulation(
 
 
 class Bridge:
-    def __init__(self, *, device: Optional[str], dummy: bool, port: int, log_dir: Path):
+    def __init__(self, *, device: Optional[str], dummy: bool, port: int, log_dir: Path,
+                 fake_trainer: bool = False):
         self.device = device
         self.dummy = dummy
         self.port = port
         self.log_dir = log_dir
+        self.fake_trainer = fake_trainer
 
         self.state = RideState()
         self._state_lock = asyncio.Lock()
@@ -146,45 +285,45 @@ class Bridge:
         self._csv_writer = None
         self._csv_file = None
         self._stopping = asyncio.Event()
+        self._mode_change = asyncio.Event()   # source-task 再起動シグナル
+        self._scan_busy = False
+        self.device_addr = device              # _handle_connect で更新
+        self._last_control_result: Optional[tuple[int, int, str]] = None   # 最後の trainer ack
+        # HRM (心拍計) 並行接続 ── trainer と別 BLE client
+        self._hrm_client: Optional[BleakClient] = None
+        self._hrm_task: Optional[asyncio.Task] = None
+        self._hrm_addr: Optional[str] = None
 
     # ---------- BLE ----------
 
     async def _resolve_device(self) -> Optional[str]:
-        if self.device:
-            return self.device
-        log.info("no --device given, scanning for FTMS for 6s...")
-        try:
-            found = await BleakScanner.discover(timeout=6.0, return_adv=True)
-        except BleakError as exc:
-            log.warning("BLE scan failed (%s) - falling back to dummy mode", exc)
-            return None
-        for addr, (_dev, adv) in found.items():
-            services = [s.lower() for s in (adv.service_uuids or [])]
-            if FTMS_SERVICE_UUID in services:
-                log.info("picked FTMS device %s (%s)", addr, _dev.name or "?")
-                return addr
-        log.warning("no FTMS device found in scan - falling back to dummy mode")
-        return None
+        # 明示指定された device しか使わない。 viewer 由来の scan/connect 命令で
+        # self.device が後から埋まる流れ。 起動時の auto-scan は廃止 (明示 ON しない限り走らせない方針)。
+        return self.device if self.device else None
 
     async def _ftms_loop(self) -> None:
         """Connect to the trainer and feed self.state from notifications.
 
-        Any failure here (timeout, BleakError) flips us into dummy mode and
-        exits cleanly - the WebSocket server keeps running with the dummy
-        producer task instead.
+        ポリシー: 明示 ON されたとき (=device 指定 / fake-trainer / viewer から
+        connect 命令) のみ走る。 失敗時は dummy に勝手に落とさず、 viewer に通知
+        して mode_change を待つ (= idle)。
         """
         addr = await self._resolve_device()
         if addr is None:
-            self.dummy = True
+            log.info("no device specified, awaiting connect command from viewer")
+            await self._mode_change.wait()
             return
 
         log.info("connecting to %s (timeout %.0fs)...", addr, CONNECT_TIMEOUT_S)
+        ClientCls = FakeBleakClient if self.fake_trainer else BleakClient
         try:
-            client = BleakClient(addr, timeout=CONNECT_TIMEOUT_S)
+            client = ClientCls(addr, timeout=CONNECT_TIMEOUT_S)
             await asyncio.wait_for(client.connect(), timeout=CONNECT_TIMEOUT_S)
         except (asyncio.TimeoutError, BleakError, OSError) as exc:
-            log.warning("connect failed (%s) - falling back to dummy mode", exc)
-            self.dummy = True
+            log.warning("connect failed (%s) - awaiting next connect command", exc)
+            # viewer に failure 通知は出さない (user 指示: タイムアウト/失敗表示は不要)。
+            # ftms_loop が次の connect 命令で起こされるまで idle に入る。
+            await self._mode_change.wait()
             return
 
         self._ble_client = client
@@ -209,21 +348,65 @@ class Bridge:
         try:
             await client.start_notify(INDOOR_BIKE_DATA_UUID, _notify)
         except BleakError as exc:
-            log.warning("subscribe failed (%s) - falling back to dummy mode", exc)
+            log.warning("subscribe failed (%s) - awaiting next connect command", exc)
             with contextlib.suppress(Exception):
                 await client.disconnect()
-            self.dummy = True
+            await self._mode_change.wait()
             return
 
-        # Try (but do not require) to request control + start; some trainers
-        # refuse simulation writes without this handshake, others ignore it.
-        for opcode in (FTMS_OP_REQUEST_CONTROL, FTMS_OP_START):
+        # subscribe 段階では「接続中、 ハンドシェイク進行中」を通知するに留める。
+        # 正式な connected はハンドシェイク (Request Control + Reset + Start) 完了後に出す。
+        await self._send_to_all({
+            "type": "connect_status", "state": "handshaking", "address": addr,
+        })
+
+        # Control Point Indication subscribe: 勾配 write 毎に trainer が
+        # 「受けた / Result Code XX」を返してくる、これを log + state に反映する。
+        def _on_control_response(_handle, data: bytearray) -> None:
+            parsed = _parse_control_response(bytes(data))
+            if parsed is None:
+                log.debug("trainer control-point notify (unparsed): %s", bytes(data).hex())
+                return
+            req_op, result, result_name = parsed
+            self._last_control_result = (req_op, result, result_name)
+            # state にも乗せて viewer に即時通知 (1Hz push 待ちで遅延を出さない)
+            self.state.last_ack = f"op=0x{req_op:02X} {result_name}"
+            log.info("trainer ack: req=0x%02X result=%s", req_op, result_name)
+            # 即時 push (callback は sync なので task に切り出して送る)
+            try:
+                loop = asyncio.get_running_loop()
+                payload = {"type": "state", **self.state.to_payload()}
+                loop.create_task(self._send_to_all(payload))
+            except RuntimeError:
+                # event loop が無いとき (test 等) は次の 1Hz push に任せる
+                pass
+
+        try:
+            await client.start_notify(
+                FITNESS_MACHINE_CONTROL_POINT_UUID, _on_control_response
+            )
+            log.info("subscribed to control-point indications")
+        except BleakError as exc:
+            log.warning("control-point notify subscribe failed: %s", exc)
+
+        # Request Control → Reset の 2 段。 Start (0x07) は省略。
+        # 実機 (Elite Direto / Wahoo / Tacx 他) では Start を投げると Operation-Failed
+        # を返す事が多い、 trainer が既に started 状態だから。 これで HUD の ack 行が
+        # 赤の Operation-Failed で止まり「ハンドシェイク未完了」に見える誤解を生んでた。
+        # spec § 4.16 上も Start は必須ではない (Reset で activated state に入る)。
+        for opcode in (FTMS_OP_REQUEST_CONTROL, FTMS_OP_RESET):
             try:
                 await client.write_gatt_char(
                     FITNESS_MACHINE_CONTROL_POINT_UUID, bytes([opcode]), response=True
                 )
             except BleakError as exc:
                 log.warning("FTMS control op 0x%02X failed: %s", opcode, exc)
+
+        # 3 段ハンドシェイク投げ終わって初めて「接続完了」を viewer に通知。
+        # viewer 側はこの通知でライド開始ボタンを有効化する仕様 (走り始めないと前回握りが残ってると分かる)。
+        await self._send_to_all({
+            "type": "connect_status", "state": "connected", "address": addr,
+        })
 
         await self._stopping.wait()
 
@@ -251,7 +434,19 @@ class Bridge:
 
     # ---------- WebSocket ----------
 
-    async def _ws_handler(self, ws: websockets.WebSocketServerProtocol) -> None:
+    async def _ws_handler(self, ws) -> None:
+        # Origin ヘッダ check (review 11-pair-security): localhost のみ許可
+        # websockets 12.x (legacy) と 15.x (asyncio) で API が違うので両対応
+        origin = ""
+        if hasattr(ws, "request_headers"):
+            origin = ws.request_headers.get("Origin") or ws.request_headers.get("origin") or ""
+        elif hasattr(ws, "request") and hasattr(ws.request, "headers"):
+            origin = ws.request.headers.get("Origin") or ws.request.headers.get("origin") or ""
+        if origin and not (origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")):
+            log.warning("rejecting WebSocket from non-localhost Origin: %r", origin)
+            await ws.close(code=4403, reason="origin not allowed")
+            return
+
         self._clients.add(ws)
         peer = getattr(ws, "remote_address", "?")
         log.info("viewer connected (%s, %d total)", peer, len(self._clients))
@@ -262,26 +457,269 @@ class Bridge:
                 except json.JSONDecodeError:
                     log.warning("non-JSON from viewer: %r", raw[:80])
                     continue
-                if msg.get("type") == "set_slope":
+                t = msg.get("type")
+                if t == "set_slope":
                     pct = float(msg.get("slope_pct", 0.0))
                     await self._send_slope(pct)
+                elif t == "scan":
+                    asyncio.create_task(self._handle_scan(ws))
+                elif t == "connect":
+                    addr = msg.get("address")
+                    if isinstance(addr, str) and addr:
+                        asyncio.create_task(self._handle_connect(ws, addr))
+                elif t == "disconnect":
+                    asyncio.create_task(self._handle_disconnect())
+                elif t == "hrm_connect":
+                    addr = msg.get("address")
+                    if isinstance(addr, str) and addr:
+                        asyncio.create_task(self._handle_hrm_connect(addr))
+                elif t == "hrm_disconnect":
+                    asyncio.create_task(self._handle_hrm_disconnect())
+                elif t == "ride_start":
+                    asyncio.create_task(self._handle_ride_start())
+                elif t == "ride_end":
+                    asyncio.create_task(self._handle_ride_end())
+                elif t == "position":
+                    # viewer 由来の現在地 1Hz push。 GPX 書き出し用に state 更新
+                    try:
+                        if msg.get("lat") is not None:
+                            self.state.lat = float(msg["lat"])
+                        if msg.get("lon") is not None:
+                            self.state.lon = float(msg["lon"])
+                        if msg.get("elevation_m") is not None:
+                            self.state.elevation_m = float(msg["elevation_m"])
+                        if msg.get("distance_m") is not None:
+                            self.state.distance_m = float(msg["distance_m"])
+                    except (TypeError, ValueError):
+                        log.warning("bad position payload: %r", msg)
+                else:
+                    log.debug("ignored unknown command: %r", t)
         except ConnectionClosed:
             pass
         finally:
             self._clients.discard(ws)
             log.info("viewer disconnected (%d remain)", len(self._clients))
 
+    # ---------- pairing commands ----------
+
+    async def _handle_scan(self, ws) -> None:
+        """BLE scan and push scan_result to all viewers. busy flag で 2 重起動を防ぐ。"""
+        if getattr(self, "_scan_busy", False):
+            await self._send_to_all({"type": "scan_status", "state": "busy"})
+            return
+        self._scan_busy = True
+        try:
+            await self._send_to_all({"type": "scan_status", "state": "scanning"})
+            log.info("BLE scan starting (%.1fs)...", SCAN_TIMEOUT_S)
+            try:
+                devices = await BleakScanner.discover(timeout=SCAN_TIMEOUT_S, return_adv=True)
+            except Exception as exc:
+                log.warning("scan failed: %s", exc)
+                await self._send_to_all({"type": "scan_status", "state": "failed", "message": str(exc)})
+                return
+            results = []
+            for addr, (dev, adv) in devices.items():
+                services = [s.lower() for s in (adv.service_uuids or [])]
+                is_ftms = FTMS_SERVICE_UUID in services
+                is_hrm = HEART_RATE_SERVICE_UUID in services
+                results.append({
+                    "address": dev.address,
+                    "name": dev.name or adv.local_name or "<no-name>",
+                    "rssi": getattr(adv, "rssi", None),
+                    "is_ftms": is_ftms,
+                    "is_hrm": is_hrm,
+                })
+            # FTMS / HRM を先頭、 残りは rssi 順
+            results.sort(key=lambda r: (not (r["is_ftms"] or r["is_hrm"]), -(r["rssi"] or -200)))
+            await self._send_to_all({"type": "scan_result", "devices": results})
+            log.info("scan complete: %d devices, %d FTMS", len(results), sum(1 for r in results if r["is_ftms"]))
+        finally:
+            self._scan_busy = False
+
+    async def _handle_connect(self, ws, address: str) -> None:
+        """与えられた device address に接続。 タイムアウト判定は廃止 (試行は ftms_loop で進む)。
+        成功通知は ftms_loop 内で subscribe 完了時に push される。 ダメなら静かに待つだけ。"""
+        log.info("connect requested: %s", address)
+        await self._send_to_all({"type": "connect_status", "state": "connecting", "address": address})
+        self.device_addr = address
+        self.device = address
+        self.dummy = False
+        self._mode_change.set()
+
+    async def _handle_disconnect(self) -> None:
+        log.info("disconnect requested")
+        if self._ble_client is not None:
+            with contextlib.suppress(Exception):
+                await self._ble_client.disconnect()
+        await self._send_to_all({"type": "disconnected", "reason": "user request"})
+
+    # ---------- HRM (心拍計) -----------------------------------------------
+
+    async def _handle_hrm_connect(self, address: str) -> None:
+        """心拍計に接続。 既に別 HRM が繋がってればまず切ってから接続。"""
+        log.info("HRM connect requested: %s", address)
+        await self._handle_hrm_disconnect()
+        self._hrm_addr = address
+        await self._send_to_all({
+            "type": "hrm_status", "state": "connecting", "address": address,
+        })
+        self._hrm_task = asyncio.create_task(self._hrm_loop(address))
+
+    async def _handle_hrm_disconnect(self) -> None:
+        if self._hrm_task is not None and not self._hrm_task.done():
+            self._hrm_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._hrm_task
+        self._hrm_task = None
+        if self._hrm_client is not None:
+            with contextlib.suppress(Exception):
+                await self._hrm_client.disconnect()
+            self._hrm_client = None
+        if self._hrm_addr is not None:
+            log.info("HRM disconnected: %s", self._hrm_addr)
+            await self._send_to_all({
+                "type": "hrm_status", "state": "disconnected", "address": self._hrm_addr,
+            })
+            self._hrm_addr = None
+        # state からも bpm を消す
+        self.state.hr_bpm = None
+
+    async def _hrm_loop(self, addr: str) -> None:
+        """HRM 機器に接続して Heart Rate Measurement を購読、 self.state.hr_bpm に反映。"""
+        try:
+            client = BleakClient(addr, timeout=CONNECT_TIMEOUT_S)
+            await asyncio.wait_for(client.connect(), timeout=CONNECT_TIMEOUT_S)
+        except (asyncio.TimeoutError, BleakError, OSError) as exc:
+            log.warning("HRM connect failed (%s)", exc)
+            await self._send_to_all({
+                "type": "hrm_status", "state": "failed", "address": addr,
+                "message": str(exc),
+            })
+            return
+        self._hrm_client = client
+        log.info("HRM connected: %s", addr)
+
+        def _on_hr(_handle, data: bytearray) -> None:
+            parsed = _parse_heart_rate(bytes(data))
+            if "hr_bpm" in parsed:
+                self.state.hr_bpm = parsed["hr_bpm"]
+                # ack と同じく即時 push (1Hz 待ちで遅延を出さない)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._send_to_all({
+                        "type": "state", **self.state.to_payload(),
+                    }))
+                except RuntimeError:
+                    pass
+
+        try:
+            await client.start_notify(HEART_RATE_MEASUREMENT_UUID, _on_hr)
+        except BleakError as exc:
+            log.warning("HRM subscribe failed: %s", exc)
+            with contextlib.suppress(Exception):
+                await client.disconnect()
+            await self._send_to_all({
+                "type": "hrm_status", "state": "failed", "address": addr,
+                "message": f"subscribe failed: {exc}",
+            })
+            self._hrm_client = None
+            return
+
+        await self._send_to_all({
+            "type": "hrm_status", "state": "connected", "address": addr,
+        })
+        try:
+            # 接続が切れるか cancel されるまで待機
+            while client.is_connected:
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            with contextlib.suppress(Exception):
+                await client.stop_notify(HEART_RATE_MEASUREMENT_UUID)
+            with contextlib.suppress(Exception):
+                await client.disconnect()
+
+    async def _handle_ride_start(self) -> None:
+        """ライド開始: 新規 CSV ファイル + 状態 reset。
+        trainer 側との同期のため、 開始の合図として slope=0 を 1 回送る
+        (前 ride で握ってた grade をクリアして flat から始まる)。"""
+        # 旧 ride が開いてれば閉じる
+        self._close_csv()
+        self.state.distance_m = 0.0
+        self.state.lat = None
+        self.state.lon = None
+        self.state.elevation_m = None
+        self._open_csv()
+        # trainer と再同期 (BLE 接続済なら slope=0、 切断中ならスキップ)
+        await self._send_slope(0.0)
+        log.info("ride started, logging to %s", self._csv_path)
+        await self._send_to_all({
+            "type": "ride_status", "state": "started",
+            "csv_path": str(self._csv_path) if self._csv_path else None,
+        })
+
+    async def _handle_ride_end(self) -> None:
+        """ライド終了: CSV を閉じて、 同じ basename で GPX を書く。 path を viewer に通知。"""
+        if self._csv_path is None or self._csv_writer is None:
+            log.info("ride_end requested but no active ride")
+            await self._send_to_all({
+                "type": "ride_status", "state": "no-active-ride",
+            })
+            return
+        csv_path = self._csv_path
+        self._close_csv()
+        gpx_path = csv_path.with_suffix(".gpx")
+        try:
+            n = csv_to_gpx(csv_path, gpx_path, name=f"fujihc {csv_path.stem}")
+            log.info("ride ended: %d points → %s", n, gpx_path)
+            await self._send_to_all({
+                "type": "ride_status", "state": "ended",
+                "csv_path": str(csv_path), "gpx_path": str(gpx_path),
+                "points": n,
+            })
+        except Exception as exc:
+            log.warning("GPX export failed: %s", exc)
+            await self._send_to_all({
+                "type": "ride_status", "state": "export-failed",
+                "csv_path": str(csv_path),
+                "message": str(exc),
+            })
+
+    async def _send_to_all(self, payload: dict) -> None:
+        data = json.dumps(payload)
+        stale = []
+        for client in list(self._clients):
+            try:
+                await client.send(data)
+            except Exception:
+                stale.append(client)
+        for c in stale:
+            self._clients.discard(c)
+
     async def _send_slope(self, slope_pct: float) -> None:
         self.state.slope_sent_pct = slope_pct
         if self._ble_client is None or not self._ble_client.is_connected:
             return
         payload = _encode_set_indoor_bike_simulation(slope_pct)
+        # FTMS spec § 4.16: Control Point の Write は With-Response 想定。
+        # ここで indication (ack) が返ってくる契約。 まず response=True で送って、
+        # 機種が拒否したら no-resp に fallback する (一部 Wahoo の workaround 用)。
         try:
             await self._ble_client.write_gatt_char(
                 FITNESS_MACHINE_CONTROL_POINT_UUID, payload, response=True
             )
+            log.info("set-slope %.2f%% sent (resp, %d bytes hex=%s)",
+                     slope_pct, len(payload), payload.hex())
         except BleakError as exc:
-            log.warning("set-slope %.2f%% failed: %s", slope_pct, exc)
+            log.warning("set-slope resp failed (%s), retrying with response=False", exc)
+            try:
+                await self._ble_client.write_gatt_char(
+                    FITNESS_MACHINE_CONTROL_POINT_UUID, payload, response=False
+                )
+                log.info("set-slope %.2f%% sent (no-resp)", slope_pct)
+            except BleakError as exc2:
+                log.warning("set-slope %.2f%% failed both modes: %s", slope_pct, exc2)
 
     async def _push_loop(self) -> None:
         period = 1.0 / PUSH_HZ
@@ -310,8 +748,8 @@ class Bridge:
         self._csv_file = open(self._csv_path, "w", encoding="utf-8", newline="")
         self._csv_writer = csv.writer(self._csv_file)
         self._csv_writer.writerow([
-            "time_iso", "distance_m", "speed_mps",
-            "power_w", "cadence_rpm", "slope_sent_pct",
+            "time_iso", "distance_m", "lat", "lon", "elevation_m",
+            "speed_mps", "power_w", "cadence_rpm", "hr_bpm", "slope_sent_pct",
         ])
         log.info("ride log: %s", self._csv_path)
 
@@ -319,12 +757,18 @@ class Bridge:
         if self._csv_writer is None:
             return
         s = self.state
+        # tz 付き ISO 8601 (= GPX <time> としてそのまま使える)
+        time_iso = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
         self._csv_writer.writerow([
-            _dt.datetime.now().isoformat(timespec="seconds"),
+            time_iso,
             round(s.distance_m, 2),
+            f"{s.lat:.7f}" if s.lat is not None else "",
+            f"{s.lon:.7f}" if s.lon is not None else "",
+            round(s.elevation_m, 2) if s.elevation_m is not None else "",
             round(s.speed_mps, 3),
             s.power_w if s.power_w is not None else "",
             round(s.cadence_rpm, 1) if s.cadence_rpm is not None else "",
+            s.hr_bpm if s.hr_bpm is not None else "",
             round(s.slope_sent_pct, 2),
         ])
         self._csv_file.flush()
@@ -333,35 +777,57 @@ class Bridge:
         if self._csv_file is not None:
             with contextlib.suppress(Exception):
                 self._csv_file.close()
+            self._csv_file = None
+            self._csv_writer = None
 
     # ---------- top-level ----------
 
     async def run(self) -> None:
-        self._open_csv()
+        # CSV は ride_start で開く (起動だけでは log を作らない、 user 指示「明示 ON のみ」)
         try:
             async with websockets.serve(self._ws_handler, "localhost", self.port):
                 log.info("WebSocket server listening on ws://localhost:%d", self.port)
 
-                source_task: asyncio.Task
-                if self.dummy:
-                    log.info("dummy mode: emitting 20 km/h constant speed")
-                    source_task = asyncio.create_task(self._dummy_loop())
-                else:
-                    source_task = asyncio.create_task(self._ftms_loop())
-
                 push_task = asyncio.create_task(self._push_loop())
 
-                # If FTMS fell back to dummy, _ftms_loop returns and we start
-                # the dummy producer instead - keeps the WebSocket server up.
-                await source_task
-                if self.dummy and not push_task.done():
-                    fallback = asyncio.create_task(self._dummy_loop())
-                    try:
-                        await self._stopping.wait()
-                    finally:
-                        fallback.cancel()
+                # supervisor loop: dummy / ftms を mode_change で切替えながら回す。
+                # _stopping が発火するまで bridge は生き続け、connect コマンド毎に source_task を作り直す。
+                while not self._stopping.is_set():
+                    if self.dummy:
+                        log.info("dummy mode: emitting 20 km/h constant speed")
+                        source_task = asyncio.create_task(self._dummy_loop())
+                    else:
+                        log.info("ftms mode: target device = %s", self.device_addr or "<scan>")
+                        source_task = asyncio.create_task(self._ftms_loop())
+
+                    # source_task が自然終了 (= ftms 失敗で dummy fallback)、
+                    # または mode_change で再起動指示が来るまで wait
+                    done, _ = await asyncio.wait(
+                        [source_task, asyncio.create_task(self._mode_change.wait())],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    if self._stopping.is_set():
+                        source_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
-                            await fallback
+                            await source_task
+                        break
+
+                    if self._mode_change.is_set():
+                        self._mode_change.clear()
+                        source_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await source_task
+                        # 既存 BLE があれば切断
+                        if self._ble_client is not None:
+                            with contextlib.suppress(Exception):
+                                await self._ble_client.disconnect()
+                            self._ble_client = None
+                        # loop top で新 source_task 起動
+                        continue
+
+                    # source_task が自然に終わった (= ftms_loop が idle に入って mode_change で起きた)
+                    # 次 loop 反復で再度 _ftms_loop を起動 (device 無しなら再び idle 待ち)
 
                 push_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -377,6 +843,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="fujihc.bridge", description=__doc__)
     parser.add_argument("--device", help="BLE device address; if absent, scan + pick first FTMS")
     parser.add_argument("--dummy", action="store_true", help="skip BLE, emit constant speed")
+    parser.add_argument("--fake-trainer", action="store_true",
+                        help="BLE を使わず内蔵の fake trainer で full loop を simulate")
     parser.add_argument("--port", type=int, default=8765, help="WebSocket port (default 8765)")
     parser.add_argument("--log-dir", default="~/fujihc-trainer/logs", help="CSV output dir")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -392,7 +860,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         dummy=args.dummy,
         port=args.port,
         log_dir=Path(os.path.expanduser(args.log_dir)),
+        fake_trainer=args.fake_trainer,
     )
+    if args.fake_trainer:
+        # fake trainer は実 BLE 不要なので default device を fake address に
+        if not bridge.device:
+            bridge.device = "FA:KE:00:00:00:01"
+        bridge.device_addr = bridge.device
+        bridge.dummy = False   # supervisor を ftms_loop に向ける
+        log.info("fake-trainer mode: simulated FTMS device at %s", bridge.device)
 
     async def _runner() -> int:
         loop = asyncio.get_running_loop()
