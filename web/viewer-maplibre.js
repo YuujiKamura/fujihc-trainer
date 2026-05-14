@@ -129,7 +129,8 @@ const map = new maplibregl.Map({
         } },
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
-    sky: { 'sky-color': '#87ceeb', 'horizon-color': '#ffd6a5', 'fog-color': '#cccccc' },
+    // 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
+    sky: { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' },
   },
   center: [138.7587, 35.4521],
   zoom: 13,
@@ -1192,6 +1193,28 @@ if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
 bindSlider('rngDiff', 'diffVal', 'fujihc.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
 bindSlider('rngSpd', 'spdVal', 'fujihc.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
+
+// 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
+// setPaintProperty で live 更新、 デバッグ表示も同時。
+function applyLightDir(deg) {
+  setText('lightDirVal', String(Math.round(deg)));
+  setText('dbgLightDir', String(Math.round(deg)));
+  if (map && map.getLayer && map.getLayer('hillshade')) {
+    map.setPaintProperty('hillshade', 'hillshade-illumination-direction', deg);
+  }
+}
+function applyLightStr(pct) {
+  const exag = pct / 100;
+  setText('lightStrVal', String(Math.round(pct)));
+  setText('dbgLightExag', exag.toFixed(2));
+  if (map && map.getLayer && map.getLayer('hillshade')) {
+    map.setPaintProperty('hillshade', 'hillshade-exaggeration', exag);
+  }
+}
+const rLightDir = document.getElementById('rngLightDir');
+if (rLightDir) rLightDir.addEventListener('input', () => applyLightDir(parseFloat(rLightDir.value)));
+const rLightStr = document.getElementById('rngLightStr');
+if (rLightStr) rLightStr.addEventListener('input', () => applyLightStr(parseFloat(rLightStr.value)));
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
