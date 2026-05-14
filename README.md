@@ -4,16 +4,15 @@
 
 ## 初回セットアップ
 
-### コース GPX → course.json 変換 (= user 個人で取得)
+### コースデータ (= web/course.json)
 
-公式 [fujihc.jp/course](https://fujihc.jp/course/) からコース GPX をダウンロード、 個人 PC 内で変換:
+GPX (例えば公式 [fujihc.jp/course](https://fujihc.jp/course/) で公開されているもの) を `src/fujihc/course.py` で変換した派生 JSON。 距離 / 標高 / 勾配 / lat / lon の列で、 元 GPX とは別物。 自分の GPX を使いたい場合は:
 
 ```sh
-python -m fujihc.course ~/Downloads/fujihc-course.gpx > web/course.json
+python -m fujihc.course ~/path/to/your.gpx > web/course.json
 ```
 
-- `web/course.json` は `.gitignore` 済 (= 走った人ごとに生成される派生データ、 個人で変換する筋)
-- 富士ヒル以外のコース (= 自分の GPX) でも変換 → 動作する、 minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
+- 富士ヒル以外のコースでも動作する、 minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
 
 ### タイル DB セットアップ
 

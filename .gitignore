@@ -7,10 +7,5 @@ data/measurements/*.jsonl
 data/*.sqlite
 data/*.pmtiles
 
-# course.json は公式 (fujihc.jp) GPX から個人で変換した派生物.
-# 走った人の数だけ生まれる類のデータで著作物性は弱い (= 試走/通行データに近い)、
-# 公式も強硬に主張する性質ではないが、 個人ごとに変換する方が筋なので untrack.
-# 新規 clone した user は src/fujihc/course.py で各自 GPX → course.json 変換.
-web/course.json
 node_modules/
 .omc/
