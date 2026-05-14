@@ -6,5 +6,11 @@ logs/
 data/measurements/*.jsonl
 data/*.sqlite
 data/*.pmtiles
+
+# course.json は公式 (fujihc.jp) GPX から変換した派生物.
+# 公式の利用規約に転載条件の明文がなく、 著作権 All Rights Reserved 表示あり.
+# 個人 PC 内 use は私的使用 (= 著作権法 30 条) 範囲、 公開 repo へ commit は避ける.
+# 新規 clone した user は src/fujihc/course.py で各自 GPX → course.json 変換すること.
+web/course.json
 node_modules/
 .omc/

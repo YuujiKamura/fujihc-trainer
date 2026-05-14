@@ -40,4 +40,9 @@ MINIMAP_OSM_ZOOM = 11
 # (lon_min, lat_min, lon_max, lat_max). 富士スバルライン 24 km + 周辺余裕、
 # z=11 で 9-16 タイルに収まる範囲. 個人小規模 1-shot, OSM Tile Usage Policy
 # 「cache aggressively」推奨に積極準拠.
+#
+# 注意: この bbox は **富士スバルライン専用 hardcode**. 他コース (= 自分の GPX)
+# で運用する場合は course.json の lat/lon から bbox を導出して上書きすること.
+# 将来的に enumerate_bbox_tiles(course, MINIMAP_OSM_ZOOM, margin) で動的算出に
+# 切替予定 (= brief 候補)、 現状は明示性優先で固定値.
 MINIMAP_BBOX = (138.65, 35.30, 138.85, 35.50)

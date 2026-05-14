@@ -4,6 +4,20 @@
 
 ## 初回セットアップ
 
+### コース GPX → course.json 変換 (= user 個人で取得)
+
+公式 [fujihc.jp/course](https://fujihc.jp/course/) からコース GPX をダウンロード、 個人 PC 内で変換:
+
+```sh
+python -m fujihc.course ~/Downloads/fujihc-course.gpx > web/course.json
+```
+
+- `web/course.json` は **`.gitignore` 済**、 リポに commit しない (= 公式 GPX の著作権配慮、 私的使用範囲)
+- 公開 repo / OSS 公開時は course.json の commit 履歴も削除 (= `git filter-repo --path web/course.json --invert-paths` 等で履歴清掃)
+- 富士ヒル以外のコース (= 自分の GPX) でも変換 → 動作するが minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
+
+### タイル DB セットアップ
+
 タイル DB (= 国土地理院 DEM + OSM 地名 PMTiles) をローカルに用意する:
 
 ```sh
