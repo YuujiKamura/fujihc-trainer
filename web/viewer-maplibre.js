@@ -618,7 +618,8 @@ function initMapMode() {
   });
   // 描画完了まで ride を待機 (= user 指示: 「全体描画が終わるまでスタートせずに待機」).
   // ローディングインジケータを表示、 rideState 準備済 + map.idle (= 全 tile load + render flush)
-  // 両方揃ったら ride 開始 + インジケータ hide.
+  // 両方揃ったら ride 開始 + インジケータ hide. ただし terrain dem の継続要求で idle が
+  // 発火しないケースの fallback として、 6 秒で強制 start.
   const loader = document.getElementById('loading-indicator');
   if (loader) { loader.style.display = 'block'; loader.textContent = '描画準備中...'; }
   let mapIdle = false;
@@ -630,6 +631,9 @@ function initMapMode() {
     rideStartedAt = performance.now();
   }
   map.once('idle', () => { mapIdle = true; tryStart(); });
+  // fallback: 6 秒待っても idle が来なければ強制 start (= terrain dem の継続 fetch で
+  // idle が永遠に発火しない MapLibre の挙動 workaround).
+  setTimeout(() => { if (!mapIdle) { mapIdle = true; tryStart(); } }, 6000);
   const waitForRide = setInterval(() => {
     if (rideState) {
       clearInterval(waitForRide);
