@@ -230,7 +230,19 @@ function setupPitchDrag() {
 // - dbinit: DB 不足、 #dbinit-overlay で GSI fetch / OSM extract / skip を user に提示
 // - pairing: 既存 BLE flow (= state-pairing と同じ挙動)
 // - riding: 既存 ride 中
-function setAppState(s) { document.body.className = `state-${s}`; }
+// start/goal の MapLibre Marker への参照 (= ride 中 hide 用、 loadCourse で初期化)
+let startGoalMarkers = [];
+function updateStartGoalVisibility() {
+  const hide = document.body.classList.contains('state-riding');
+  for (const m of startGoalMarkers) {
+    const el = m.getElement && m.getElement();
+    if (el) el.style.display = hide ? 'none' : 'block';
+  }
+}
+function setAppState(s) {
+  document.body.className = `state-${s}`;
+  updateStartGoalVisibility();
+}
 setAppState('checking');
 
 // brief 26b: bridge への HTTP fetch base. WebSocket とは別経路 (= /tiles/* aiohttp app)。
@@ -682,8 +694,14 @@ async function loadCourse() {
     });
   }
   // start / goal markers
-  new maplibregl.Marker({ color: '#7fff00' }).setLngLat([course[0].lon, course[0].lat]).addTo(map);
-  new maplibregl.Marker({ color: '#ff3030' }).setLngLat([course[course.length - 1].lon, course[course.length - 1].lat]).addTo(map);
+  // start (緑) / goal (赤) pin: pairing / dbinit 中は表示、 ride 中は hide
+  // (= MapLibre Marker は DOM SVG で polygon の上に描画され「うっすら前に浮く」、
+  //   ride 視点では minimap に start/goal が見えるのでメイン map から退ける).
+  startGoalMarkers = [
+    new maplibregl.Marker({ color: '#7fff00' }).setLngLat([course[0].lon, course[0].lat]).addTo(map),
+    new maplibregl.Marker({ color: '#ff3030' }).setLngLat([course[course.length - 1].lon, course[course.length - 1].lat]).addTo(map),
+  ];
+  updateStartGoalVisibility();
 
   // rider マーカー: fill-extrusion で本物の 3D 立体 (豆腐型)、 高さ方向に押し出した polygon。
   // rider 位置 + 進行方向で毎フレーム polygon coordinates を更新する。
