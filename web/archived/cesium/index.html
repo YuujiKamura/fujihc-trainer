@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>fujihc viewer (phase 0)</title>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.123/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.123/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>
+  html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }
+  /* ride 中の HUD / controls / minimap。 起動 (pairing) 中は body.state-pairing で非表示 */
+  body.state-pairing #hud,
+  body.state-pairing #controls,
+  body.state-pairing #minimap { display: none !important; }
+  #hud {
+    position: fixed; left: 1rem; bottom: 1rem; z-index: 999;
+    color: #fff; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace;
+    background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
+    pointer-events: none; min-width: 14rem;
+  }
+  #hud b { color: #ffd54a; }
+  #controls {
+    position: fixed; right: 1rem; bottom: 1rem; z-index: 999;
+    color: #fff; font: 13px ui-monospace, monospace;
+    background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
+    min-width: 18rem;
+  }
+  #controls button { font: inherit; margin: 0 0.2rem; padding: 0.2rem 0.6rem; min-height: 32px; }
+  #controls .row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+  #controls .row label { flex: 0 0 5.2rem; color: #ffd54a; font-size: 12px; }
+  #controls .row input[type=range] { flex: 1; }
+  #controls .row .val { flex: 0 0 3.2rem; text-align: right; font-size: 12px; }
+  #status {
+    position: fixed; right: 1rem; top: 1rem; z-index: 999;
+    color: #aaa; font: 12px ui-monospace, monospace;
+    background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
+  }
+  #minimap {
+    position: fixed; left: 1rem; top: 1rem; z-index: 999;
+    background: rgba(0, 0, 0, 0.8); border-radius: 6px;
+    display: block;
+  }
+
+  /* pairing overlay = 起動時に出る Zwift 風セットアップ画面 */
+  #setup-overlay {
+    position: fixed; inset: 0; z-index: 1500;
+    background: rgba(0, 0, 0, 0.86);
+    display: none;
+    align-items: center; justify-content: center;
+    color: #fff; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace;
+  }
+  #setup-overlay.visible { display: flex; }
+  #setup-panel {
+    background: #1a1a22; border: 1px solid #444; border-radius: 10px;
+    padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.5);
+  }
+  #setup-panel h2 { margin: 0 0 0.5rem; color: #ffd54a; font-size: 20px; }
+  #setup-panel h3 { margin: 0.8rem 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #setup-panel .status-line { color: #aaa; margin-bottom: 0.5rem; font-size: 12px; }
+
+  /* step indicator: scan → connected → handshaking → ready */
+  #step-indicator { display: flex; gap: 0.4rem; margin: 0.6rem 0 0.4rem; }
+  #step-indicator .step {
+    flex: 1; padding: 0.3rem 0.4rem; text-align: center;
+    border: 1px solid #333; border-radius: 4px;
+    font-size: 11px; color: #777; background: #14141a;
+  }
+  #step-indicator .step.active { color: #ffd54a; border-color: #ffd54a; background: #2a2418; }
+  #step-indicator .step.done { color: #7fff00; border-color: #7fff00; }
+
+  /* trainer / metric の 2 カラム */
+  .pair-cols { display: flex; gap: 1rem; margin-bottom: 0.6rem; }
+  .pair-cols section {
+    flex: 1; background: #14141a; border: 1px solid #333;
+    border-radius: 6px; padding: 0.5rem 0.7rem;
+  }
+  .pair-cols section dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.6rem; font-size: 12px; }
+  .pair-cols section dt { color: #ffd54a; }
+  .pair-cols section dd { margin: 0; color: #ddd; word-break: break-all; }
+
+  /* 機器選択 */
+  #setup-list { list-style: none; padding: 0; margin: 0 0 0.5rem; max-height: 200px; overflow-y: auto; }
+  #setup-list li {
+    padding: 0.5rem 0.7rem; border-radius: 4px; cursor: pointer;
+    border: 1px solid #333; margin-bottom: 0.3rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #setup-list li:hover, #setup-list li:focus { background: #2a2a36; border-color: #666; outline: none; }
+  #setup-list li.ftms { border-left: 3px solid #ffd54a; }
+  #setup-list .dev-name { font-weight: bold; }
+  #setup-list .dev-meta { color: #888; font-size: 11px; }
+  #setup-buttons { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  #setup-buttons button { font: inherit; padding: 0.4rem 0.9rem; cursor: pointer; min-height: 36px; }
+  #setup-error { color: #ff5050; margin: 0.4rem 0; min-height: 1em; font-size: 12px; }
+
+  /* hero「ライド開始」ボタン */
+  #btnRideStart {
+    display: block; width: 100%; margin-top: 0.9rem;
+    background: #7fff00; color: #000; font: bold 18px/1.4 ui-monospace, monospace;
+    border: none; border-radius: 6px; padding: 0.8rem 1.2rem;
+    min-height: 56px; cursor: pointer;
+  }
+  #btnRideStart:disabled { background: #444; color: #888; cursor: not-allowed; }
+  #btnRideStart:focus { outline: 3px solid #ffd54a; outline-offset: 2px; }
+
+  /* post-ride overlay = ライド終了後の GPX 保存パネル */
+  #postride-overlay {
+    position: fixed; inset: 0; z-index: 1600;
+    background: rgba(0, 0, 0, 0.86);
+    display: none;
+    align-items: center; justify-content: center;
+    color: #fff; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace;
+  }
+  #postride-overlay.visible { display: flex; }
+  #postride-panel {
+    background: #1a1a22; border: 1px solid #444; border-radius: 10px;
+    padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px;
+  }
+  #postride-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #postride-panel .gpx-line {
+    background: #14141a; border: 1px solid #333; border-radius: 4px;
+    padding: 0.5rem 0.7rem; margin: 0.5rem 0;
+    font-family: ui-monospace, monospace; font-size: 12px;
+    color: #ffd54a; word-break: break-all;
+  }
+  #postride-panel .hint { color: #aaa; font-size: 12px; margin: 0.4rem 0; }
+  #postride-panel button { font: inherit; padding: 0.5rem 1rem; margin-right: 0.4rem; min-height: 36px; cursor: pointer; }
+
+  /* デモモード確認ダイアログ */
+  #confirm-overlay {
+    position: fixed; inset: 0; z-index: 1700;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  #confirm-overlay.visible { display: flex; }
+  #confirm-panel {
+    background: #1a1a22; border: 1px solid #ffd54a; border-radius: 8px;
+    padding: 1.2rem 1.4rem; max-width: 440px;
+    color: #fff; font: 14px/1.5 ui-monospace, monospace;
+  }
+  #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
+  #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
+  #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
+</style>
+</head>
+<body class="state-pairing">
+<div id="cesiumContainer"></div>
+
+<!-- ride 中の HUD (起動時は body.state-pairing で hidden) -->
+<div id="hud">
+  <b>time</b>  <span id="elapsed">00:00:00</span><br>
+  <b>dist</b>  <span id="dist">0</span> / <span id="total">?</span> m<br>
+  <b>ele</b>   <span id="ele">0</span> m<br>
+  <b>slope</b> <span id="slope">0</span> % <span style="color:#888">(送信 <span id="slope-sent">0.0</span>%)</span><br>
+  <b>speed</b> <span id="speed">20 km/h</span><br>
+  <b>power</b> <span id="power">--</span> W<br>
+  <b>cad</b>   <span id="cadence">--</span> rpm<br>
+  <b>hr</b>    <span id="hr">--</span> bpm<br>
+  <b>ack</b>   <span id="ack" style="color:#aaa">trainer 応答待ち</span>
+</div>
+
+<!-- ride 中の controls (pause + ride end + slider のみ。 ride 開始は pairing 側) -->
+<div id="controls">
+  <div>
+    <button id="btnRideEnd" disabled>ライド終了</button>
+    <button id="btnPause">pause</button>
+    <button id="btnOpenPairing" title="機器の追加・再接続 (心拍計 etc)">機器設定</button>
+  </div>
+  <div class="row" title="trainer に送る勾配を何 % のスケールで送るか。Zwift の Trainer Difficulty と同じ">
+    <label>負荷</label>
+    <input id="rngDiff" type="range" min="10" max="200" step="5" value="100" aria-label="負荷スケール (%)">
+    <span class="val"><span id="diffVal">100</span>%</span>
+  </div>
+  <div class="row" title="表示上の走行速度を倍率で補正。実走感に合わせて調整">
+    <label>速度倍率</label>
+    <input id="rngSpd" type="range" min="50" max="200" step="5" value="100" aria-label="速度倍率 (%)">
+    <span class="val"><span id="spdVal">1.00</span>x</span>
+  </div>
+</div>
+
+<div id="status">loading course.json...</div>
+
+<!-- Pairing overlay (Zwift 風起動画面)。 trainer 接続 + ハンドシェイク + ライド開始までの全情報を集約 -->
+<div id="setup-overlay" class="visible" role="dialog" aria-modal="true" aria-labelledby="pairing-title">
+  <div id="setup-panel">
+    <h2 id="pairing-title">fujihc trainer ライド準備</h2>
+    <div class="status-line" id="setup-status">起動中...</div>
+
+    <div id="step-indicator" aria-label="接続進行">
+      <div class="step" id="step-scan">1. 機器検出</div>
+      <div class="step" id="step-connect">2. BLE 接続</div>
+      <div class="step" id="step-handshake">3. ハンドシェイク</div>
+      <div class="step" id="step-ready">4. 走行準備完了</div>
+    </div>
+
+    <div class="pair-cols">
+      <section aria-labelledby="trainer-h">
+        <h3 id="trainer-h">trainer</h3>
+        <dl>
+          <dt>機種</dt><dd><span id="p-device">--</span></dd>
+          <dt>状態</dt><dd><span id="p-state">--</span></dd>
+          <dt>応答</dt><dd><span id="p-ack">--</span></dd>
+        </dl>
+      </section>
+      <section aria-labelledby="metric-h">
+        <h3 id="metric-h">live values</h3>
+        <dl>
+          <dt>power</dt><dd><span id="p-power">--</span> W</dd>
+          <dt>cadence</dt><dd><span id="p-cadence">--</span> rpm</dd>
+          <dt>speed</dt><dd><span id="p-speed">--</span> km/h</dd>
+          <dt>hr</dt><dd><span id="p-hr">--</span> bpm</dd>
+        </dl>
+      </section>
+    </div>
+
+    <h3>機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></h3>
+    <ul id="setup-list" role="listbox" aria-label="検出された BLE 機器"></ul>
+    <div id="setup-error" role="alert"></div>
+    <div id="setup-buttons">
+      <button id="btnScan" title="trainer (FTMS) を探す、 検出したら自動接続">trainer スキャン</button>
+      <button id="btnScanHrm" title="心拍計 (Heart Rate) を探す、 検出後リストから選んで接続">心拍計スキャン</button>
+      <button id="btnSkip" title="trainer に繋がず動作確認だけしたい時用、 走行データは保存されない">trainer なしでデモ走行</button>
+      <button id="btnClosePairing" hidden title="ライド中に開いた時のみ、 ライドに戻る">ライドに戻る</button>
+    </div>
+
+    <button id="btnRideStart" disabled aria-describedby="ride-start-hint">▶ ライド開始</button>
+    <div id="ride-start-hint" style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">
+      trainer のハンドシェイク完了後に押せるようになります
+    </div>
+  </div>
+</div>
+
+<!-- Post-ride overlay (ライド終了後の保存通知 + GPX path コピー) -->
+<div id="postride-overlay" role="dialog" aria-modal="true" aria-labelledby="postride-title">
+  <div id="postride-panel">
+    <h2 id="postride-title">✓ ライド保存完了</h2>
+    <div>保存ファイル (<span id="post-points">0</span> 点):</div>
+    <div class="gpx-line" id="post-gpx-path">--</div>
+    <div class="hint">
+      パスはクリップボードにコピー済 (ボタンで再コピーも可)。<br>
+      Strava の「アクティビティをアップロード」でこのファイルを投げると Virtual Ride として取り込まれる。
+    </div>
+    <div>
+      <button id="btnCopyPath">パスを再コピー <span id="copy-status" style="color:#7fff00;"></span></button>
+      <button id="btnBackToPairing">続けてもう一度</button>
+    </div>
+  </div>
+</div>
+
+<!-- デモモード移行確認 -->
+<div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div id="confirm-panel">
+    <h3 id="confirm-title">デモモードに切り替えますか?</h3>
+    <div>
+      trainer に繋がず、 走行アニメーションだけ動かします。<br>
+      <strong style="color:#ff8;">走行データは保存されません</strong> (Strava にアップできない)。<br>
+      動作確認用です。
+    </div>
+    <div class="actions">
+      <button id="btnConfirmDemo">はい、 デモ走行</button>
+      <button id="btnCancelDemo">いいえ、 戻る</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="minimap" width="320" height="720"></canvas>
+<script src="viewer.js?v=36"></script>
+</body>
+</html>
