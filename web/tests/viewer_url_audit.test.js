@@ -55,4 +55,20 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   it('TEST_MODE 時は connectBridge を skip する', () => {
     expect(viewer).toMatch(/if\s*\(\s*TEST_MODE\s*\)\s*initTestMode\(\)/);
   });
+
+  // brief 23: GPS ジッター除去 (= 短距離ジグザグ補正のみ、 window=5)
+  it('smoothCourse を web/lib/gpx_smooth.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*smoothCourse[^}]*\}\s+from\s+['"]\.\/lib\/gpx_smooth\.js['"]/);
+  });
+
+  // brief 24 + 25: 勾配グレード色分けで道路幅 polygon 描画
+  it('buildGradeColoredRoadPolygons を web/lib/road_polygon.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*buildGradeColoredRoadPolygons[^}]*\}\s+from\s+['"]\.\/lib\/road_polygon\.js['"]/);
+  });
+
+  it('route layer は line ではなく fill (= 道幅 polygon)', () => {
+    // route-fill layer が定義されている、 旧 route-line (only) の置き換え済
+    expect(viewer).toMatch(/id:\s*['"]route-fill['"]/);
+    expect(viewer).toMatch(/['"]fill-color['"]:\s*\[['"]get['"],\s*['"]color['"]\]/);
+  });
 });

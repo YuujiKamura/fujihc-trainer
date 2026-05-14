@@ -1,0 +1,179 @@
+// brief 19: WebSocket client を 1 module に集約 (= NG-R1-12 解消).
+// viewer-maplibre.js から ws send / message dispatch を消す pure-ish module.
+// DOM / localStorage は触らない (= viewer 側の責務、 受信は handlers callback で渡す).
+//
+// protocol message 種別はここで一覧:
+//   - send: ride_start, ride_end, scan, connect, hrm_connect, disconnect, set_slope, position
+//   - recv: state, scan_status, scan_result, connect_status, disconnected, hrm_status,
+//           ride_status, post_ride (= handlers で dispatch)
+//
+// テスト容易性のため WebSocket 実装は options.WebSocketImpl で注入可能.
+
+/**
+ * Bridge (Python WS server) に接続する client を生成.
+ *
+ * @param {string} url - WebSocket URL (例: 'ws://localhost:8765')
+ * @param {Object} handlers - message type → callback の dispatch table.
+ *   各 callback は parsed message オブジェクトを受け取る.
+ *   未知の type は silent drop.
+ * @param {Object} [options]
+ * @param {Function} [options.WebSocketImpl] - WebSocket 実装 (default: globalThis.WebSocket)
+ * @param {Function} [options.onOpen] - 接続確立時 callback
+ * @param {Function} [options.onClose] - 切断時 callback
+ * @param {Function} [options.onError] - error 時 callback
+ * @param {boolean} [options.autoConnect=true] - 即座に接続するか (false なら手動 connect() 必要)
+ * @returns {{send: Function, sendRideStart: Function, sendRideEnd: Function, sendScan: Function, sendConnect: Function, sendHrmConnect: Function, sendDisconnect: Function, sendSetSlope: Function, sendPosition: Function, isOpen: Function, close: Function, getWebSocket: Function}}
+ */
+export function createBridgeClient(url, handlers, options = {}) {
+  const WSImpl = options.WebSocketImpl || (typeof globalThis !== 'undefined' ? globalThis.WebSocket : undefined);
+  if (!WSImpl) {
+    throw new Error('createBridgeClient: WebSocket impl 未指定 (= options.WebSocketImpl を渡せ、 globalThis.WebSocket も無い)');
+  }
+  const safeHandlers = handlers || {};
+  const onOpen = options.onOpen || (() => {});
+  const onClose = options.onClose || (() => {});
+  const onError = options.onError || (() => {});
+  const autoConnect = options.autoConnect !== false;
+
+  let ws = null;
+
+  function _attach() {
+    ws.addEventListener('open', (ev) => { onOpen(ev); });
+    ws.addEventListener('close', (ev) => { onClose(ev); });
+    ws.addEventListener('error', (ev) => { onError(ev); });
+    ws.addEventListener('message', (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (!msg || typeof msg.type !== 'string') return;
+      const h = safeHandlers[msg.type];
+      if (typeof h === 'function') h(msg);
+    });
+  }
+
+  function connect() {
+    ws = new WSImpl(url);
+    _attach();
+    return ws;
+  }
+
+  if (autoConnect) connect();
+
+  function _send(payload) {
+    if (!ws || ws.readyState !== 1 /* OPEN */) return false;
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+
+  return {
+    /** 任意 payload を送る (debug 用、 通常は type 別 helper を使え). */
+    send(payload) { return _send(payload); },
+    /** ride 開始 request. */
+    sendRideStart() { return _send({ type: 'ride_start' }); },
+    /** ride 終了 request. */
+    sendRideEnd() { return _send({ type: 'ride_end' }); },
+    /** BLE スキャン request. */
+    sendScan() { return _send({ type: 'scan' }); },
+    /** FTMS (trainer) 接続 request. */
+    sendConnect(address) { return _send({ type: 'connect', address }); },
+    /** HRM (心拍計) 接続 request. */
+    sendHrmConnect(address) { return _send({ type: 'hrm_connect', address }); },
+    /** 切断 request. */
+    sendDisconnect() { return _send({ type: 'disconnect' }); },
+    /** 勾配送信 (= trainer に set_slope). */
+    sendSetSlope(slopePct) { return _send({ type: 'set_slope', slope_pct: slopePct }); },
+    /** 位置 telemetry 送信. */
+    sendPosition(distance_m, lat, lon, elevation_m) {
+      return _send({ type: 'position', distance_m, lat, lon, elevation_m });
+    },
+    /** WebSocket が open か. */
+    isOpen() { return !!ws && ws.readyState === 1; },
+    /** 切断 (= ws.close). */
+    close(code, reason) { if (ws) ws.close(code, reason); },
+    /** 手動 reconnect (autoConnect=false 時のみ意味あり). */
+    connect,
+    /** 内部 WebSocket への参照 (テスト用、 通常は使うな). */
+    getWebSocket() { return ws; },
+  };
+}
+
+/**
+ * テスト/開発モード用の fake client (= brief 22 ?test=1 で使う).
+ * trainer / bridge 不要、 fake state を定期 push、 主要 send は handlers にループバック.
+ *
+ * @param {Object} handlers - createBridgeClient と同形
+ * @param {Object} [options]
+ * @param {number} [options.fakeStateInterval=1000] - state push の interval (ms)
+ * @param {Function} [options.fakeStateGenerator] - () => state オブジェクトを返す関数.
+ *   default は固定 20 km/h.
+ * @param {Function} [options.setInterval] - timer 注入 (テスト用)
+ * @param {Function} [options.clearInterval] - timer 注入 (テスト用)
+ * @param {Function} [options.setTimeout] - timer 注入 (テスト用)
+ * @returns 同 API
+ */
+export function createTestModeClient(handlers, options = {}) {
+  const safeHandlers = handlers || {};
+  const interval = options.fakeStateInterval != null ? options.fakeStateInterval : 1000;
+  const _setInterval = options.setInterval || globalThis.setInterval;
+  const _clearInterval = options.clearInterval || globalThis.clearInterval;
+  const _setTimeout = options.setTimeout || globalThis.setTimeout;
+  const generator = options.fakeStateGenerator || (() => ({
+    speed_mps: 20 / 3.6,
+    power_w: 150,
+    cadence_rpm: 80,
+    distance_m: 0,
+    slope_sent_pct: 0,
+    hr_bpm: 120,
+    last_ack: 'OK (TEST MODE)',
+  }));
+
+  let closed = false;
+  let timer = null;
+
+  function _dispatch(type, msg) {
+    const h = safeHandlers[type];
+    if (typeof h === 'function') h(msg);
+  }
+
+  function _fakeSend(payload) {
+    if (closed) return false;
+    // 主要 type だけ即座に応答、 その他は silent drop (= 既存 viewer の fake ws 挙動と同じ)
+    if (payload && typeof payload.type === 'string') {
+      if (payload.type === 'ride_start') {
+        _setTimeout(() => _dispatch('ride_status', { state: 'started' }), 0);
+      } else if (payload.type === 'ride_end') {
+        _setTimeout(() => _dispatch('ride_status', { state: 'ended' }), 0);
+      } else if (payload.type === 'scan') {
+        _setTimeout(() => _dispatch('scan_status', { state: 'failed', message: 'TEST MODE (no BLE)' }), 0);
+      }
+      // set_slope / connect / position 等は silent (= trainer 不在のため応答なし)
+    }
+    return true;
+  }
+
+  // 定期 push 開始
+  timer = _setInterval(() => {
+    if (closed) return;
+    const s = generator();
+    _dispatch('state', s);
+  }, interval);
+
+  return {
+    send(payload) { return _fakeSend(payload); },
+    sendRideStart() { return _fakeSend({ type: 'ride_start' }); },
+    sendRideEnd() { return _fakeSend({ type: 'ride_end' }); },
+    sendScan() { return _fakeSend({ type: 'scan' }); },
+    sendConnect(address) { return _fakeSend({ type: 'connect', address }); },
+    sendHrmConnect(address) { return _fakeSend({ type: 'hrm_connect', address }); },
+    sendDisconnect() { return _fakeSend({ type: 'disconnect' }); },
+    sendSetSlope(slopePct) { return _fakeSend({ type: 'set_slope', slope_pct: slopePct }); },
+    sendPosition(distance_m, lat, lon, elevation_m) {
+      return _fakeSend({ type: 'position', distance_m, lat, lon, elevation_m });
+    },
+    isOpen() { return !closed; },
+    close() {
+      closed = true;
+      if (timer != null) { _clearInterval(timer); timer = null; }
+    },
+    getWebSocket() { return null; },
+  };
+}

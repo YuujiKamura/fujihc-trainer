@@ -4,6 +4,10 @@
 // brief 21: GSI 6m grid を bilinear 4x で 1.5m grid 等価に upsample、 ride 視点を滑らかに.
 
 import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
+// brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
+import { smoothCourse } from './lib/gpx_smooth.js';
+// brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
+import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -422,15 +426,33 @@ async function loadCourse() {
     course = await resp.json();
   } catch (err) { status(`course.json load failed: ${err.message}`); return; }
   if (!course.length) { status('course.json empty'); return; }
+  // brief 23: GPS ジッター除去. lat/lon の short-window moving average (window=5)
+  // で短距離ジグザグだけ補正、 道路カーブは保存. distance_m / slope_pct / elevation_m は不変.
+  course = smoothCourse(course);
   totalDist = course[course.length - 1].distance_m;
   setText('total', totalDist.toFixed(0));
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
 
-  // route line as GeoJSON LineString
-  const coords = course.map(p => [p.lon, p.lat]);
+  // brief 24 + 25: 各 segment を 5m 幅の polygon に展開、 勾配グレード別色分け.
+  // Zwift Climb Portal 風: flat=緑 / gentle=黄緑 / moderate=黄 / hard=橙 / very_hard=赤 / extreme=紫.
   if (!map.getSource('route')) {
-    map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
-    map.addLayer({ id: 'route-line', type: 'line', source: 'route', paint: { 'line-color': '#ff3030', 'line-width': 5 } });
+    map.addSource('route', { type: 'geojson', data: buildGradeColoredRoadPolygons(course, 5) });
+    map.addLayer({
+      id: 'route-fill',
+      type: 'fill',
+      source: 'route',
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': 0.85,
+      },
+    });
+    // 細い線で polygon の縁取り (= zoom out 時の視認性確保)
+    map.addLayer({
+      id: 'route-line',
+      type: 'line',
+      source: 'route',
+      paint: { 'line-color': '#222', 'line-width': 0.5, 'line-opacity': 0.6 },
+    });
   }
   // start / goal markers
   new maplibregl.Marker({ color: '#7fff00' }).setLngLat([course[0].lon, course[0].lat]).addTo(map);
