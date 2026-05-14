@@ -72,8 +72,8 @@ const map = new maplibregl.Map({
       'osm': {
         type: 'vector',
         tiles: [`${TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
-        minzoom: 13,    // tile_constants.OSM_VECTOR_ZOOMS の min と整合 (= 17 単一 zoom だが overzoom で 13 まで使う)
-        maxzoom: 17,    // tile_constants.OSM_VECTOR_ZOOMS の max と整合
+        minzoom: 13,    // tile_constants.OSM_VECTOR_ZOOMS の min 周辺 (= 15 単一だが overzoom で 13 まで使う)
+        maxzoom: 15,    // tile_constants.OSM_VECTOR_ZOOMS の max と整合 (Protomaps planet build の上限)
         attribution: '© OpenStreetMap contributors',
       },
       'gsi-terrain': {
@@ -101,10 +101,10 @@ const map = new maplibregl.Map({
         filter: ['in', 'kind', 'forest', 'wood', 'park'],
         paint: { 'fill-color': '#cfe7c8', 'fill-opacity': 0.7 } },
       { id: 'roads', type: 'line', source: 'osm', 'source-layer': 'roads',
-        paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 17, 2] } },
+        paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6] } },
       { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
         filter: ['in', 'kind', 'highway', 'major_road'],
-        paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 17, 4] } },
+        paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
     sky: { 'sky-color': '#87ceeb', 'horizon-color': '#ffd6a5', 'fog-color': '#cccccc' },
@@ -301,6 +301,10 @@ const WS_URL = 'ws://localhost:8765';
 // WebSocket 接続を skip、 fake state を 1Hz で push、 ride/scan は即座に fake 応答.
 // 起動例: python -m http.server -d web/ 8000 -> http://localhost:8000/?test=1
 const TEST_MODE = new URLSearchParams(location.search).has('test');
+// ?map=1 で UI 操作なしの「地図表示だけ」モード. TEST_MODE と同じく client は
+// createTestModeClient、 加えて pairing overlay を即 hide + ride を自動 start.
+// 用途: AI / 自動 capture で OSM/dem/polygon の visual 検証だけしたい時.
+const MAP_MODE = new URLSearchParams(location.search).has('map');
 let client = null;
 let lastSlopeSent = null;
 let lastSlopeSendT = 0;
@@ -523,7 +527,53 @@ function bootCheckSetupStatus() {
     }
   });
 }
-if (TEST_MODE) initTestMode(); else bootCheckSetupStatus();
+// brief 22 系: 3 つのモードを分岐
+// - MAP_MODE (?map=1): 全 overlay を即 hide + ride 自動 start + fake state。 UI 操作ゼロで地図 visual 検証.
+// - TEST_MODE (?test=1): overlay は出すが BLE/DB を skip、 ride 開始ボタンは user 操作.
+// - default: 通常起動、 setup 充足度を見て分岐.
+if (MAP_MODE) initMapMode();
+else if (TEST_MODE) initTestMode();
+else bootCheckSetupStatus();
+
+function initMapMode() {
+  status('MAP MODE: UI 操作なしで地図表示のみ確認');
+  // 全 overlay を hide (= 視界をクリアにして地図 + HUD + minimap だけ見せる)
+  hideDbinit();
+  document.getElementById('setup-overlay')?.classList.remove('visible');
+  setAppState('riding');
+  // ?map=1&z=14&pitch=30 で zoom / pitch を override 可 (= OSM 道路 / 建物の細線確認に zoom out 必須)
+  const params = new URLSearchParams(location.search);
+  const zParam = parseFloat(params.get('z'));
+  const pitchParam = parseFloat(params.get('pitch'));
+  if (Number.isFinite(zParam) && zParam >= 13 && zParam <= 24) userZoom = zParam;
+  if (Number.isFinite(pitchParam) && pitchParam >= 0 && pitchParam <= 85) userPitch = pitchParam;
+  // TEST_MODE と同じ fake client (= bridge / trainer 不要)
+  client = createTestModeClient(wsHandlers, {
+    fakeStateInterval: 1000,
+    fakeStateGenerator: () => {
+      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
+      const moving = snap.active && !snap.paused;
+      return {
+        speed_mps: moving ? (20 / 3.6) : 0,
+        power_w: moving ? 150 : 0,
+        cadence_rpm: moving ? 80 : 0,
+        distance_m: snap.distance,
+        slope_sent_pct: 0,
+        hr_bpm: 120,
+        last_ack: 'OK (MAP MODE)',
+      };
+    },
+  });
+  // course load 完了を polling で待って rideState.start を呼ぶ
+  // (loadCourse 内で rideState = createRideState(course) が走るのは map.on('load') 経由のため非同期)
+  const waitForRide = setInterval(() => {
+    if (rideState) {
+      clearInterval(waitForRide);
+      rideState.start();
+      rideStartedAt = performance.now();
+    }
+  }, 100);
+}
 
 function startGsiFetch() {
   fetch(`${HTTP_BASE_URL}/tiles/_fetch_gsi`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
@@ -572,6 +622,8 @@ async function loadCourse() {
   // Zwift Climb Portal 風: flat=緑 / gentle=黄緑 / moderate=黄 / hard=橙 / very_hard=赤 / extreme=紫.
   if (!map.getSource('route')) {
     map.addSource('route', { type: 'geojson', data: buildGradeColoredRoadPolygons(course, 5) });
+    // 道路 polygon は OSM の roads layer の背面 (beforeId='roads') に置く、
+    // roads 細線が前面 = ride 視点でも識別可能.
     map.addLayer({
       id: 'route-fill',
       type: 'fill',
@@ -580,14 +632,14 @@ async function loadCourse() {
         'fill-color': ['get', 'color'],
         'fill-opacity': 0.85,
       },
-    });
+    }, 'roads');
     // 細い線で polygon の縁取り (= zoom out 時の視認性確保)
     map.addLayer({
       id: 'route-line',
       type: 'line',
       source: 'route',
       paint: { 'line-color': '#222', 'line-width': 0.5, 'line-opacity': 0.6 },
-    });
+    }, 'roads');
   }
   // start / goal markers
   new maplibregl.Marker({ color: '#7fff00' }).setLngLat([course[0].lon, course[0].lat]).addTo(map);
@@ -617,8 +669,12 @@ async function loadCourse() {
   // 初期 camera: start 地点に寄せる、 起動直後から走行視点っぽい絵にする
   // (全体俯瞰だと goal 側ばかり映って rider が画面外になる、 user 不満を生む)
   // user 動作確認で確定した default (画面 HUD 由来、 現地の道路幅感覚に合う値)
-  userZoom = 23.95;    // 道路 1 車線が画面の中央に収まる、 ほぼ等倍走行視点
-  userPitch = 85;      // ほぼ水平、 カーナビ的前方視野
+  // MAP_MODE は ?z=N&pitch=M で override 可能にする (= UI 操作なし visual 検証用)
+  // 通常起動時は ride 視点 (= 道路 1 車線 + ほぼ水平) の default を hard-set
+  if (!MAP_MODE) {
+    userZoom = 23.95;    // 道路 1 車線が画面の中央に収まる、 ほぼ等倍走行視点
+    userPitch = 85;      // ほぼ水平、 カーナビ的前方視野
+  }
   // user が縦ドラッグ / ホイールで再調整可、 その値が以後 default になる挙動
   const cam0 = computeCameraParams(course, { curIdx: 0 }, { userZoom, userPitch, lookAhead: 20 });
   map.jumpTo(cam0);

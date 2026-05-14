@@ -203,3 +203,50 @@ describe('brief 26a: OSM を vector pbf で受ける (= 17b 積み残し fix)', 
     expect(viewer).not.toMatch(/\{\s*id:\s*['"]osm['"],\s*type:\s*['"]raster['"]/);
   });
 });
+
+// MAP MODE: UI 操作なしで地図表示だけ確認できるモード (= AI / 自動 capture 用).
+// brief 22 の TEST_MODE と同型、 加えて ride 自動 start + 全 overlay hide.
+describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+
+  it('MAP_MODE flag を URL parameter ?map で起動する', () => {
+    expect(viewer).toMatch(/MAP_MODE\s*=\s*new\s+URLSearchParams\(location\.search\)\.has\(['"]map['"]\)/);
+  });
+
+  it('initMapMode 関数が定義済', () => {
+    expect(viewer).toMatch(/function\s+initMapMode/);
+  });
+
+  it('MAP_MODE 時は initMapMode を最初に呼ぶ', () => {
+    expect(viewer).toMatch(/if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
+  });
+
+  it('initMapMode は createTestModeClient を使う (= bridge 不要)', () => {
+    // initMapMode の body 内で createTestModeClient を呼ぶ
+    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,800}createTestModeClient\(/);
+  });
+
+  it('initMapMode は rideState.start を呼ぶ (= 自動 ride start)', () => {
+    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,1500}rideState\.start\(\)/);
+  });
+
+  it('initMapMode は setAppState("riding") に遷移', () => {
+    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,800}setAppState\(['"]riding['"]\)/);
+  });
+
+  it('userZoom/Pitch の hard-set は !MAP_MODE で guard されている', () => {
+    // loadCourse 末尾の hard-set は MAP_MODE 時に skip、 ?z/?pitch override 可能
+    expect(viewer).toMatch(/if\s*\(\s*!\s*MAP_MODE\s*\)\s*\{[\s\S]{0,200}userZoom\s*=\s*23\.95/);
+  });
+
+  it('roads line-width interpolate は z=22 まで定義 (= ride 視点 overzoom 対策)', () => {
+    // z=22 stop が含まれる、 17 で打ち切らない
+    // interpolate の zoom expression は ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6 の形
+    expect(viewer).toMatch(/['"]line-width['"]:\s*\[['"]interpolate['"],\s*\[['"]linear['"]\],\s*\[['"]zoom['"]\][\s\S]{0,80}22,\s*\d/);
+  });
+
+  it('route-fill は OSM roads layer の前 (= beforeId="roads") に挿入', () => {
+    // addLayer の第 2 引数で 'roads' を渡す
+    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]\s*\)/);
+  });
+});
