@@ -123,3 +123,69 @@ def test_compute_to_fetch_deterministic_same_input_same_output():
     r2 = fetch_osm_pmtiles.compute_to_fetch(wanted, existing)
     assert r1 == r2
     assert r1 == [(17, 1, 1), (17, 2, 2), (17, 4, 4), (17, 5, 5)]
+
+
+# ----- main() smoke -----
+
+
+def test_main_dummy_run(tmp_path, monkeypatch):
+    """main() を mock 経由で 1 周走らせる (= integration smoke).
+
+    course load → enumerate → existing 集計 → confirm skip (--force) →
+    PMTiles reader.get で 1 件抽出 → metadata 書き込み. pmtiles.reader.Reader を
+    MagicMock に差し替えて実 PMTiles file 無しで走らせる.
+    """
+    from unittest.mock import patch as _patch
+
+    import init_tile_db  # type: ignore[import-not-found]
+
+    db_path = tmp_path / "tiles.sqlite"
+    init_tile_db.init_db(db_path)
+
+    course_path = tmp_path / "course.json"
+    course_path.write_text(
+        '[{"lat": 35.4, "lon": 138.7, "elevation_m": 1000, "distance_m": 0}]',
+        encoding="utf-8",
+    )
+
+    # ダミー .pmtiles file (= open() が成功するだけで良い、 中身は Reader mock が読む)
+    pmtiles_path = tmp_path / "japan.pmtiles"
+    pmtiles_path.write_bytes(b"\x00" * 16)
+
+    # Reader / MmapSource を差し替え: reader.get は固定 bytes を返す
+    fake_reader = MagicMock()
+    fake_reader.get.return_value = b"\x1f\x8b\x08\x00fake-pbf-tile-bytes"
+
+    # pmtiles package が無い環境でも import エラーで止まらないよう sys.modules に shim を挿す
+    fake_mod_reader = MagicMock()
+    fake_mod_reader.Reader = MagicMock(return_value=fake_reader)
+    fake_mod_reader.MmapSource = MagicMock(return_value=MagicMock())
+    monkeypatch.setitem(sys.modules, "pmtiles", MagicMock())
+    monkeypatch.setitem(sys.modules, "pmtiles.reader", fake_mod_reader)
+
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "fetch_osm_pmtiles.py",
+            "--pmtiles", str(pmtiles_path),
+            "--course", str(course_path),
+            "--db", str(db_path),
+            "--corridor-tiles", "1",
+            "--force",
+        ],
+    )
+
+    fetch_osm_pmtiles.main()
+
+    # DB に osm tile row が入った確認
+    with sqlite3.connect(db_path) as db:
+        n_tiles = db.execute(
+            "SELECT COUNT(*) FROM tiles WHERE source='osm'"
+        ).fetchone()[0]
+        assert n_tiles >= 1, "main() must insert at least one osm tile"
+        meta_n = db.execute(
+            "SELECT COUNT(*) FROM metadata WHERE source='osm'"
+        ).fetchone()[0]
+        assert meta_n >= 4, (
+            f"metadata rows for osm too few: {meta_n}"
+        )

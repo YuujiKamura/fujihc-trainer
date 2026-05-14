@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import init_tile_db  # noqa: E402
 from fujihc import tile_server  # noqa: E402
+from fujihc.tile_constants import GSI_DEM_ZOOMS, OSM_VECTOR_ZOOMS  # noqa: E402
 
 
 # ---------- fixtures ----------
@@ -169,12 +170,45 @@ def test_build_style_json_happy(populated_db):
     assert set(style['sources'].keys()) == {'osm', 'gsi_dem'}
     assert style['sources']['osm']['type'] == 'vector'
     assert style['sources']['osm']['tiles'] == ['/tiles/osm/{z}/{x}/{y}.pbf']
+    # populated_db fixture が metadata で minzoom=14/maxzoom=18 を pin している
+    # ので metadata 値が中央定数より優先される.
     assert style['sources']['osm']['minzoom'] == 14
     assert style['sources']['osm']['maxzoom'] == 18
     assert style['sources']['gsi_dem']['type'] == 'raster-dem'
     assert style['sources']['gsi_dem']['tiles'] == ['/tiles/gsi_dem/{z}/{x}/{y}.png']
-    assert style['sources']['gsi_dem']['encoding'] == 'gsi-dem-png'
+    # MapLibre 標準 encoding 名. viewer 側 (web/lib/terrarium.js) が
+    # gsi_dem_png → terrarium 変換してから MapLibre に渡す前提.
+    assert style['sources']['gsi_dem']['encoding'] == 'terrarium'
     assert isinstance(style['layers'], list) and len(style['layers']) >= 1
+
+
+def test_build_style_json_zoom_defaults_from_central_constants(empty_db):
+    """metadata table に minzoom/maxzoom 不在のとき, default が中央定数
+    (OSM_VECTOR_ZOOMS / GSI_DEM_ZOOMS) の min/max 経由で入ること.
+
+    attribution のみ入れて minzoom/maxzoom は省略する fixture.
+    """
+    conn = sqlite3.connect(str(empty_db))
+    try:
+        conn.execute(
+            "INSERT INTO metadata (source, name, value) VALUES (?, ?, ?)",
+            ('osm', 'attribution', '(c) OSM contributors'),
+        )
+        conn.execute(
+            "INSERT INTO metadata (source, name, value) VALUES (?, ?, ?)",
+            ('gsi_dem', 'attribution', '国土地理院'),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    status, style = tile_server.build_style_json(empty_db)
+    assert status == 200
+    # 中央定数 OSM_VECTOR_ZOOMS=[17] → min=max=17
+    assert style['sources']['osm']['minzoom'] == min(OSM_VECTOR_ZOOMS)
+    assert style['sources']['osm']['maxzoom'] == max(OSM_VECTOR_ZOOMS)
+    # 中央定数 GSI_DEM_ZOOMS=[14] → min=max=14
+    assert style['sources']['gsi_dem']['minzoom'] == min(GSI_DEM_ZOOMS)
+    assert style['sources']['gsi_dem']['maxzoom'] == max(GSI_DEM_ZOOMS)
 
 
 def test_build_style_json_custom_base_url(populated_db):

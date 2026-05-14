@@ -23,6 +23,7 @@ def test_query_nvidia_smi_happy():
     with patch.object(gpu_poll.subprocess, 'run', return_value=_fake_completed(fake_out)):
         result = gpu_poll.query_nvidia_smi()
     assert result is not None
+    assert result['schema_version'] == 1  # Round 3 マイグレ可逆軸
     assert result['name'] == 'NVIDIA GeForce GTX 1650'
     assert result['temperature.gpu'] == '41'
     assert result['fan.speed'] == '35'

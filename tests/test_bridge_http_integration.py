@@ -136,3 +136,25 @@ async def test_metrics_endpoint(aiohttp_client, db_with_one_tile):
     metrics = await resp.json()
     assert metrics["osm"]["200"] == 1
     assert metrics["osm"]["404"] == 1
+
+
+def test_bind_is_127_0_0_1_in_source():
+    """bridge.py の bind が 0.0.0.0 に化けたら fail (= LOAD-BEARING source-grep gate).
+
+    HTTP TCPSite と WebSocket serve の両方が 127.0.0.1 でなければ別端末から
+    アクセスできてしまう (LAN 内 ODbL 再配布事故 vector). 物理層で pin する.
+    """
+    src = Path(__file__).resolve().parent.parent / "src" / "fujihc" / "bridge.py"
+    text = src.read_text(encoding="utf-8")
+    # HTTP TCPSite
+    assert 'TCPSite(http_runner, "127.0.0.1"' in text, (
+        "HTTP TCPSite must bind to 127.0.0.1 (= LAN 露出禁止)"
+    )
+    # WebSocket serve
+    assert 'websockets.serve(self._ws_handler, "127.0.0.1"' in text, (
+        "WebSocket serve must bind to 127.0.0.1 (= LAN 露出禁止)"
+    )
+    # 危険な bind が無い
+    assert '"0.0.0.0"' not in text, (
+        "bridge.py must not contain 0.0.0.0 bind (= LAN 露出 / 第三者アクセス可能)"
+    )

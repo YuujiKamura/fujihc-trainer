@@ -40,6 +40,47 @@ def test_load_samples_empty(tmp_path):
     assert measurement_diff.load_samples(p2) == []
 
 
+def test_load_samples_schema_version_absent_warns(tmp_path, capsys):
+    """schema_version 列無し (= 古い jsonl) は warning 付きで読込、 crash しない."""
+    p = tmp_path / 'legacy.jsonl'
+    _write_jsonl(p, [
+        {'ts': '2026-05-15T00:00:00+00:00', 'temperature.gpu': '41', 'fan.speed': '35'},
+        {'ts': '2026-05-15T00:00:01+00:00', 'temperature.gpu': '42', 'fan.speed': '36'},
+    ])
+    result = measurement_diff.load_samples(p)
+    assert len(result) == 2
+    assert result[0]['temperature.gpu'] == '41'
+    captured = capsys.readouterr()
+    assert 'WARNING' in captured.err
+    assert 'schema_version' in captured.err
+
+
+def test_load_samples_schema_version_1_no_warn(tmp_path, capsys):
+    """schema_version=1 (= 現行) は warning 出さずに読む."""
+    p = tmp_path / 'v1.jsonl'
+    _write_jsonl(p, [
+        {'schema_version': 1, 'ts': '2026-05-15T00:00:00+00:00', 'temperature.gpu': '41'},
+        {'schema_version': 1, 'ts': '2026-05-15T00:00:01+00:00', 'temperature.gpu': '42'},
+    ])
+    result = measurement_diff.load_samples(p)
+    assert len(result) == 2
+    captured = capsys.readouterr()
+    assert 'WARNING' not in captured.err
+
+
+def test_load_samples_schema_version_future_warns(tmp_path, capsys):
+    """schema_version=99 (= 未来) は warning 付きで forward-compat best-effort 読込."""
+    p = tmp_path / 'future.jsonl'
+    _write_jsonl(p, [
+        {'schema_version': 99, 'ts': '2027-01-01T00:00:00+00:00', 'temperature.gpu': '50'},
+    ])
+    result = measurement_diff.load_samples(p)
+    assert len(result) == 1
+    captured = capsys.readouterr()
+    assert 'WARNING' in captured.err
+    assert '99' in captured.err
+
+
 def test_summarize_happy():
     """既知 vals → mean / max / p95 / n が正しい."""
     # 25 sample で p95 が quantiles から計算される path を踏む

@@ -12,7 +12,7 @@ import sqlite3
 import sys
 import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -147,3 +147,69 @@ def test_confirm_or_abort_over_threshold_input_n_returns_false(monkeypatch):
     """threshold 超 + input 'n' なら False (= abort path)."""
     monkeypatch.setattr("builtins.input", lambda *_a, **_k: "n")
     assert fetch_gsi_dem.confirm_or_abort(5000, 1000, force=False) is False
+
+
+# ----- main() smoke -----
+
+
+def test_main_dummy_run(tmp_path, monkeypatch):
+    """main() を mock 経由で 1 周走らせる (= integration smoke).
+
+    course load → enumerate (1 点) → existing 集計 (0) → confirm skip (--force) →
+    1 件 fetch → metadata 書き込み の full path を urlopen mock で実走する.
+    実 GSI server には絶対叩かない.
+    """
+    import init_tile_db  # type: ignore[import-not-found]
+
+    # 空 DB を本物の init_tile_db で作る (= schema_v1 全部入り)
+    db_path = tmp_path / "tiles.sqlite"
+    init_tile_db.init_db(db_path)
+
+    # 微小 course を 1 点 (= enumerate_coverage_tiles が 1 個以上タイル生成する範囲)
+    course_path = tmp_path / "course.json"
+    course_path.write_text(
+        '[{"lat": 35.4, "lon": 138.7, "elevation_m": 1000, "distance_m": 0}]',
+        encoding="utf-8",
+    )
+
+    # urlopen mock: PNG magic + ダミー bytes
+    fake_body = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+
+    class _CM:
+        def __enter__(self):
+            return io.BytesIO(fake_body)
+
+        def __exit__(self, *a):
+            return False
+
+    # sys.argv で main() に引数を渡す (= 現行 main() は argparse.parse_args() を引数なしで呼ぶ)
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "fetch_gsi_dem.py",
+            "--course", str(course_path),
+            "--db", str(db_path),
+            "--zoom", "14",
+            "--corridor-tiles", "1",
+            "--rate-limit", "0",   # test で sleep しない
+            "--force",
+        ],
+    )
+
+    with patch("fetch_gsi_dem.urllib.request.urlopen", return_value=_CM()):
+        with patch.object(fetch_gsi_dem.time, "sleep"):  # paranoia: no real sleep
+            fetch_gsi_dem.main()
+
+    # DB に tile row が入った確認
+    with sqlite3.connect(db_path) as db:
+        n_tiles = db.execute(
+            "SELECT COUNT(*) FROM tiles WHERE source='gsi_dem'"
+        ).fetchone()[0]
+        assert n_tiles >= 1, "main() must insert at least one gsi_dem tile"
+        # metadata が複数 key 入る (attribution / format / minzoom / maxzoom / ...)
+        meta_n = db.execute(
+            "SELECT COUNT(*) FROM metadata WHERE source='gsi_dem'"
+        ).fetchone()[0]
+        assert meta_n >= 4, (
+            f"metadata rows for gsi_dem too few: {meta_n}"
+        )

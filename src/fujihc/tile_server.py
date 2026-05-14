@@ -13,6 +13,8 @@ brief 20 連携:
 import sqlite3
 from pathlib import Path
 
+from fujihc.tile_constants import GSI_DEM_ZOOMS, OSM_VECTOR_ZOOMS
+
 CONTENT_TYPES = {
     'png': 'image/png',
     'jpg': 'image/jpeg',
@@ -92,6 +94,18 @@ def build_style_json(db_path, base_url='/tiles'):
     return: (status: int, dict | None)
         200: osm + gsi_dem 両 metadata 揃い → style dict
         503: DB 不在 or いずれかの metadata 不在
+
+    encoding 注記:
+        gsi_dem source の encoding は MapLibre 標準 'terrarium' を宣言する.
+        DB には GSI dem_png (PNG bytes) がそのまま格納されているが,
+        viewer 側 (web/lib/terrarium.js) が addProtocol('gsidem', ...) で
+        gsi_dem_png_to_terrarium 変換を行ってから MapLibre に渡す前提なので,
+        server は変換せず, MapLibre が最終的に受け取る encoding 名を宣言する.
+
+    minzoom / maxzoom default:
+        metadata 不在時の fallback は magic number ではなく中央定数
+        (OSM_VECTOR_ZOOMS / GSI_DEM_ZOOMS) の min/max から取る. 中央定数を
+        拡張した瞬間 default も追従する.
     """
     if not Path(db_path).exists():
         return (503, None)
@@ -99,22 +113,26 @@ def build_style_json(db_path, base_url='/tiles'):
     gsi_status, gsi_meta = get_metadata(db_path, 'gsi_dem')
     if osm_status != 200 or gsi_status != 200:
         return (503, None)
+    osm_min = int(osm_meta.get('minzoom', min(OSM_VECTOR_ZOOMS)))
+    osm_max = int(osm_meta.get('maxzoom', max(OSM_VECTOR_ZOOMS)))
+    gsi_min = int(gsi_meta.get('minzoom', min(GSI_DEM_ZOOMS)))
+    gsi_max = int(gsi_meta.get('maxzoom', max(GSI_DEM_ZOOMS)))
     style = {
         'version': 8,
         'sources': {
             'osm': {
                 'type': 'vector',
                 'tiles': [f'{base_url}/osm/{{z}}/{{x}}/{{y}}.pbf'],
-                'minzoom': int(osm_meta.get('minzoom', 14)),
-                'maxzoom': int(osm_meta.get('maxzoom', 18)),
+                'minzoom': osm_min,
+                'maxzoom': osm_max,
                 'attribution': osm_meta.get('attribution', ''),
             },
             'gsi_dem': {
                 'type': 'raster-dem',
                 'tiles': [f'{base_url}/gsi_dem/{{z}}/{{x}}/{{y}}.png'],
-                'minzoom': int(gsi_meta.get('minzoom', 14)),
-                'maxzoom': int(gsi_meta.get('maxzoom', 14)),
-                'encoding': 'gsi-dem-png',
+                'minzoom': gsi_min,
+                'maxzoom': gsi_max,
+                'encoding': 'terrarium',
                 'attribution': gsi_meta.get('attribution', ''),
             },
         },

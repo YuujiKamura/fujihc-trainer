@@ -8,15 +8,40 @@ usage:
 import argparse
 import json
 import statistics
+import sys
 from pathlib import Path
 
 KEYS = ['temperature.gpu', 'fan.speed', 'utilization.gpu', 'memory.used', 'power.draw']
 
+# gpu_poll.py が書く現行 schema. これ以外の version は warning 付きで読む.
+SUPPORTED_SCHEMA_VERSION = 1
+
 
 def load_samples(path):
-    """jsonl を読んで dict list を返す. 空行は skip, 空 file は []."""
+    """jsonl を読んで dict list を返す. 空行は skip, 空 file は [].
+
+    schema_version 列の扱い (= Round 3 マイグレ可逆軸):
+      - 不在 (= 古い jsonl): warning 1 回 print してそのまま読む (後方互換)
+      - == SUPPORTED_SCHEMA_VERSION: 正常
+      - > SUPPORTED_SCHEMA_VERSION: warning 1 回 print してそのまま読む (forward-compat best effort)
+    """
     text = Path(path).read_text(encoding='utf-8')
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    samples = [json.loads(line) for line in text.splitlines() if line.strip()]
+    if samples:
+        versions = {s.get('schema_version') for s in samples}
+        if None in versions:
+            print(
+                f'WARNING: {path}: schema_version 列が無い古い jsonl (= 後方互換で読込)',
+                file=sys.stderr,
+            )
+        unknown = {v for v in versions if v is not None and v > SUPPORTED_SCHEMA_VERSION}
+        if unknown:
+            print(
+                f'WARNING: {path}: 未対応 schema_version={sorted(unknown)} '
+                f'(supported={SUPPORTED_SCHEMA_VERSION}, forward-compat best-effort で読込)',
+                file=sys.stderr,
+            )
+    return samples
 
 
 def summarize(samples, key):

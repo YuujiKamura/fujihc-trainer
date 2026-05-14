@@ -848,8 +848,8 @@ class Bridge:
         await http_site.start()
         log.info("HTTP tile server listening on http://127.0.0.1:%d/tiles/", self.http_port)
         try:
-            async with websockets.serve(self._ws_handler, "localhost", self.port):
-                log.info("WebSocket server listening on ws://localhost:%d", self.port)
+            async with websockets.serve(self._ws_handler, "127.0.0.1", self.port):
+                log.info("WebSocket server listening on ws://127.0.0.1:%d", self.port)
 
                 push_task = asyncio.create_task(self._push_loop())
 

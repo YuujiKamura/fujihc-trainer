@@ -14,6 +14,10 @@ from pathlib import Path
 
 QUERY = 'name,temperature.gpu,fan.speed,utilization.gpu,memory.used,memory.total,power.draw,power.limit'
 
+# jsonl の schema version. QUERY 列 / 構造を変更したら bump して、
+# measurement_diff.py が古い jsonl も区別できるようにする (= Round 3 マイグレ可逆軸).
+SCHEMA_VERSION = 1
+
 
 def query_nvidia_smi():
     """nvidia-smi を 1 回叩いて dict 返す. 不在 / error なら None."""
@@ -27,6 +31,7 @@ def query_nvidia_smi():
         parts = [p.strip() for p in r.stdout.strip().split(',')]
         keys = QUERY.split(',')
         return {
+            'schema_version': SCHEMA_VERSION,
             'ts': datetime.now(timezone.utc).isoformat(),
             **dict(zip(keys, parts)),
         }

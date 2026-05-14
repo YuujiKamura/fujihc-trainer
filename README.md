@@ -27,3 +27,27 @@ python scripts/fetch_osm_pmtiles.py # OSM 地名抽出 (= 数秒)
 ```sh
 python -m pytest
 ```
+
+## OSS clone した人へ (= 第三者 ToS / 規約遵守)
+
+このアプリは地図タイルとして以下のデータ source を使う:
+
+- **OpenStreetMap (ODbL ライセンス)**: 表示時 `© OpenStreetMap contributors (ODbL)` の表記義務。 Protomaps が再配布する PMTiles ファイル経由のみで取得、 `tile.openstreetmap.org` (= OSMF 公式 tile server) は **絶対に直接叩くな** (Tile Usage Policy 違反、 brief 13/17b 参照)
+- **国土地理院標高タイル**: 表示時「国土地理院 標高タイル」の出典明示義務、 大量アクセス自粛 (= `scripts/fetch_gsi_dem.py` は 1 req/s で 36 タイルだけ取得する設計)
+
+### scripts/fetch_gsi_dem.py を走らせる前に
+
+`--user-agent` 引数で **自分の連絡先を含む文字列**に書き換えろ:
+```bash
+python scripts/fetch_gsi_dem.py --user-agent "fujihc-trainer/0.1 (your-email@example.com)"
+```
+
+地理院側で heavy user 同定に email が使われる、 default の `(https://github.com/YuujiKamura/fujihc-trainer)` のままだと他人 (= リポ作者) の連絡先を僭称することになる。
+
+### 公開リポに DB ファイルを commit するな
+
+`data/*.sqlite` は `.gitignore` で除外済、 PMTiles 元ファイルもリポ外配置 (= `~/Downloads/japan.pmtiles` 等) が前提。 数百 MB ~ 数 GB の binary をリポに含めるな。
+
+### bind は 127.0.0.1 限定
+
+`bridge.py` は HTTP server (port 8000) も WebSocket server (port 8765) も `127.0.0.1` bind 明示、 LAN 内の他端末からアクセス不可。 これは ODbL タイルを LAN 内に再配布する事故を物理的に止めるため、 `0.0.0.0` への変更は禁止。
