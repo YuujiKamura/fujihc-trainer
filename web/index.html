@@ -36,6 +36,21 @@
     pointer-events: none; min-width: 14rem;
   }
   #hud b { color: #ffd54a; }
+  /* rider 追随 HUD: 豆腐の下に表示、 ride の重要数値を大きめ text。
+     left/top は viewer-maplibre.js の tick で map.project([rLon, rLat]) 経由で更新。 */
+  #rider-hud {
+    position: fixed; left: 0; top: 0; z-index: 998;
+    background: rgba(0, 0, 0, 0.7); padding: 0.5rem 0.8rem; border-radius: 6px;
+    pointer-events: none; font: 18px ui-monospace, monospace;
+    transform: translate(-50%, 0);  /* 中央寄せ、 top は豆腐の下端 */
+    min-width: 11rem; display: none;  /* viewer の tick で display: block にする */
+  }
+  #rider-hud .ride-row { display: flex; gap: 0.5rem; align-items: baseline; }
+  #rider-hud b { color: #ffd54a; font-size: 14px; flex: 0 0 4rem; }
+  #rider-hud span { font-size: 22px; font-weight: bold; color: #fff; }
+  body.state-checking #rider-hud,
+  body.state-dbinit #rider-hud,
+  body.state-pairing #rider-hud { display: none !important; }
   #controls {
     /* attribution と重ならないよう bottom 2.5rem (= #hud と同じ) */
     position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
@@ -148,13 +163,18 @@
   <b>time</b>  <span id="elapsed">00:00:00</span><br>
   <b>dist</b>  <span id="dist">0</span> / <span id="total">?</span> m<br>
   <b>ele</b>   <span id="ele">0</span> m<br>
-  <b>slope</b> <span id="slope">0</span> % <span style="color:#888">(送信 <span id="slope-sent">0.0</span>%)</span><br>
-  <b>speed</b> <span id="speed">--</span><br>
-  <b>power</b> <span id="power">--</span> W<br>
-  <b>cad</b>   <span id="cadence">--</span> rpm<br>
-  <b>hr</b>    <span id="hr">--</span> bpm<br>
   <b>ack</b>   <span id="ack" style="color:#aaa">trainer 応答待ち</span><br>
   <span style="color:#888; font-size:11px;">cam z=<span id="cam-zoom">--</span> p=<span id="cam-pitch">--</span>°</span>
+</div>
+
+<!-- rider 追随 HUD: ride の重要数値 (= slope / speed / power / cadence / hr) を大きめ text で
+     rider polygon の下に追随表示。 tick で rider screen 座標を map.project し、 left/top を更新。 -->
+<div id="rider-hud">
+  <div class="ride-row"><b>slope</b> <span id="r-slope">0</span> %</div>
+  <div class="ride-row"><b>speed</b> <span id="r-speed">--</span></div>
+  <div class="ride-row"><b>power</b> <span id="r-power">--</span> W</div>
+  <div class="ride-row"><b>cad</b>   <span id="r-cadence">--</span> rpm</div>
+  <div class="ride-row"><b>hr</b>    <span id="r-hr">--</span> bpm</div>
 </div>
 
 <div id="controls">

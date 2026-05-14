@@ -354,6 +354,9 @@ const wsHandlers = {
     if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
     const sp = (msg.speed_mps != null && msg.speed_mps >= 0) ? (msg.speed_mps * 3.6).toFixed(1) : '--';
     setText('power', pw); setText('cadence', cd);
+    // rider 追随 HUD (= 豆腐の下) にも同値を反映、 大きめ text で表示.
+    setText('r-power', pw); setText('r-cadence', cd); setText('r-hr', (msg.hr_bpm != null) ? String(msg.hr_bpm) : '--');
+    setText('r-speed', (msg.speed_mps != null && msg.speed_mps >= 0) ? `${(msg.speed_mps * 3.6).toFixed(1)} km/h` : '--');
     setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));
     if (msg.last_ack) {
@@ -685,14 +688,14 @@ async function loadCourse() {
   // rider マーカー: fill-extrusion で本物の 3D 立体 (豆腐型)、 高さ方向に押し出した polygon。
   // rider 位置 + 進行方向で毎フレーム polygon coordinates を更新する。
   map.addSource('rider', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  // 豆腐: 0.5m 角の直方体 1 個、 cyan
+  // 豆腐: 1m 角の直方体 1 個、 cyan (2026-05-15: 0.5m → 1.0m に拡大、 視認性向上)
   map.addLayer({
     id: 'rider-body',
     type: 'fill-extrusion',
     source: 'rider',
     paint: {
       'fill-extrusion-color': '#00ffff',
-      'fill-extrusion-height': 0.5,
+      'fill-extrusion-height': 1.0,
       'fill-extrusion-base': 0,
       'fill-extrusion-opacity': 0.95,
     },
@@ -956,11 +959,11 @@ function buildMinimapBottomBase() {
 // brief 29: minimap だけ例外で OSM 直叩き (= 起動時 1-shot 9-16 タイル、 z=11)、
 // ride 中の再 fetch ゼロ。 prefetchTilesAlongCourse 復活は絶対 NG。
 
-// rider の 3D 豆腐 = 0.5m 角の正方形、 heading に合わせて 4 辺が進行方向の前後左右を向く。
+// rider の 3D 豆腐 = 1m 角の正方形、 heading に合わせて 4 辺が進行方向の前後左右を向く。
 function buildRiderFeatures(lat, lon, heading, spin) {
   const M_LAT = 1 / 111320;
   const M_LON = 1 / (111320 * Math.cos(lat * Math.PI / 180));
-  const half = 0.25;
+  const half = 0.5;
   const corners = [[-half, -half], [half, -half], [half, half], [-half, half]];
   const sinH = Math.sin(heading), cosH = Math.cos(heading);
   const verts = corners.map(([x, y]) => {
@@ -1056,7 +1059,19 @@ function tick(t) {
 
   setText('dist', curDist.toFixed(0));
   setText('ele', rEle.toFixed(0));
-  setText('slope', p.slope_pct.toFixed(1));
+  // rider 追随 HUD の slope は常時更新 (= state push に依存せず course から直接).
+  setText('r-slope', p.slope_pct.toFixed(1));
+  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project、
+  // body class が state-riding の時のみ表示。
+  const riderHud = document.getElementById('rider-hud');
+  if (riderHud && document.body.classList.contains('state-riding')) {
+    const pt = map.project([rLon, rLat]);
+    riderHud.style.display = 'block';
+    riderHud.style.left = `${pt.x}px`;
+    riderHud.style.top = `${pt.y + 30}px`;  // 豆腐の下 30px (= polygon height + 余白)
+  } else if (riderHud) {
+    riderHud.style.display = 'none';
+  }
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   setText('cam-zoom', map.getZoom().toFixed(2));
   setText('cam-pitch', map.getPitch().toFixed(0));
