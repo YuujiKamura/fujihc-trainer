@@ -12,9 +12,8 @@
 python -m fujihc.course ~/Downloads/fujihc-course.gpx > web/course.json
 ```
 
-- `web/course.json` は **`.gitignore` 済**、 リポに commit しない (= 公式 GPX の著作権配慮、 私的使用範囲)
-- 公開 repo / OSS 公開時は course.json の commit 履歴も削除 (= `git filter-repo --path web/course.json --invert-paths` 等で履歴清掃)
-- 富士ヒル以外のコース (= 自分の GPX) でも変換 → 動作するが minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
+- `web/course.json` は `.gitignore` 済 (= 走った人ごとに生成される派生データ、 個人で変換する筋)
+- 富士ヒル以外のコース (= 自分の GPX) でも変換 → 動作する、 minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
 
 ### タイル DB セットアップ
 
