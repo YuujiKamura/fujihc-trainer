@@ -1,6 +1,13 @@
 // fujihc viewer - MapLibre GL JS 試験版
 // Cesium を廃止、 GSI 標高 + OSM raster で 3D 地形表示。
 // addProtocol で GSI dem_png を terrarium 形式に変換して MapLibre の terrain に食わせる。
+// brief 21: GSI 6m grid を bilinear 4x で 1.5m grid 等価に upsample、 ride 視点を滑らかに.
+
+import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
+
+// upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
+// 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
+const TERRAIN_UPSAMPLE_FACTOR = 4;
 
 const status = (msg) => { document.getElementById('status').textContent = msg; };
 
@@ -11,8 +18,8 @@ const status = (msg) => { document.getElementById('status').textContent = msg; }
 const TILE_BASE_URL = `${location.origin}/tiles`;
 
 // === GSI 標高 PNG を terrarium 形式 PNG に変換するカスタムプロトコル ===
-// GSI: h = (R*65536 + G*256 + B) / 100、 R=128 で無効値
-// terrarium: h = (R*256 + G + B/256) - 32768
+// brief 21: 変換ロジックは web/lib/terrain_mesh.js に切出し済 (= test 6 件で pin)、
+// ここはタイル DL + Canvas decode + lib 呼出 + Blob 出力の thin adapter のみ.
 maplibregl.addProtocol('gsidem', (params) => {
   const url = params.url.replace(/^gsidem:\/\//, '');
   return new Promise((resolve, reject) => {
@@ -20,34 +27,23 @@ maplibregl.addProtocol('gsidem', (params) => {
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       const W = img.width, H = img.height;
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      let src;
-      try { src = ctx.getImageData(0, 0, W, H); }
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = W; srcCanvas.height = H;
+      const sctx = srcCanvas.getContext('2d');
+      sctx.drawImage(img, 0, 0);
+      let srcImage;
+      try { srcImage = sctx.getImageData(0, 0, W, H); }
       catch (e) { reject(e); return; }
-      const dst = ctx.createImageData(W, H);
-      for (let i = 0; i < W * H; i++) {
-        const r = src.data[i*4], g = src.data[i*4+1], b = src.data[i*4+2];
-        let height_m = 0;
-        if (!(r === 128 && g === 0 && b === 0)) {
-          let h = r * 65536 + g * 256 + b;
-          if (h >= 8388608) h -= 16777216;
-          height_m = h / 100;
-        }
-        // terrarium 形式に変換: (R, G, B) = encode(height + 32768)
-        const enc = Math.max(0, Math.min(65535 * 256 + 255, Math.round((height_m + 32768) * 256)));
-        const tr = Math.floor(enc / 65536);
-        const tg = Math.floor((enc % 65536) / 256);
-        const tb = enc % 256;
-        dst.data[i*4]   = tr;
-        dst.data[i*4+1] = tg;
-        dst.data[i*4+2] = tb;
-        dst.data[i*4+3] = 255;
-      }
-      ctx.putImageData(dst, 0, 0);
-      canvas.toBlob((blob) => {
+      // 純関数で bilinear upsample + GSI -> terrarium 変換 (= brief 21).
+      const result = gsiToTerrariumUpsampled(srcImage.data, W, H, TERRAIN_UPSAMPLE_FACTOR);
+      const dstCanvas = document.createElement('canvas');
+      dstCanvas.width = result.width;
+      dstCanvas.height = result.height;
+      const dctx = dstCanvas.getContext('2d');
+      const dstImage = dctx.createImageData(result.width, result.height);
+      dstImage.data.set(result.data);
+      dctx.putImageData(dstImage, 0, 0);
+      dstCanvas.toBlob((blob) => {
         if (!blob) { reject(new Error('toBlob failed')); return; }
         blob.arrayBuffer().then((buf) => {
           resolve({ data: new Uint8Array(buf) });
@@ -99,8 +95,9 @@ const map = new maplibregl.Map({
   minPitch: 0,
   maxZoom: 24,
   minZoom: 13,
-  // タイル memory cache (default 数十、 500 は GPU 負荷高、 200 程度が妥当)
-  maxTileCacheSize: 200,
+  // タイル memory cache. brief 21 で GSI dem を 4x upsample (1024x1024 RGBA = 4 MB/tile)、
+  // 200 だと 800 MB VRAM 圧迫. 50 で 200 MB 上限、 ride viewport (= 9 タイル) には十分.
+  maxTileCacheSize: 50,
   // タイルのクロスフェード短縮、 GPU 負荷軽減
   fadeDuration: 0,
 });

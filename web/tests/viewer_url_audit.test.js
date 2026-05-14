@@ -29,4 +29,15 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(viewer).not.toMatch(/function\s+prefetchTilesAlongCourse/);
     expect(viewer).not.toMatch(/prefetchTilesAlongCourse\s*=\s*function/);
   });
+
+  // brief 21: 標高補完を inline 実装ではなく lib 経由で呼ぶ (= 二重実装防止)
+  it('gsiToTerrariumUpsampled を web/lib/terrain_mesh.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*gsiToTerrariumUpsampled[^}]*\}\s+from\s+['"]\.\/lib\/terrain_mesh\.js['"]/);
+  });
+
+  it('addProtocol callback 内に標高 decode の inline loop が無い (= 純関数に委譲)', () => {
+    // GSI decode の inline 数式 (= R*65536 + G*256 + B) は terrain_mesh.js 側に閉じる、
+    // viewer 内で再定義していないことを確認
+    expect(viewer).not.toMatch(/r\s*\*\s*65536\s*\+\s*g\s*\*\s*256\s*\+\s*b/);
+  });
 });
