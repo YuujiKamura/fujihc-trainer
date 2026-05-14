@@ -1,11 +1,15 @@
 """GSI 標高タイル (dem_png) をレート制限 DL してローカル DB に格納 (brief 15).
 
+brief 26b で中核 logic は src/fujihc/dbinit.py に移動。 本 script は CLI wrapper.
+
 usage:
     python scripts/fetch_gsi_dem.py
     python scripts/fetch_gsi_dem.py --course web/course.json --db data/tiles.sqlite
     python scripts/fetch_gsi_dem.py --force  # CI 用 (上限警告 skip)
 """
 import argparse
+import asyncio
+import io
 import json
 import sqlite3
 import sys
@@ -14,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from fujihc import dbinit
 from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
@@ -22,30 +27,22 @@ from fujihc.tile_constants import (
 )
 from fujihc.tile_coverage import enumerate_coverage_tiles
 
-GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'
-DEFAULT_UA = 'fujihc-trainer/0.1 (https://github.com/YuujiKamura/fujihc-trainer)'
+# 後方互換: 既存 test (= test_fetch_gsi_dem.py) が参照する公開 API.
+# 中核 fetch / insert は dbinit に移動済だが、 旧 import path を維持する.
+GSI_URL = dbinit.GSI_URL
+DEFAULT_UA = dbinit.DEFAULT_USER_AGENT
 
 
 def fetch_one(z, x, y, user_agent, timeout=10):
-    """1 タイルを GSI から取得. 200 / 404 / その他 を区別して返す.
+    """1 タイルを GSI から取得 (= dbinit の sync 版を露出).
 
     return: (status_code: int, data: bytes | None)
     """
-    req = urllib.request.Request(
-        GSI_URL.format(z=z, x=x, y=y),
-        headers={'User-Agent': user_agent},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return (200, resp.read())
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return (404, None)
-        raise
+    return dbinit._fetch_one_sync(z, x, y, user_agent, timeout=timeout)
 
 
 def insert_tile(db, source, z, x, y, status, data, fmt='png'):
-    """DB に 1 行 insert. brief 14 の fetch_status 列を使う."""
+    """DB に 1 行 insert (= 既存 test が呼ぶ shim)."""
     db.execute(
         'INSERT OR REPLACE INTO tiles '
         '(source, zoom_level, tile_column, tile_row, format, data, fetched_at, fetch_status) '
@@ -85,13 +82,14 @@ def main():
     course = json.loads(Path(args.course).read_text(encoding='utf-8'))
     tiles = sorted(enumerate_coverage_tiles(course, [args.zoom], args.corridor_tiles))
 
-    db = sqlite3.connect(args.db)
+    db_check = sqlite3.connect(args.db)
     existing = set(
-        db.execute(
+        db_check.execute(
             'SELECT zoom_level, tile_column, tile_row FROM tiles WHERE source=?',
             ('gsi_dem',),
         ).fetchall()
     )
+    db_check.close()
     to_fetch = [(z, x, y) for (z, x, y) in tiles if (z, x, y) not in existing]
     print(
         f'{len(tiles)} tiles in coverage, {len(existing)} already in DB, '
@@ -102,29 +100,23 @@ def main():
         print('aborted')
         sys.exit(1)
 
-    for i, (z, x, y) in enumerate(to_fetch):
-        status, data = fetch_one(z, x, y, args.user_agent)
-        insert_tile(db, 'gsi_dem', z, x, y, status, data)
-        db.commit()
-        print(f'  [{i + 1}/{len(to_fetch)}] {z}/{x}/{y} {status}')
-        time.sleep(args.rate_limit)
+    def cb(payload):
+        n = payload['n']
+        total = payload['total']
+        phase = payload['phase']
+        print(f'  [{n}/{total}] {phase}')
 
-    # metadata 更新
-    for name, value in [
-        ('attribution', '国土地理院 標高タイル (dem_png)'),
-        ('format', 'png'),
-        ('minzoom', str(args.zoom)),
-        ('maxzoom', str(args.zoom)),
-        ('user_agent_used', args.user_agent),
-        ('fetched_by', 'scripts/fetch_gsi_dem.py'),
-    ]:
-        db.execute(
-            'INSERT OR REPLACE INTO metadata (source, name, value) VALUES (?, ?, ?)',
-            ('gsi_dem', name, value),
-        )
-    db.commit()
-    db.close()
-    print(f'done: {len(to_fetch)} new tiles, total {len(tiles)} in coverage')
+    result = asyncio.run(dbinit.fetch_gsi_async(
+        db_path=args.db,
+        course=course,
+        zoom=args.zoom,
+        corridor_tiles=args.corridor_tiles,
+        rate_limit_sec=args.rate_limit,
+        user_agent=args.user_agent,
+        progress_cb=cb,
+    ))
+    print(f"done: fetched={result['fetched']} skipped={result['skipped']} "
+          f"errors={result['errors']} total={result['total']}")
 
 
 if __name__ == '__main__':

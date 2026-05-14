@@ -1,4 +1,7 @@
-"""brief 16: Protomaps PMTiles から富士ヒル範囲を抽出して data/tiles.sqlite に格納.
+"""brief 16 + 26b: Protomaps PMTiles から富士ヒル範囲を抽出して DB に格納.
+
+中核 logic は src/fujihc/dbinit.py の extract_osm_async に移動。 本 script は
+CLI wrapper (= 後方互換 + 直接呼び出し用).
 
 usage:
     # 1. https://maps.protomaps.com/builds/ から日本サブセット PMTiles を DL
@@ -10,10 +13,12 @@ usage:
 Protomaps の OSM 派生 PMTiles (ODbL 配下、 再配布許可) 経由で抽出する。
 """
 import argparse
+import asyncio
 import json
 import sqlite3
 from pathlib import Path
 
+from fujihc import dbinit
 from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     OSM_VECTOR_ZOOMS,
@@ -28,7 +33,7 @@ def extract_tile(reader, z, x, y):
 
 
 def insert_tile(db, source, z, x, y, status, data, fmt='pbf'):
-    """tiles テーブルに 1 行 insert (= brief 14 schema). status=404 / data=None でも行を残す."""
+    """tiles テーブルに 1 行 insert (= 既存 test が呼ぶ shim)."""
     db.execute(
         'INSERT OR REPLACE INTO tiles '
         '(source, zoom_level, tile_column, tile_row, format, data, fetched_at, fetch_status) '
@@ -45,7 +50,7 @@ def compute_to_fetch(wanted_tiles, existing_set):
 def main():
     # pmtiles import を main 内で遅延 (= test 時に install 不要)
     try:
-        from pmtiles.reader import Reader, MmapSource
+        from pmtiles.reader import Reader, MmapSource  # noqa: F401
     except ImportError:
         print('ERROR: pmtiles package not installed. run: pip install -e .')
         raise SystemExit(1)
@@ -67,57 +72,37 @@ def main():
     print(f'want {len(wanted)} tiles across z={OSM_VECTOR_ZOOMS}, '
           f'corridor={args.corridor_tiles}')
 
-    with open(args.pmtiles, 'rb') as f:
-        reader = Reader(MmapSource(f))
-        db = sqlite3.connect(args.db)
-        existing = set(db.execute(
-            'SELECT zoom_level, tile_column, tile_row FROM tiles WHERE source=?',
-            ('osm',),
-        ).fetchall())
-        to_fetch = compute_to_fetch(wanted, existing)
-        print(f'{len(existing)} already in DB, extracting {len(to_fetch)} new')
+    db_check = sqlite3.connect(args.db)
+    existing = set(db_check.execute(
+        'SELECT zoom_level, tile_column, tile_row FROM tiles WHERE source=?',
+        ('osm',),
+    ).fetchall())
+    db_check.close()
+    to_fetch = compute_to_fetch(wanted, existing)
+    print(f'{len(existing)} already in DB, extracting {len(to_fetch)} new')
 
-        # PMTiles 抽出はレート制限不要 (= file read)、 ただし上限警告は維持
-        if len(to_fetch) > TILE_FETCH_WARN_THRESHOLD and not args.force:
-            ans = input(f'WARNING: about to extract {len(to_fetch)} tiles. continue? [y/N]: ')
-            if ans.strip().lower() not in ('y', 'yes'):
-                print('aborted')
-                return
+    if len(to_fetch) > TILE_FETCH_WARN_THRESHOLD and not args.force:
+        ans = input(f'WARNING: about to extract {len(to_fetch)} tiles. continue? [y/N]: ')
+        if ans.strip().lower() not in ('y', 'yes'):
+            print('aborted')
+            return
 
-        extracted = 0
-        skipped_out_of_range = 0
-        for i, (z, x, y) in enumerate(to_fetch):
-            data = extract_tile(reader, z, x, y)
-            if data is None:
-                # PMTiles に該当タイルなし (= 富士ヒル範囲が PMTiles 範囲外、 通常起こらない)
-                insert_tile(db, 'osm', z, x, y, 404, None)
-                skipped_out_of_range += 1
-            else:
-                insert_tile(db, 'osm', z, x, y, 200, data)
-                extracted += 1
-            if (i + 1) % 100 == 0:
-                db.commit()
-                print(f'  [{i+1}/{len(to_fetch)}] extracted={extracted} '
-                      f'skipped={skipped_out_of_range}')
-        db.commit()
+    def cb(payload):
+        n = payload['n']
+        total = payload['total']
+        phase = payload['phase']
+        if n % 100 == 0 or phase == 'done':
+            print(f'  [{n}/{total}] {phase}')
 
-        # metadata
-        for name, value in [
-            ('attribution', '© OpenStreetMap contributors (ODbL)'),
-            ('license', 'ODbL-1.0'),
-            ('format', 'pbf'),
-            ('minzoom', str(min(OSM_VECTOR_ZOOMS))),
-            ('maxzoom', str(max(OSM_VECTOR_ZOOMS))),
-            ('source_pmtiles_basename', Path(args.pmtiles).name),
-            ('fetched_by', 'scripts/fetch_osm_pmtiles.py'),
-        ]:
-            db.execute(
-                'INSERT OR REPLACE INTO metadata (source, name, value) VALUES (?, ?, ?)',
-                ('osm', name, value),
-            )
-        db.commit()
-        db.close()
-    print(f'done: extracted={extracted}, out_of_range={skipped_out_of_range}')
+    result = asyncio.run(dbinit.extract_osm_async(
+        db_path=args.db,
+        pmtiles_path=args.pmtiles,
+        course=course,
+        corridor_tiles=args.corridor_tiles,
+        progress_cb=cb,
+    ))
+    print(f"done: extracted={result['extracted']} skipped={result['skipped']} "
+          f"out_of_range={result['out_of_range']} total={result['total']}")
 
 
 if __name__ == '__main__':

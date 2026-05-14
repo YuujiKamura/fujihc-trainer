@@ -273,7 +273,8 @@ def _encode_set_indoor_bike_simulation(
 class Bridge:
     def __init__(self, *, device: Optional[str], dummy: bool, port: int, log_dir: Path,
                  fake_trainer: bool = False, http_port: int = 8000,
-                 db_path: Optional[Path] = None):
+                 db_path: Optional[Path] = None,
+                 course_path: Optional[Path] = None):
         self.device = device
         self.dummy = dummy
         self.port = port
@@ -282,6 +283,8 @@ class Bridge:
         # brief 17a: ローカル tile DB を HTTP で配信 (= 127.0.0.1 限定)
         self.http_port = http_port
         self.db_path = db_path or Path("data/tiles.sqlite")
+        # brief 26b: course path も substrate に持つ (= /tiles/_setup_status 用)
+        self.course_path = course_path or Path("web/course.json")
 
         self.state = RideState()
         self._state_lock = asyncio.Lock()
@@ -792,7 +795,12 @@ class Bridge:
     async def run(self) -> None:
         # CSV は ride_start で開く (起動だけでは log を作らない、 user 指示「明示 ON のみ」)
         # brief 17a: HTTP server (aiohttp) を WebSocket と並走、 127.0.0.1 限定
-        http_app = make_http_app(self.db_path)
+        # brief 26b: course_path + progress broadcaster を渡して dbinit endpoint を生やす
+        http_app = make_http_app(
+            self.db_path,
+            course_path=self.course_path,
+            progress_broadcaster=self._send_to_all,
+        )
         http_runner = web.AppRunner(http_app)
         await http_runner.setup()
         http_site = web.TCPSite(http_runner, "127.0.0.1", self.http_port)
@@ -867,6 +875,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="HTTP tile server port (default 8000, 127.0.0.1 only)")
     parser.add_argument("--db-path", default="data/tiles.sqlite",
                         help="ローカル tile DB の path (brief 14)")
+    parser.add_argument("--course-path", default="web/course.json",
+                        help="course.json の path (brief 26b setup_status 用)")
     parser.add_argument("--log-dir", default="~/fujihc-trainer/logs", help="CSV output dir")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args(argv)
@@ -884,6 +894,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         fake_trainer=args.fake_trainer,
         http_port=args.http_port,
         db_path=Path(os.path.expanduser(args.db_path)),
+        course_path=Path(os.path.expanduser(args.course_path)),
     )
     if args.fake_trainer:
         # fake trainer は実 BLE 不要なので default device を fake address に

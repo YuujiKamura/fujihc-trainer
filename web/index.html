@@ -8,9 +8,23 @@
 <style>
   html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace; color: #fff; }
   #map { position: fixed; inset: 0; }
+  /* brief 26b: state-checking / state-dbinit でも HUD / controls / minimap は隠す
+     (= まだ ride 中ではない、 BLE pairing 前段階の UI フロー)。 */
+  body.state-checking #hud,
+  body.state-checking #controls,
+  body.state-checking #minimap,
+  body.state-dbinit #hud,
+  body.state-dbinit #controls,
+  body.state-dbinit #minimap,
   body.state-pairing #hud,
   body.state-pairing #controls,
   body.state-pairing #minimap { display: none !important; }
+  /* brief 26b: state 別の overlay 排他制御 (= 同時表示禁止 = NG-R1-3 再演回避) */
+  body.state-dbinit #setup-overlay { display: none !important; }
+  body.state-dbinit #dbinit-overlay { display: flex; }
+  body.state-pairing #dbinit-overlay,
+  body.state-riding #dbinit-overlay,
+  body.state-checking #dbinit-overlay { display: none !important; }
 
   #hud {
     position: fixed; left: 1rem; bottom: 1rem; z-index: 999;
@@ -88,6 +102,25 @@
   #postride-panel .hint { color: #aaa; font-size: 12px; margin: 0.4rem 0; }
   #postride-panel button { font: inherit; padding: 0.5rem 1rem; margin-right: 0.4rem; min-height: 36px; cursor: pointer; }
 
+  /* brief 26b: dbinit-overlay (= 起動時 DB 構築 UI、 setup-overlay とは独立 DOM)
+     z-index: 1400 (= setup 1500 / postride 1600 / confirm 1700 より下)、
+     BLE pairing 中は body class で抑止される */
+  #dbinit-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(0, 0, 0, 0.92); display: none; align-items: center; justify-content: center; }
+  #dbinit-panel { background: #1a1a22; border: 1px solid #444; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; }
+  #dbinit-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #dbinit-panel h3 { margin: 0.8rem 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #dbinit-panel .status-line { color: #aaa; margin-bottom: 0.5rem; font-size: 12px; }
+  #dbinit-panel .progress-row { margin: 0.4rem 0; display: flex; align-items: center; gap: 0.6rem; font-size: 13px; }
+  #dbinit-panel .progress-row .label-name { flex: 0 0 8rem; color: #ffd54a; }
+  #dbinit-panel .progress-bar { flex: 1; height: 14px; background: #14141a; border: 1px solid #333; border-radius: 4px; position: relative; overflow: hidden; }
+  #dbinit-panel .progress-bar .fill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #7fff00 0%, #ffd54a 100%); transition: width 0.2s linear; }
+  #dbinit-panel .progress-bar .label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; mix-blend-mode: difference; }
+  #dbinit-panel .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+  #dbinit-panel input[type=text] { flex: 1; padding: 0.4rem 0.6rem; min-height: 32px; font: inherit; background: #0c0c10; color: #ddd; border: 1px solid #333; border-radius: 4px; }
+  #dbinit-panel button { font: inherit; padding: 0.4rem 0.9rem; cursor: pointer; min-height: 36px; background: #2a2a36; color: #ffd54a; border: 1px solid #444; border-radius: 4px; }
+  #dbinit-panel button:hover { background: #3a3a48; }
+  #dbinit-panel #btnDbinitSkip { background: #14141a; color: #aaa; }
+
   #confirm-overlay { position: fixed; inset: 0; z-index: 1700; background: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; }
   #confirm-overlay.visible { display: flex; }
   #confirm-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 8px; padding: 1.2rem 1.4rem; max-width: 440px; }
@@ -96,7 +129,7 @@
   #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
 </style>
 </head>
-<body class="state-pairing">
+<body class="state-checking">
 <div id="map"></div>
 
 <div id="hud">
@@ -123,6 +156,33 @@
 </div>
 
 <div id="status">loading...</div>
+
+<div id="dbinit-overlay" role="dialog" aria-modal="true" aria-labelledby="dbinit-title">
+  <div id="dbinit-panel">
+    <h2 id="dbinit-title">地図 DB の構築</h2>
+    <div class="status-line" id="dbinit-status">起動時の DB 状態を確認中...</div>
+    <div id="dbinit-gsi-bar" class="progress-row">
+      <span class="label-name">GSI 標高</span>
+      <span class="progress-bar"><span class="fill"></span><span class="label">0/0</span></span>
+    </div>
+    <div id="dbinit-osm-bar" class="progress-row">
+      <span class="label-name">OSM ベクトル</span>
+      <span class="progress-bar"><span class="fill"></span><span class="label">0/0</span></span>
+    </div>
+    <h3>GSI 標高 (国土地理院、 自動取得)</h3>
+    <div class="row">
+      <button id="btnFetchGsi">GSI 標高タイルを取得 (約 36 秒)</button>
+    </div>
+    <h3>OSM ベクトル (Protomaps PMTiles から抽出)</h3>
+    <div class="row">
+      <input id="osmPmtilesPath" type="text" placeholder="ローカル PMTiles file path (例: ~/Downloads/japan.pmtiles)">
+      <button id="btnExtractOsm">PMTiles から取り込み</button>
+    </div>
+    <div class="row">
+      <button id="btnDbinitSkip">skip (地形のみで進む)</button>
+    </div>
+  </div>
+</div>
 
 <div id="setup-overlay" class="visible" role="dialog" aria-modal="true" aria-labelledby="pairing-title">
   <div id="setup-panel">
@@ -186,6 +246,6 @@
 </div>
 
 <canvas id="minimap" width="320" height="720"></canvas>
-<script type="module" src="viewer-maplibre.js?v=29"></script>
+<script type="module" src="viewer-maplibre.js?v=30"></script>
 </body>
 </html>

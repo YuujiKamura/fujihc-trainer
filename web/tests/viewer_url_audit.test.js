@@ -117,6 +117,65 @@ describe('brief 19b: viewer 統合層 (ws_client / ride_state / camera_controlle
   });
 });
 
+describe('brief 26b: 起動 DB 構築フロー + 4 状態 state machine', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+  const INDEX_PATH = resolve(__dirname, '..', 'index.html');
+  const indexHtml = readFileSync(INDEX_PATH, 'utf8');
+
+  it('setAppState の初期値が checking (= state-pairing 初期発火 廃止)', () => {
+    // 旧コード setAppState('pairing'); は廃止
+    expect(viewer).not.toMatch(/^setAppState\(['"]pairing['"]\)/m);
+    // 新コード: 初期 setAppState('checking')
+    expect(viewer).toMatch(/setAppState\(['"]checking['"]\)/);
+  });
+
+  it('checkSetupStatus が /tiles/_setup_status を fetch する', () => {
+    expect(viewer).toMatch(/function\s+checkSetupStatus\s*\(/);
+    expect(viewer).toMatch(/\/tiles\/_setup_status/);
+  });
+
+  it('起動分岐で TEST_MODE 外は checkSetupStatus を経由する', () => {
+    expect(viewer).toMatch(/checkSetupStatus\(\)\.then/);
+  });
+
+  it('dbinit_progress ハンドラが wsHandlers に登録されている', () => {
+    expect(viewer).toMatch(/dbinit_progress\s*\(\s*msg\s*\)/);
+    expect(viewer).toMatch(/handleDbinitProgress/);
+  });
+
+  it('POST /tiles/_fetch_gsi / _extract_osm を呼ぶ', () => {
+    expect(viewer).toMatch(/\/tiles\/_fetch_gsi/);
+    expect(viewer).toMatch(/\/tiles\/_extract_osm/);
+  });
+
+  it('index.html に dbinit-overlay 要素群が存在する (= 5 要素)', () => {
+    expect(indexHtml).toMatch(/id="dbinit-overlay"/);
+    expect(indexHtml).toMatch(/id="dbinit-gsi-bar"/);
+    expect(indexHtml).toMatch(/id="dbinit-osm-bar"/);
+    expect(indexHtml).toMatch(/id="btnFetchGsi"/);
+    expect(indexHtml).toMatch(/id="btnExtractOsm"/);
+    expect(indexHtml).toMatch(/id="btnDbinitSkip"/);
+  });
+
+  it('dbinit-overlay は setup-overlay と独立 DOM (= 混入禁止 NG-R1-3)', () => {
+    // setup-panel の中に dbinit 系 id が混じっていない
+    const setupBlock = indexHtml.match(/<div id="setup-overlay"[\s\S]*?<\/div>\s*<\/div>/);
+    if (setupBlock) {
+      expect(setupBlock[0]).not.toMatch(/id="dbinit-/);
+      expect(setupBlock[0]).not.toMatch(/btnFetchGsi|btnExtractOsm|btnDbinitSkip/);
+    }
+  });
+
+  it('body 初期 class が state-checking (= state-pairing 初期廃止)', () => {
+    expect(indexHtml).toMatch(/<body class="state-checking"/);
+  });
+
+  it('CSS に body.state-dbinit / body.state-checking 規則が存在', () => {
+    expect(indexHtml).toMatch(/body\.state-dbinit/);
+    expect(indexHtml).toMatch(/body\.state-checking/);
+  });
+});
+
 describe('brief 26a: OSM を vector pbf で受ける (= 17b 積み残し fix)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 

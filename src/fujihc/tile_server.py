@@ -10,10 +10,16 @@ brief 14 schema 前提:
 brief 20 連携:
     get_tile 呼出ごとに _metrics に count up、 get_metrics / reset_metrics で参照 / 初期化。
 """
+import json
 import sqlite3
 from pathlib import Path
 
-from fujihc.tile_constants import GSI_DEM_ZOOMS, OSM_VECTOR_ZOOMS
+from fujihc.tile_constants import (
+    DEFAULT_CORRIDOR_TILES,
+    GSI_DEM_ZOOMS,
+    OSM_VECTOR_ZOOMS,
+)
+from fujihc.tile_coverage import enumerate_coverage_tiles
 
 CONTENT_TYPES = {
     'png': 'image/png',
@@ -141,6 +147,70 @@ def build_style_json(db_path, base_url='/tiles'):
         ],
     }
     return (200, style)
+
+
+def get_setup_status(db_path, course_path):
+    """source 別の DB 充足度 + overall 状態を返す pure function (brief 26b).
+
+    各 source (gsi_dem / osm) について
+        tiles_expected = len(enumerate_coverage_tiles(course, ZOOMS, DEFAULT_CORRIDOR_TILES))
+        tiles_present  = COUNT(*) WHERE source=? AND fetch_status=200 AND data IS NOT NULL
+    から status を決定 (= empty / partial / ready).
+    overall は全 ready → ready, 全 empty → empty, それ以外 → partial.
+
+    return: (status: int, dict | None)
+        200: 計算成功 (DB 不在でも sources は空 dict ではなく source 別 status=empty で返す
+              ── 「DB 不在 = 全 source empty」を viewer に正確に伝えるため)
+        503: course_path 不在 (= 起動 substrate 不全、 viewer 側 fallback 不能)
+    """
+    course_p = Path(course_path)
+    if not course_p.exists():
+        return (503, None)
+    try:
+        course = json.loads(course_p.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return (503, None)
+    if not isinstance(course, list) or not course:
+        return (503, None)
+
+    sources_spec = (
+        ('gsi_dem', GSI_DEM_ZOOMS),
+        ('osm', OSM_VECTOR_ZOOMS),
+    )
+    sources_out = {}
+    db_exists = Path(db_path).exists()
+    for source, zooms in sources_spec:
+        expected = len(enumerate_coverage_tiles(course, zooms, DEFAULT_CORRIDOR_TILES))
+        if db_exists:
+            with sqlite3.connect(db_path) as db:
+                present = db.execute(
+                    'SELECT COUNT(*) FROM tiles '
+                    'WHERE source=? AND fetch_status=200 AND data IS NOT NULL',
+                    (source,),
+                ).fetchone()[0]
+        else:
+            present = 0
+        if present == 0:
+            status = 'empty'
+        elif present < expected:
+            status = 'partial'
+        else:
+            status = 'ready'
+        sources_out[source] = {
+            'status': status,
+            'tiles_present': int(present),
+            'tiles_expected': int(expected),
+        }
+
+    statuses = {s['status'] for s in sources_out.values()}
+    if statuses == {'ready'}:
+        overall = 'ready'
+    elif statuses == {'empty'}:
+        overall = 'empty'
+    else:
+        overall = 'partial'
+
+    return (200, {'sources': sources_out, 'overall': overall})
 
 
 def register_tile_routes(db_path):

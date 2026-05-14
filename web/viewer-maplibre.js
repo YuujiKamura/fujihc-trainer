@@ -201,8 +201,83 @@ function setupPitchDrag() {
   mapEl.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
+// brief 26b: state 種は checking / dbinit / pairing / riding の 4 値。
+// - checking: 起動直後、 /tiles/_setup_status を fetch 中、 UI は最小
+// - dbinit: DB 不足、 #dbinit-overlay で GSI fetch / OSM extract / skip を user に提示
+// - pairing: 既存 BLE flow (= state-pairing と同じ挙動)
+// - riding: 既存 ride 中
 function setAppState(s) { document.body.className = `state-${s}`; }
-setAppState('pairing');
+setAppState('checking');
+
+// brief 26b: bridge への HTTP fetch base. WebSocket とは別経路 (= /tiles/* aiohttp app)。
+const HTTP_BASE_URL = location.origin;
+
+async function checkSetupStatus() {
+  try {
+    const resp = await fetch(`${HTTP_BASE_URL}/tiles/_setup_status`);
+    if (resp.status === 503) return { overall: 'empty', sources: {} };
+    if (!resp.ok) return { overall: 'empty', sources: {} };
+    return await resp.json();
+  } catch (err) {
+    // bridge 未起動 (= TEST_MODE 以外で http が無い) でも黒画面を避けたい
+    return { overall: 'empty', sources: {} };
+  }
+}
+
+let _advancedFromDbinit = false;
+async function maybeAdvanceToPairing() {
+  if (_advancedFromDbinit) return;
+  const s = await checkSetupStatus();
+  if (s.overall === 'ready') {
+    _advancedFromDbinit = true;
+    hideDbinit();
+    setAppState('pairing');
+    connectBridge();
+  }
+}
+
+function showDbinit(status) {
+  setAppState('dbinit');
+  // 初期 bar の状態を setup_status から埋める
+  updateDbinitBar('gsi_dem', status && status.sources && status.sources.gsi_dem);
+  updateDbinitBar('osm',     status && status.sources && status.sources.osm);
+  const ov = document.getElementById('dbinit-overlay');
+  if (ov) ov.classList.add('visible');
+}
+function hideDbinit() {
+  const ov = document.getElementById('dbinit-overlay');
+  if (ov) ov.classList.remove('visible');
+}
+
+function updateDbinitBar(source, info) {
+  const bar = document.getElementById(`dbinit-${source === 'gsi_dem' ? 'gsi' : source}-bar`);
+  if (!bar) return;
+  const present = info && Number.isFinite(info.tiles_present) ? info.tiles_present : 0;
+  const expected = info && Number.isFinite(info.tiles_expected) ? info.tiles_expected : 0;
+  const fill = bar.querySelector('.fill');
+  const label = bar.querySelector('.label');
+  const pct = expected > 0 ? Math.min(100, (100 * present) / expected) : 0;
+  if (fill) fill.style.width = `${pct}%`;
+  if (label) label.textContent = `${present}/${expected}`;
+}
+
+function handleDbinitProgress(msg) {
+  // bridge から WS で push される { type:'dbinit_progress', source, n, total, phase }
+  const source = msg && msg.source;
+  if (source !== 'gsi_dem' && source !== 'osm') return;
+  const bar = document.getElementById(`dbinit-${source === 'gsi_dem' ? 'gsi' : source}-bar`);
+  if (!bar) return;
+  const total = Number(msg.total) || 0;
+  const n = Number(msg.n) || 0;
+  const fill = bar.querySelector('.fill');
+  const label = bar.querySelector('.label');
+  const pct = total > 0 ? Math.min(100, (100 * n) / total) : 0;
+  if (fill) fill.style.width = `${pct}%`;
+  if (label) label.textContent = `${n}/${total}`;
+  if (msg.phase === 'done') {
+    maybeAdvanceToPairing();
+  }
+}
 
 function updateStepIndicator(activeIdx, doneIdx) {
   const steps = ['step-scan', 'step-connect', 'step-handshake', 'step-ready'];
@@ -293,6 +368,8 @@ const wsHandlers = {
     else if (msg.state === 'failed') setText('setup-status', `心拍計 接続失敗`);
     else if (msg.state === 'disconnected') setText('setup-status', `心拍計 切断`);
   },
+  // brief 26b: dbinit progress (= POST /tiles/_fetch_gsi 等の 1Hz push)
+  dbinit_progress(msg) { handleDbinitProgress(msg); },
   ride_status(msg) {
     if (msg.state === 'started') {
       if (rideState) rideState.start();
@@ -430,7 +507,50 @@ function maybeSendSlope(slope_pct) {
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
-if (TEST_MODE) initTestMode(); else connectBridge();
+// brief 26b: 起動時の DB 充足度チェック → 不足なら dbinit overlay、 ready なら従来 BLE.
+// TEST_MODE は従来通り checking を skip (= ?test=1 は trainer / DB 不要 demo).
+function bootCheckSetupStatus() {
+  checkSetupStatus().then((s) => {
+    if (s.overall === 'ready') {
+      setAppState('pairing');
+      connectBridge();
+    } else {
+      // overall === 'empty' / 'partial' / fetch 失敗時 fallback も全部 dbinit
+      // bridge が未起動でも overlay は出る (= user に「bridge 立ち上げて」と促せる)
+      showDbinit(s);
+      // bridge への WS は dbinit 中も繋ぐ (= dbinit_progress を受け取るため)
+      connectBridge();
+    }
+  });
+}
+if (TEST_MODE) initTestMode(); else bootCheckSetupStatus();
+
+function startGsiFetch() {
+  fetch(`${HTTP_BASE_URL}/tiles/_fetch_gsi`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    .then((r) => { if (!r.ok && r.status !== 202) status(`GSI fetch 失敗: HTTP ${r.status}`); })
+    .catch((e) => status(`GSI fetch error: ${e && e.message || e}`));
+}
+
+function startOsmExtract() {
+  const input = document.getElementById('osmPmtilesPath');
+  const pmtiles_path = (input && input.value || '').trim();
+  if (!pmtiles_path) { status('PMTiles file path を入力してください'); return; }
+  fetch(`${HTTP_BASE_URL}/tiles/_extract_osm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pmtiles_path }),
+  })
+    .then((r) => { if (!r.ok && r.status !== 202) status(`OSM 取込失敗: HTTP ${r.status}`); })
+    .catch((e) => status(`OSM 取込 error: ${e && e.message || e}`));
+}
+
+function skipDbinit() {
+  // 「地形のみで進む」 = OSM 抽出を後回しにして BLE pairing flow に移る。
+  // dbinit overlay を閉じて state-pairing へ、 setup-overlay は元から visible 維持。
+  _advancedFromDbinit = true;
+  hideDbinit();
+  setAppState('pairing');
+}
 
 // === コース読み込み ===
 async function loadCourse() {
@@ -766,3 +886,11 @@ if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
 bindSlider('rngDiff', 'diffVal', 'fujihc.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
 bindSlider('rngSpd', 'spdVal', 'fujihc.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
+
+// brief 26b: dbinit-overlay buttons
+const btnFetchGsi = document.getElementById('btnFetchGsi');
+if (btnFetchGsi) btnFetchGsi.addEventListener('click', startGsiFetch);
+const btnExtractOsm = document.getElementById('btnExtractOsm');
+if (btnExtractOsm) btnExtractOsm.addEventListener('click', startOsmExtract);
+const btnDbinitSkip = document.getElementById('btnDbinitSkip');
+if (btnDbinitSkip) btnDbinitSkip.addEventListener('click', skipDbinit);
