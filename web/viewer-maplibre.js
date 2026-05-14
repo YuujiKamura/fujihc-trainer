@@ -1080,9 +1080,9 @@ function tick(t) {
     ridSrc.setData(buildRiderFeatures(rLat, rLon, headingRad, spinAngle));
   }
 
-  // camera は ride 中じゃなくても常に rider 中心 + 進行方向。
-  // pitch / zoom は user 操作分を尊重、 center は interpolated で sub-meter 精度。
-  if (course.length > 0) {
+  // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
+  // 「描画準備中」インジケータの解除トリガに干渉しない).
+  if (course.length > 0 && rideState && rideState.snapshot().active) {
     map.jumpTo({ ...cam, center: [rLon, rLat] });
   }
 
