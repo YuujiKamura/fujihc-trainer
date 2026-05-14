@@ -1,6 +1,6 @@
-"""brief 17a: bridge.py の HTTP tile server 統合 test.
+"""brief 17a + Round 4 refactor: HTTP tile server 統合 test.
 
-aiohttp の test_utils で in-process に Bridge._make_http_app() を起動、
+aiohttp の test_utils で in-process に make_http_app() を起動、
 tile / metadata / style / metrics endpoint と DB 不在時の 503 を確認.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from fujihc.bridge import Bridge
+from fujihc.http_app import make_http_app
 from fujihc import tile_server
 import init_tile_db
 
@@ -49,15 +49,6 @@ def db_with_one_tile(tmp_path: Path) -> Path:
     return db_path
 
 
-def _make_bridge(db_path: Path) -> Bridge:
-    return Bridge(
-        device=None, dummy=True, port=8765,
-        log_dir=Path("/tmp/ignored"),
-        http_port=8000,
-        db_path=db_path,
-    )
-
-
 @pytest.fixture(autouse=True)
 def _reset_metrics():
     tile_server.reset_metrics()
@@ -67,8 +58,7 @@ def _reset_metrics():
 
 async def test_tile_endpoint_happy(aiohttp_client, db_with_one_tile):
     """既知 tile を request -> 200 + pbf Content-Type + bytes 一致."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     resp = await client.get("/tiles/osm/17/116000/51500.pbf")
     assert resp.status == 200
     assert resp.headers["Content-Type"].startswith("application/x-protobuf")
@@ -78,32 +68,28 @@ async def test_tile_endpoint_happy(aiohttp_client, db_with_one_tile):
 
 async def test_tile_endpoint_404(aiohttp_client, db_with_one_tile):
     """存在しない z/x/y -> 404."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     resp = await client.get("/tiles/osm/17/0/0.pbf")
     assert resp.status == 404
 
 
 async def test_tile_endpoint_invalid_source(aiohttp_client, db_with_one_tile):
     """invalid source -> 400."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     resp = await client.get("/tiles/invalid/17/0/0.pbf")
     assert resp.status == 400
 
 
 async def test_tile_endpoint_503_when_db_missing(aiohttp_client, tmp_path):
     """DB 不在 -> 503 (= setup 未完了の中間状態 signal)."""
-    bridge = _make_bridge(tmp_path / "nonexistent.sqlite")
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(tmp_path / "nonexistent.sqlite"))
     resp = await client.get("/tiles/osm/17/0/0.pbf")
     assert resp.status == 503
 
 
 async def test_metadata_endpoint(aiohttp_client, db_with_one_tile):
     """metadata.json -> dict."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     resp = await client.get("/tiles/osm/metadata.json")
     assert resp.status == 200
     body = await resp.json()
@@ -113,8 +99,7 @@ async def test_metadata_endpoint(aiohttp_client, db_with_one_tile):
 
 async def test_style_endpoint(aiohttp_client, db_with_one_tile):
     """style.json -> osm + gsi_dem source 含む MapLibre style."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     resp = await client.get("/tiles/_style.json")
     assert resp.status == 200
     body = await resp.json()
@@ -127,8 +112,7 @@ async def test_style_endpoint(aiohttp_client, db_with_one_tile):
 
 async def test_metrics_endpoint(aiohttp_client, db_with_one_tile):
     """tile を 2 回叩いて metrics で count up を確認 (= brief 20)."""
-    bridge = _make_bridge(db_with_one_tile)
-    client = await aiohttp_client(bridge._make_http_app())
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
     await client.get("/tiles/osm/17/116000/51500.pbf")  # hit
     await client.get("/tiles/osm/17/0/0.pbf")            # miss (404)
     resp = await client.get("/tiles/_metrics")

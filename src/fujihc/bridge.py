@@ -33,7 +33,7 @@ from websockets.exceptions import ConnectionClosed
 from aiohttp import web
 
 from fujihc.gpx_export import csv_to_gpx
-from fujihc import tile_server
+from fujihc.http_app import make_http_app
 
 log = logging.getLogger("fujihc.bridge")
 
@@ -789,59 +789,10 @@ class Bridge:
 
     # ---------- top-level ----------
 
-    def _make_http_app(self) -> web.Application:
-        """brief 17a: ローカル tile DB を HTTP で配信する aiohttp app を組み立て.
-
-        route:
-          GET  /tiles/{source}/{z}/{x}/{y}.{ext}    タイル binary
-          GET  /tiles/{source}/metadata.json         metadata dict (JSON)
-          GET  /tiles/_style.json                    MapLibre style (JSON)
-          GET  /tiles/_metrics                       hit/miss カウンタ (brief 20)
-        bind: 127.0.0.1 限定 (LAN 内 ODbL 再配布事故防止)
-        """
-        handlers = tile_server.register_tile_routes(str(self.db_path))
-        app = web.Application()
-
-        async def h_tile(request: web.Request) -> web.Response:
-            source = request.match_info["source"]
-            try:
-                z = int(request.match_info["z"])
-                x = int(request.match_info["x"])
-                y = int(request.match_info["y"])
-            except ValueError:
-                return web.Response(status=400, text="bad coord")
-            status, ctype, data = handlers["tile"](source, z, x, y)
-            if status != 200 or data is None:
-                return web.Response(status=status)
-            return web.Response(status=200, body=data, content_type=ctype,
-                                headers={"Cache-Control": "public, max-age=31536000"})
-
-        async def h_metadata(request: web.Request) -> web.Response:
-            source = request.match_info["source"]
-            status, meta = handlers["metadata"](source)
-            if status != 200 or meta is None:
-                return web.Response(status=status)
-            return web.json_response(meta)
-
-        async def h_style(request: web.Request) -> web.Response:
-            status, style = handlers["style"]()
-            if status != 200 or style is None:
-                return web.Response(status=status)
-            return web.json_response(style)
-
-        async def h_metrics(request: web.Request) -> web.Response:
-            return web.json_response(handlers["metrics"]())
-
-        app.router.add_get("/tiles/{source}/metadata.json", h_metadata)
-        app.router.add_get("/tiles/_style.json", h_style)
-        app.router.add_get("/tiles/_metrics", h_metrics)
-        app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
-        return app
-
     async def run(self) -> None:
         # CSV は ride_start で開く (起動だけでは log を作らない、 user 指示「明示 ON のみ」)
         # brief 17a: HTTP server (aiohttp) を WebSocket と並走、 127.0.0.1 限定
-        http_app = self._make_http_app()
+        http_app = make_http_app(self.db_path)
         http_runner = web.AppRunner(http_app)
         await http_runner.setup()
         http_site = web.TCPSite(http_runner, "127.0.0.1", self.http_port)
