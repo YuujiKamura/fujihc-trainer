@@ -262,6 +262,11 @@ let userPitch = 85;
 let spinAngle = 0;
 // 最新の cadence (state push 経由)、 ride 中ペダル回ってない時は 0 で静止
 let currentCadence = 0;
+// brief 33: ride 中の最新 power / hr (= state push 経由、 trkpt 蓄積に使う)
+let currentPower = 0;
+let currentHr = 0;
+// brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
+let lastTrkptT = 0;
 
 function setupWheelZoom() {
   const mapEl = map.getContainer();
@@ -445,6 +450,8 @@ const wsHandlers = {
     const pw = (msg.power_w != null) ? String(msg.power_w) : '--';
     const cd = (msg.cadence_rpm != null) ? msg.cadence_rpm.toFixed(0) : '--';
     if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
+    if (typeof msg.power_w === 'number') currentPower = msg.power_w;
+    if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
     const sp = (msg.speed_mps != null && msg.speed_mps >= 0) ? (msg.speed_mps * 3.6).toFixed(1) : '--';
     setText('power', pw); setText('cadence', cd);
     // rider 追随 HUD (= 豆腐の下) にも同値を反映、 大きめ text で表示.
@@ -1274,6 +1281,20 @@ function tick(t) {
       lastPositionSendT = now;
     }
   }
+  // brief 33: ride 中 1Hz で trkpt 蓄積 (= GPX / Strava upload / IndexedDB 履歴の元データ).
+  // connected 不要 (= TEST_MODE / MAP_MODE / BLE / static でも本人 ride の trkpt は溜める).
+  if (snap.active && !snap.paused) {
+    const nowT = performance.now();
+    if (nowT - lastTrkptT >= 1000) {
+      rideState.appendTrkpt({
+        t: new Date().toISOString(),
+        power: currentPower,
+        cad: currentCadence,
+        hr: currentHr,
+      });
+      lastTrkptT = nowT;
+    }
+  }
   if (!rideState.isAtEnd()) requestAnimationFrame(tick);
   else status('完走');
 }
@@ -1283,7 +1304,7 @@ document.getElementById('btnPause').addEventListener('click', () => { if (rideSt
 document.getElementById('btnRideStart').addEventListener('click', () => {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.start();
-  lastT = performance.now(); lastPositionSendT = 0;
+  lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
   client.sendRideStart();
 });
 document.getElementById('btnRideEnd').addEventListener('click', () => {
