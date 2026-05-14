@@ -4,6 +4,12 @@
 
 const status = (msg) => { document.getElementById('status').textContent = msg; };
 
+// === タイル取得は全て同一 origin (bridge.py が proxy する /tiles/...) 経由 ===
+// brief 17b: 外部第三者 endpoint への runtime fetch を物理的にゼロにする。
+// web/tests/viewer_url_audit.test.js が source-grep gate で固定する。
+// 違反した瞬間に CI が落ちる。
+const TILE_BASE_URL = `${location.origin}/tiles`;
+
 // === GSI 標高 PNG を terrarium 形式 PNG に変換するカスタムプロトコル ===
 // GSI: h = (R*65536 + G*256 + B) / 100、 R=128 で無効値
 // terrarium: h = (R*256 + G + B/256) - 32768
@@ -61,7 +67,7 @@ const map = new maplibregl.Map({
     sources: {
       'osm': {
         type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tiles: [`${TILE_BASE_URL}/osm/{z}/{x}/{y}.png`],
         tileSize: 256,
         attribution: '© OpenStreetMap contributors',
         // MapLibre 内部 memory cache を拡張、 zoom 切替時の再 fetch を減らす (default は数十枚)
@@ -69,7 +75,9 @@ const map = new maplibregl.Map({
       },
       'gsi-terrain': {
         type: 'raster-dem',
-        tiles: ['gsidem://https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'],
+        // addProtocol('gsidem', ...) が GSI 独自符号 (R*65536+G*256+B)/100 を
+        // terrarium 形式に変換する。 fetch URL は localhost 経由のみ。
+        tiles: [`gsidem://${TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png`],
         tileSize: 256,
         encoding: 'terrarium',
         maxzoom: 14,
@@ -139,8 +147,6 @@ let minimapStats = null;
 // user が操作した zoom / pitch を覚えておく、 tick の jumpTo はこの値を使う
 let userZoom = 16;
 let userPitch = 55;
-let lastJumpToT = 0;
-const JUMP_INTERVAL_MS = 33;   // 30 fps、 60 fps で jumpTo を呼ぶと GPU 過負荷
 // rider 上のスピナー (= プロペラ) の累積回転角、 cadence rpm に比例して進む
 let spinAngle = 0;
 // 最新の cadence (state push 経由)、 ride 中ペダル回ってない時は 0 で静止
@@ -400,11 +406,8 @@ async function loadCourse() {
 
   buildMinimapBase();
 
-  // FROZEN brief 13 (2026-05-15): prefetchTilesAlongCourse は OSM Tile Usage Policy +
-  // GSI 地理院タイル利用規約に違反 (最大 2700 OSM + 450 GSI タイル並列 fetch、 rate limit / UA 無し).
-  // brief 14-17 で local SQLite + Protomaps PMTiles 経由に置換、 関数本体は brief 17b で削除.
-  // prefetchTilesAlongCourse();
-  console.info('[fujihc] prefetch frozen (brief 13). Tiles load on-demand by MapLibre.');
+  // brief 17b: prefetch を完全削除。 タイルは MapLibre が on-demand で
+  // localhost /tiles/... から fetch する。 外部 fetch ゼロ。
 
   // 初期 camera: start 地点に寄せる、 起動直後から走行視点っぽい絵にする
   // (全体俯瞰だと goal 側ばかり映って rider が画面外になる、 user 不満を生む)
@@ -426,25 +429,13 @@ async function loadCourse() {
   requestAnimationFrame(tick);
 }
 
-// === minimap (既存 viewer.js から流用、 OSM タイル + 標高プロファイル) ===
-function lonToTileX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
-function latToTileY(lat, z) { return (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z); }
-function tileXToLon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
-function tileYToLat(y, z) { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))); }
+// === minimap (course polyline + 標高プロファイル) ===
+// brief 17b: タイル座標変換ヘルパ (lonToTileX 等) は loadOsmTile / prefetchTilesAlongCourse
+// が消えた時点で参照ゼロになったため削除。 必要になったら web/lib/tile_math.js を使う。
 
-function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
-  return new Promise((resolve) => {
-    const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const lonW = tileXToLon(tx, z), lonE = tileXToLon(tx + 1, z), latN = tileYToLat(ty, z), latS = tileYToLat(ty + 1, z);
-      const [x1, y1] = projectLatLon(latN, lonW), [x2, y2] = projectLatLon(latS, lonE);
-      ctx.save(); ctx.beginPath(); ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h); ctx.clip();
-      ctx.drawImage(img, x1, y1, x2 - x1, y2 - y1); ctx.restore(); resolve();
-    };
-    img.onerror = () => resolve();
-    img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
-  });
-}
+// brief 17b: loadOsmTile は完全削除。 minimap は外部 OSM 直叩きを止め、
+// 単色背景 + course polyline + 標高曲線で全体俯瞰の責務を果たす。
+// (外部 fetch ゼロを優先、 minimap 改善 ── ローカルタイル経由化 ── は別 brief)
 
 async function buildMinimapBase() {
   const onscreen = document.getElementById('minimap');
@@ -477,13 +468,13 @@ async function buildMinimapBase() {
   const ctx = off.getContext('2d');
   ctx.fillStyle = 'rgba(15,15,20,0.85)'; ctx.fillRect(0, 0, W, H);
 
-  const z = 14, buffer = 1;
-  const minTx = Math.floor(lonToTileX(minLon, z)) - buffer, maxTx = Math.floor(lonToTileX(maxLon, z)) + buffer;
-  const minTy = Math.floor(latToTileY(maxLat, z)) - buffer, maxTy = Math.floor(latToTileY(minLat, z)) + buffer;
+  // brief 17b: 外部 OSM 直叩きを止め、 上半分 (平面マップ部分) は単色背景 (#e8e8e8) で塗る。
+  // course polyline + 標高曲線で全体俯瞰の責務は果たせる。 minimap タイル経由化は別 brief。
   const clip = { x: PAD, y: PAD + 28, w: W - 2 * PAD, h: TOP_H - PAD - 28 };
-  const ps = [];
-  for (let tx = minTx; tx <= maxTx; tx++) for (let ty = minTy; ty <= maxTy; ty++) ps.push(loadOsmTile(ctx, tx, ty, z, project, clip));
-  await Promise.all(ps);
+  ctx.save();
+  ctx.fillStyle = '#e8e8e8';
+  ctx.fillRect(clip.x, clip.y, clip.w, clip.h);
+  ctx.restore();
 
   // タイトル文字 (Mt.Fuji ...) は廃止: 180 度回転で逆さまになる、 user 判断「無くて良い」
   ctx.beginPath();
@@ -524,46 +515,9 @@ async function buildMinimapBase() {
   minimapBase = off;
 }
 
-// course 沿いの地図タイルを pairing 中に裏で fetch、 ブラウザ HTTP cache に乗せて
-// ride 中のタイル読み込み待ちを消す。 OSM zoom 14-19 + GSI dem zoom 14。
-function prefetchTilesAlongCourse() {
-  if (!course.length) return;
-  const osmZooms = [14, 15, 16, 17, 18, 19];
-  const demZ = 14;
-  const seenOsm = new Set(), seenDem = new Set();
-  const step = Math.max(1, Math.floor(course.length / 50));
-  let osmCount = 0, demCount = 0;
-  for (let i = 0; i < course.length; i += step) {
-    const p = course[i];
-    for (const z of osmZooms) {
-      const tx0 = Math.floor(lonToTileX(p.lon, z));
-      const ty0 = Math.floor(latToTileY(p.lat, z));
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          const key = `${z}/${tx0 + dx}/${ty0 + dy}`;
-          if (seenOsm.has(key)) continue;
-          seenOsm.add(key);
-          const img = new Image(); img.crossOrigin = 'anonymous';
-          img.src = `https://tile.openstreetmap.org/${z}/${tx0 + dx}/${ty0 + dy}.png`;
-          osmCount++;
-        }
-      }
-    }
-    const dx0 = Math.floor(lonToTileX(p.lon, demZ));
-    const dy0 = Math.floor(latToTileY(p.lat, demZ));
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        const key = `${demZ}/${dx0 + dx}/${dy0 + dy}`;
-        if (seenDem.has(key)) continue;
-        seenDem.add(key);
-        const dimg = new Image(); dimg.crossOrigin = 'anonymous';
-        dimg.src = `https://cyberjapandata.gsi.go.jp/xyz/dem_png/${demZ}/${dx0 + dx}/${dy0 + dy}.png`;
-        demCount++;
-      }
-    }
-  }
-  status(`prefetch: OSM ${osmCount} + GSI dem ${demCount} tiles を裏読み中`);
-}
+// brief 17b: prefetchTilesAlongCourse は完全削除。 関連する seenOsm / seenDem 等の
+// 変数も使用箇所が無いため定義しない。 タイルは MapLibre の on-demand fetch (= localhost
+// /tiles/... 経由) で読み込み、 外部第三者 endpoint には一切 fetch しない。
 
 function drawDirTriangle(ctx, x, y, h, size, fill) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(h);

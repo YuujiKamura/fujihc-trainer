@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { enumerateCoverageTiles, computeBounds } from '../lib/tile_coverage.js';
+import { enumerateCoverageTiles, computeBounds, estimateTileCount } from '../lib/tile_coverage.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COURSE_PATH = resolve(__dirname, '..', 'course.json');
@@ -66,6 +66,57 @@ describe('tile_coverage', () => {
 
   it('computeBounds: 空 course は throw する', () => {
     expect(() => computeBounds([], 1000)).toThrow();
+  });
+
+  // === estimateTileCount: brief 14 の総量見積もり表との一致を pin ===
+
+  it('estimateTileCount: 富士ヒル course を [14,15,16,17,18] corridor=3 で brief 14 数値表と一致', () => {
+    const course = loadCourse();
+    const counts = estimateTileCount(course, [14, 15, 16, 17, 18], 3);
+    // brief 14 の数値表と一致 (Python estimate_tile_count と同値)
+    expect(counts).toEqual([
+      [14, 36],
+      [15, 70],
+      [16, 148],
+      [17, 300],
+      [18, 631],
+    ]);
+  });
+
+  it('estimateTileCount: 単 zoom [17] corridor=3 → [[17, 300]]', () => {
+    const course = loadCourse();
+    expect(estimateTileCount(course, [17], 3)).toEqual([[17, 300]]);
+  });
+
+  it('estimateTileCount: corridor=1 と corridor=3 で count が違う (corridor=3 の方が多い)', () => {
+    const course = loadCourse();
+    const c1 = estimateTileCount(course, [17], 1);
+    const c3 = estimateTileCount(course, [17], 3);
+    expect(c1[0][0]).toBe(17);
+    expect(c3[0][0]).toBe(17);
+    expect(c3[0][1]).toBeGreaterThan(c1[0][1]);
+    // brief 14 pin: corridor=1 は 107 タイル
+    expect(c1).toEqual([[17, 107]]);
+  });
+
+  it('estimateTileCount: 空 zoomLevels → 空 array', () => {
+    const course = loadCourse();
+    expect(estimateTileCount(course, [], 3)).toEqual([]);
+  });
+
+  // cross-language pin: fixture と一致 (= Python estimate_tile_count と JS estimateTileCount 同値)
+  const fixtureExistsForEstimate = existsSync(FIXTURE_PATH);
+  const maybeSkipEstimate = fixtureExistsForEstimate ? it : it.skip;
+
+  maybeSkipEstimate('estimateTileCount: cross-language Python tiles_z17_corridor3 fixture と一致', () => {
+    const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
+    const course = loadCourse();
+    const pyCount3 = (fixture.tiles_z17_corridor3 || {}).count;
+    const pyCount1 = (fixture.tiles_z17_corridor1 || {}).count;
+    const js3 = estimateTileCount(course, [17], 3);
+    const js1 = estimateTileCount(course, [17], 1);
+    expect(js3[0][1]).toBe(pyCount3);
+    expect(js1[0][1]).toBe(pyCount1);
   });
 
   // === cross-language: Python tile_coverage と JS tile_coverage が同 input → 同 output ===

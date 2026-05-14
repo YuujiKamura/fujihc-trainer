@@ -66,3 +66,24 @@ export function computeBounds(course, bufferM = 1000) {
     maxLat + latBuf,
   ];
 }
+
+/**
+ * enumerateCoverageTiles の結果を zoom 別 count に集約.
+ * DL 前見積もり用. brief 14 の総量見積もり表との一致を test で担保する.
+ *
+ * Python 側 `src/fujihc/tile_coverage.py` の `estimate_tile_count` と同 signature /
+ * 同 logic. 戻り型は Python の list of (zoom, count) tuple と等価な
+ * Array<[zoom, count]>.
+ *
+ * @param {Array<{lat: number, lon: number}>} course
+ * @param {Iterable<number>} zoomLevels - 例: [17] or [14, 15, 16, 17, 18]
+ * @param {number} corridorTiles - default 3 (= 3x3)
+ * @returns {Array<[number, number]>} - [[zoom, count], ...] 入力 zoom_levels の順序維持
+ */
+export function estimateTileCount(course, zoomLevels, corridorTiles = 3) {
+  const zooms = Array.from(zoomLevels);
+  return zooms.map(z => {
+    const tiles = enumerateCoverageTiles(course, [z], corridorTiles);
+    return [z, tiles.size];
+  });
+}

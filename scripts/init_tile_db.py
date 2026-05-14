@@ -6,9 +6,17 @@ usage:
 """
 import argparse
 import sqlite3
+import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+# 中央定数 (= single source of truth) から SCHEMA_VERSION を import.
+# scripts/ から直接実行された時は src/ が sys.path に無い可能性があるので
+# 明示的に追加する (= test 側の sys.path patch と同形).
+_SRC_DIR = Path(__file__).resolve().parent.parent / 'src'
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+from fujihc.tile_constants import SCHEMA_VERSION  # noqa: E402
+
 SCHEMA_DESCRIPTION = 'initial schema, brief 14'
 
 DDL_STATEMENTS = [
