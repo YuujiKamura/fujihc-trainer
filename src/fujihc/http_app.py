@@ -28,6 +28,7 @@ def make_http_app(
     db_path: str | Path,
     course_path: str | Path | None = None,
     progress_broadcaster: Optional[Callable[[dict], Awaitable[None]]] = None,
+    web_root: str | Path | None = None,
 ) -> web.Application:
     """tile_server の handler を aiohttp の route に mount した app を返す.
 
@@ -167,4 +168,16 @@ def make_http_app(
     app.router.add_post("/tiles/_fetch_gsi", h_fetch_gsi)
     app.router.add_post("/tiles/_extract_osm", h_extract_osm)
     app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
+
+    # 静的 file 配信 (= viewer HTML / JS / CSS / course.json)、 同一 origin で /tiles/ と並走。
+    # /tiles/* route の後に登録 (= aiohttp は登録順 dispatch、 /tiles を static で奪われない)。
+    web_root_p = Path(web_root) if web_root else Path(__file__).resolve().parent.parent.parent / "web"
+    if web_root_p.exists():
+        async def h_root(request: web.Request) -> web.Response:
+            index = web_root_p / "index.html"
+            if not index.exists():
+                return web.Response(status=404)
+            return web.Response(body=index.read_bytes(), content_type="text/html")
+        app.router.add_get("/", h_root)
+        app.router.add_static("/", path=str(web_root_p), show_index=False)
     return app
