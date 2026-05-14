@@ -156,10 +156,24 @@
   #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
   #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
   #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
+  /* ローディングインジケータ (= MAP_MODE 起動時、 全描画完了まで表示).
+     画面中央上部、 大きめ font、 半透明黒背景。 idle で hide。 */
+  #loading-indicator {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 2000; display: none;
+    background: rgba(0, 0, 0, 0.85); color: #ffd54a;
+    padding: 1rem 2rem; border-radius: 8px;
+    font: bold 24px ui-monospace, monospace;
+    pointer-events: none;
+  }
 </style>
 </head>
 <body class="state-checking">
 <div id="map"></div>
+
+<!-- ローディングインジケータ: MAP_MODE 起動時に表示、 map.idle (= 全 tile load + render flush)
+     + rideState 準備済の両方揃ったタイミングで hide + ride 開始。 -->
+<div id="loading-indicator">描画準備中...</div>
 
 <div id="hud">
   <b>time</b>  <span id="elapsed">00:00:00</span><br>

@@ -114,13 +114,14 @@ const map = new maplibregl.Map({
       { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
         filter: ['in', 'kind', 'highway', 'major_road'],
         paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
-      // 地形シェーディング (= 最低限の陰影で山体の起伏を見せる、 brief 後段で再強度調整可)
+      // 地形シェーディング (= 山体の起伏を立体的に。 exaggeration 1.0 で陰影を濃く、
+      // shadow を黒寄りにして山の凹凸をはっきり見せる。 2026-05-15 user 判断で濃度 up).
       { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
         paint: {
-          'hillshade-exaggeration': 0.5,
-          'hillshade-shadow-color': '#202020',
+          'hillshade-exaggeration': 1.0,
+          'hillshade-shadow-color': '#000000',
           'hillshade-highlight-color': '#ffffff',
-          'hillshade-accent-color': '#5a5a5a',
+          'hillshade-accent-color': '#404040',
         } },
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
@@ -615,13 +616,25 @@ function initMapMode() {
       };
     },
   });
-  // course load 完了を polling で待って rideState.start を呼ぶ
-  // (loadCourse 内で rideState = createRideState(course) が走るのは map.on('load') 経由のため非同期)
+  // 描画完了まで ride を待機 (= user 指示: 「全体描画が終わるまでスタートせずに待機」).
+  // ローディングインジケータを表示、 rideState 準備済 + map.idle (= 全 tile load + render flush)
+  // 両方揃ったら ride 開始 + インジケータ hide.
+  const loader = document.getElementById('loading-indicator');
+  if (loader) { loader.style.display = 'block'; loader.textContent = '描画準備中...'; }
+  let mapIdle = false;
+  let rideReady = false;
+  function tryStart() {
+    if (!mapIdle || !rideReady) return;
+    if (loader) loader.style.display = 'none';
+    rideState.start();
+    rideStartedAt = performance.now();
+  }
+  map.once('idle', () => { mapIdle = true; tryStart(); });
   const waitForRide = setInterval(() => {
     if (rideState) {
       clearInterval(waitForRide);
-      rideState.start();
-      rideStartedAt = performance.now();
+      rideReady = true;
+      tryStart();
     }
   }, 100);
 }

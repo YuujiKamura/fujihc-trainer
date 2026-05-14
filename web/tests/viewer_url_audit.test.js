@@ -253,11 +253,19 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
   });
 
   it('initMapMode は rideState.start を呼ぶ (= 自動 ride start)', () => {
-    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,1500}rideState\.start\(\)/);
+    expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,2500}rideState\.start\(\)/);
   });
 
   it('initMapMode は setAppState("riding") に遷移', () => {
     expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,800}setAppState\(['"]riding['"]\)/);
+  });
+
+  it('MAP_MODE は map.idle を待ってから ride 開始 (= 全描画完了まで待機)', () => {
+    expect(viewer).toMatch(/map\.once\(['"]idle['"]/);
+  });
+
+  it('ローディングインジケータ #loading-indicator が viewer から制御される', () => {
+    expect(viewer).toMatch(/getElementById\(['"]loading-indicator['"]/);
   });
 
   it('userZoom/Pitch の hard-set は !MAP_MODE で guard されている', () => {
