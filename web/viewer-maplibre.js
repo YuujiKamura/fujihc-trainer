@@ -70,12 +70,11 @@ const map = new maplibregl.Map({
     version: 8,
     sources: {
       'osm': {
-        type: 'raster',
-        tiles: [`${TILE_BASE_URL}/osm/{z}/{x}/{y}.png`],
-        tileSize: 256,
+        type: 'vector',
+        tiles: [`${TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
+        minzoom: 13,    // tile_constants.OSM_VECTOR_ZOOMS の min と整合 (= 17 単一 zoom だが overzoom で 13 まで使う)
+        maxzoom: 17,    // tile_constants.OSM_VECTOR_ZOOMS の max と整合
         attribution: '© OpenStreetMap contributors',
-        // MapLibre 内部 memory cache を拡張、 zoom 切替時の再 fetch を減らす (default は数十枚)
-        volatile: false,
       },
       'gsi-terrain': {
         type: 'raster-dem',
@@ -90,7 +89,23 @@ const map = new maplibregl.Map({
       },
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm' },
+      // 背景の単色 (= PMTiles 未整備時の fallback、 灰白で地形の凹凸が見える)
+      { id: 'bg', type: 'background', paint: { 'background-color': '#e8e8e8' } },
+      // Protomaps の標準 vector layer (= name は Protomaps OpenMapTiles 互換 schema 前提)
+      // PMTiles に layer が存在しない場合は MapLibre が silent skip、 fallback bg が見える
+      { id: 'earth', type: 'fill', source: 'osm', 'source-layer': 'earth',
+        paint: { 'fill-color': '#f5f5f0' } },
+      { id: 'water', type: 'fill', source: 'osm', 'source-layer': 'water',
+        paint: { 'fill-color': '#a8d8ea' } },
+      { id: 'landuse-forest', type: 'fill', source: 'osm', 'source-layer': 'landuse',
+        filter: ['in', 'kind', 'forest', 'wood', 'park'],
+        paint: { 'fill-color': '#cfe7c8', 'fill-opacity': 0.7 } },
+      { id: 'roads', type: 'line', source: 'osm', 'source-layer': 'roads',
+        paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 17, 2] } },
+      { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
+        filter: ['in', 'kind', 'highway', 'major_road'],
+        paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 17, 4] } },
+      // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
     sky: { 'sky-color': '#87ceeb', 'horizon-color': '#ffd6a5', 'fog-color': '#cccccc' },
   },

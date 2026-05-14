@@ -116,3 +116,31 @@ describe('brief 19b: viewer 統合層 (ws_client / ride_state / camera_controlle
     expect(viewer).not.toMatch(/^let\s+curDist\s*=/m);
   });
 });
+
+describe('brief 26a: OSM を vector pbf で受ける (= 17b 積み残し fix)', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+
+  it('osm source は type: vector', () => {
+    // 'type: 'vector'' が osm source 内に存在
+    expect(viewer).toMatch(/'osm':\s*\{[^}]*type:\s*['"]vector['"]/s);
+  });
+
+  it('osm tiles URL は .pbf (= raster .png ではない)', () => {
+    expect(viewer).toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.pbf/);
+    expect(viewer).not.toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.png/);
+  });
+
+  it('background layer (= PMTiles 不在時の fallback) が定義済', () => {
+    expect(viewer).toMatch(/type:\s*['"]background['"]/);
+  });
+
+  it('roads / water / earth の source-layer が宣言済 (= Protomaps schema)', () => {
+    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]roads['"]/);
+    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]water['"]/);
+    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]earth['"]/);
+  });
+
+  it('旧 raster osm layer (id: osm, type: raster) は消えている', () => {
+    expect(viewer).not.toMatch(/\{\s*id:\s*['"]osm['"],\s*type:\s*['"]raster['"]/);
+  });
+});
