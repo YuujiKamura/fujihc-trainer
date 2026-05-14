@@ -114,14 +114,18 @@ const map = new maplibregl.Map({
       { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
         filter: ['in', 'kind', 'highway', 'major_road'],
         paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
-      // 地形シェーディング (= 山体の起伏を立体的に。 exaggeration 1.0 で陰影を濃く、
-      // shadow を黒寄りにして山の凹凸をはっきり見せる。 2026-05-15 user 判断で濃度 up).
+      // 地形シェーディング + 光源方向 (= 朝の太陽を南東から、 山の片面を明るく / 反対面を陰に).
+      // illumination-direction 135 = 南東 (= 0=北、 90=東、 180=南、 270=西)、
+      // illumination-anchor 'map' で地理北基準 (= viewport rotate に追従しない).
+      // exaggeration 1.0 + shadow #000000 + highlight #ffffff で凹凸クッキリ.
       { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
         paint: {
           'hillshade-exaggeration': 1.0,
           'hillshade-shadow-color': '#000000',
           'hillshade-highlight-color': '#ffffff',
           'hillshade-accent-color': '#404040',
+          'hillshade-illumination-direction': 135,
+          'hillshade-illumination-anchor': 'map',
         } },
       // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
     ],
