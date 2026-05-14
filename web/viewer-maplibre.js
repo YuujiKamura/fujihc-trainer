@@ -201,6 +201,10 @@ function setText(id, text) {
 
 // === WebSocket === (既存 viewer.js と同じ contract)
 const WS_URL = 'ws://localhost:8765';
+// brief 22: ?test=1 で trainer / bridge 不在の画面操作確認モード.
+// WebSocket 接続を skip、 fake state を 1Hz で push、 ride/scan は即座に fake 応答.
+// 起動例: python -m http.server -d web/ 8000 -> http://localhost:8000/?test=1
+const TEST_MODE = new URLSearchParams(location.search).has('test');
 let ws = null;
 let wsConnected = false;
 let lastSlopeSent = null;
@@ -351,6 +355,53 @@ function connectBridge() {
   ws.addEventListener('close', () => { if (wsConnected) status('bridge 切断'); wsConnected = false; paused = true; });
 }
 
+// brief 22: trainer / bridge 不要の画面操作確認モード.
+// 既存 button (= btnRideStart 等) の `ws.readyState === OPEN` チェックを通すため
+// fake WebSocket object を作って ws に代入する. fake send は type 別に即座に
+// wsHandlers にループバックして bridge 応答を模擬.
+function initTestMode() {
+  status('TEST MODE: bridge/trainer 不要、 fake state 1Hz でループ');
+  setText('setup-status', 'TEST MODE: 接続スキップ、 ride 開始ボタンが押せる');
+  setText('p-device', 'TEST MODE (no trainer)');
+  setText('p-state', '✓ TEST MODE');
+  updateStepIndicator(-1, 3);
+  const startBtn = document.getElementById('btnRideStart');
+  if (startBtn) startBtn.disabled = false;
+
+  // fake ws: 既存 send 経路の `ws.readyState !== OPEN` early return を回避
+  ws = {
+    readyState: 1,  // WebSocket.OPEN
+    send(payload) {
+      let msg;
+      try { msg = JSON.parse(payload); } catch { return; }
+      // 主要 type だけ即座に応答、 その他は silent drop
+      if (msg.type === 'ride_start') {
+        setTimeout(() => wsHandlers.ride_status({ state: 'started' }), 0);
+      } else if (msg.type === 'ride_end') {
+        setTimeout(() => wsHandlers.ride_status({ state: 'ended' }), 0);
+      } else if (msg.type === 'scan') {
+        setTimeout(() => wsHandlers.scan_status({ state: 'failed', message: 'TEST MODE (no BLE)' }), 0);
+      }
+      // set_slope / connect / position 等は無視 (= trainer 不在のため send だけして応答なし)
+    },
+  };
+  wsConnected = true;
+
+  // 1Hz で fake state を push (= bridge の push_loop 模擬)
+  setInterval(() => {
+    const movingSpeed = (rideActive && !paused) ? (20 / 3.6) : 0;  // 20 km/h
+    wsHandlers.state({
+      speed_mps: movingSpeed,
+      power_w: movingSpeed > 0 ? 150 : 0,
+      cadence_rpm: movingSpeed > 0 ? 80 : 0,
+      distance_m: curDist,
+      slope_sent_pct: 0,
+      hr_bpm: 120,
+      last_ack: 'OK (TEST MODE)',
+    });
+  }, 1000);
+}
+
 function maybeSendSlope(slope_pct) {
   if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) return;
   const now = performance.now();
@@ -361,7 +412,7 @@ function maybeSendSlope(slope_pct) {
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
-connectBridge();
+if (TEST_MODE) initTestMode(); else connectBridge();
 
 // === コース読み込み ===
 async function loadCourse() {

@@ -22,6 +22,20 @@ python scripts/fetch_osm_pmtiles.py # OSM 地名抽出 (= 数秒)
 - **DL 時間**: 約 36 秒 (GSI DEM) + 数秒 (OSM PMTiles 抽出)
 - DB は `.gitignore` 済 (= `data/*.sqlite`)、 リポには含めない
 
+## 画面操作確認 (= trainer / bridge 不要、 brief 22)
+
+viewer の操作系 (= camera / wheel zoom / pitch drag / ride 進行 button) を
+trainer や bridge.py を起動せずに確認できる. fake state が 1Hz で流れて
+ride_start ボタンで pairing → riding 遷移、 button 全部押せる:
+
+```sh
+python -m http.server -d web/ 8000
+# その後 browser で http://localhost:8000/?test=1
+```
+
+- tile は 404 で灰色背景 (= ローカル DB 無しでも画面操作だけ確認可)
+- ride 中の GPU 負荷 / FPS / 温度を実測したいなら通常モード (`python -m fujihc.bridge --dummy`) を使う、 こちらは tile + WebSocket + dummy ride loop が全部走る
+
 ## テスト
 
 ```sh

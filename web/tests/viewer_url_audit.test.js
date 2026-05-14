@@ -40,4 +40,19 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     // viewer 内で再定義していないことを確認
     expect(viewer).not.toMatch(/r\s*\*\s*65536\s*\+\s*g\s*\*\s*256\s*\+\s*b/);
   });
+
+  // brief 22: trainer / bridge 不要の画面操作確認モード
+  it('TEST_MODE flag を URL parameter ?test で起動する', () => {
+    expect(viewer).toMatch(/TEST_MODE/);
+    expect(viewer).toMatch(/URLSearchParams\(location\.search\)/);
+  });
+
+  it('initTestMode が fake state を 1Hz でループする', () => {
+    expect(viewer).toMatch(/function\s+initTestMode/);
+    expect(viewer).toMatch(/setInterval/);
+  });
+
+  it('TEST_MODE 時は connectBridge を skip する', () => {
+    expect(viewer).toMatch(/if\s*\(\s*TEST_MODE\s*\)\s*initTestMode\(\)/);
+  });
 });
