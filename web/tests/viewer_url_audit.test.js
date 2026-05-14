@@ -48,8 +48,10 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   });
 
   it('initTestMode が fake state を 1Hz でループする', () => {
+    // brief 19b: setInterval は lib/ws_client.js の createTestModeClient 側に移行
+    // viewer 側は fakeStateInterval: 1000 で 1Hz を宣言する
     expect(viewer).toMatch(/function\s+initTestMode/);
-    expect(viewer).toMatch(/setInterval/);
+    expect(viewer).toMatch(/fakeStateInterval:\s*1000/);
   });
 
   it('TEST_MODE 時は connectBridge を skip する', () => {
@@ -70,5 +72,47 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     // route-fill layer が定義されている、 旧 route-line (only) の置き換え済
     expect(viewer).toMatch(/id:\s*['"]route-fill['"]/);
     expect(viewer).toMatch(/['"]fill-color['"]:\s*\[['"]get['"],\s*['"]color['"]\]/);
+  });
+});
+
+describe('brief 19b: viewer 統合層 (ws_client / ride_state / camera_controller)', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+
+  it('createBridgeClient を web/lib/ws_client.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*createBridgeClient[^}]*\}\s+from\s+['"]\.\/lib\/ws_client\.js['"]/);
+  });
+
+  it('createTestModeClient を web/lib/ws_client.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*createTestModeClient[^}]*\}\s+from\s+['"]\.\/lib\/ws_client\.js['"]/);
+  });
+
+  it('createRideState を web/lib/ride_state.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*createRideState[^}]*\}\s+from\s+['"]\.\/lib\/ride_state\.js['"]/);
+  });
+
+  it('computeCameraParams を web/lib/camera_controller.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*computeCameraParams[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]/);
+  });
+
+  it('adjustZoom / adjustPitch を web/lib/camera_controller.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*adjustZoom[^}]*adjustPitch[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]|import\s+\{[^}]*adjustPitch[^}]*adjustZoom[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]/);
+  });
+
+  it('ws.send 呼出が viewer 内に存在しない (= client.sendXxx に統合済)', () => {
+    expect(viewer).not.toMatch(/\bws\.send\s*\(/);
+  });
+
+  it('new WebSocket() を viewer 直接呼出が無い (= createBridgeClient 経由)', () => {
+    expect(viewer).not.toMatch(/new\s+WebSocket\s*\(/);
+  });
+
+  it('let ws = null 廃止 (= let client = null に置換)', () => {
+    expect(viewer).not.toMatch(/^let\s+ws\s*=\s*null/m);
+    expect(viewer).toMatch(/let\s+client\s*=\s*null/);
+  });
+
+  it('curIdx / curDist global 廃止 (= rideState.snapshot 経由)', () => {
+    expect(viewer).not.toMatch(/^let\s+curIdx\s*=/m);
+    expect(viewer).not.toMatch(/^let\s+curDist\s*=/m);
   });
 });

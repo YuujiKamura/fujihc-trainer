@@ -8,6 +8,10 @@ import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
 import { smoothCourse } from './lib/gpx_smooth.js';
 // brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
 import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
+// brief 19b: WebSocket / ride state / camera を lib に集約
+import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
+import { createRideState } from './lib/ride_state.js';
+import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -129,14 +133,11 @@ map.on('error', (e) => {
 
 let course = [];
 let totalDist = 0;
-let curDist = 0;
-let curIdx = 0;
+let rideState = null;
 let playSpeed = 0;
-let paused = true;
 let lastT = performance.now();
 let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihc.diff')) || 1.0; } catch { return 1.0; } })();
 let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihc.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
-let rideActive = false;
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 const POSITION_SEND_INTERVAL_MS = 1000;
@@ -159,7 +160,7 @@ function setupWheelZoom() {
     e.preventDefault();
     // wheel 1 回 = zoom ±0.5 (= 元の感度 5 倍相当)、 center は触らない (次フレームで rider に戻る)
     const delta = -Math.sign(e.deltaY) * 0.5;
-    userZoom = Math.max(13, Math.min(24, userZoom + delta));
+    userZoom = adjustZoom(userZoom, delta);
     map.setZoom(userZoom);
   }, { passive: false });
 }
@@ -175,7 +176,8 @@ function setupPitchDrag() {
     if (!drag) return;
     const dy = e.clientY - drag.y;
     // マウスを下にドラッグで水平に近づける、 上にドラッグで真上へ。 感度は user 指示で 5 倍
-    const newPitch = Math.max(0, Math.min(85, drag.pitch - dy * 2.0));
+    // 既存式: newPitch = drag.pitch - dy * 2.0、 adjustPitch(currentPitch, delta) で同じ結果に: delta = -dy * 2.0
+    const newPitch = adjustPitch(drag.pitch, -dy * 2.0);
     userPitch = newPitch;
     map.setPitch(newPitch);
   });
@@ -209,8 +211,7 @@ const WS_URL = 'ws://localhost:8765';
 // WebSocket 接続を skip、 fake state を 1Hz で push、 ride/scan は即座に fake 応答.
 // 起動例: python -m http.server -d web/ 8000 -> http://localhost:8000/?test=1
 const TEST_MODE = new URLSearchParams(location.search).has('test');
-let ws = null;
-let wsConnected = false;
+let client = null;
 let lastSlopeSent = null;
 let lastSlopeSendT = 0;
 const SLOPE_SEND_INTERVAL_MS = 1000;
@@ -247,10 +248,10 @@ const wsHandlers = {
     const devices = msg.devices || [];
     if (scanMode === 'ftms') {
       const ftms = devices.find(d => d.is_ftms);
-      if (ftms && ws && ws.readyState === WebSocket.OPEN) {
+      if (ftms && client && client.isOpen()) {
         setText('setup-status', `${ftms.name || ftms.address} を検出、 接続中...`);
         setText('p-device', ftms.name || ftms.address);
-        ws.send(JSON.stringify({ type: 'connect', address: ftms.address }));
+        client.sendConnect(ftms.address);
         return;
       }
     }
@@ -279,11 +280,13 @@ const wsHandlers = {
   },
   ride_status(msg) {
     if (msg.state === 'started') {
-      rideActive = true; rideStartedAt = performance.now();
+      if (rideState) rideState.start();
+      rideStartedAt = performance.now();
       hidePairing();
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = false;
     } else if (msg.state === 'ended') {
-      rideActive = false; paused = true; rideStartedAt = null;
+      if (rideState) rideState.end();
+      rideStartedAt = null;
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = true;
       showPostride(msg.gpx_path || '', msg.points || 0);
     } else if (msg.state === 'export-failed') { status(`GPX 書き出し失敗: ${msg.message || ''}`); }
@@ -326,8 +329,9 @@ function showSetupResults(devices) {
     m.textContent = parts.join(' · ');
     li.appendChild(n); li.appendChild(m);
     const pick = () => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: isHrmMode ? 'hrm_connect' : 'connect', address: d.address }));
+      if (!client || !client.isOpen()) return;
+      if (isHrmMode) client.sendHrmConnect(d.address);
+      else client.sendConnect(d.address);
     };
     li.addEventListener('click', pick);
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
@@ -347,22 +351,33 @@ function copyToClipboard(text, statusEl) {
 }
 
 function connectBridge() {
-  try { ws = new WebSocket(WS_URL); }
-  catch (err) { status(`bridge 接続失敗: ${err.message}`); return; }
-  ws.addEventListener('open', () => {
-    wsConnected = true; status('bridge 接続済'); updateStepIndicator(0, -1);
-    const remembered = (() => { try { return localStorage.getItem('fujihc.trainer.address'); } catch { return null; } })();
-    if (remembered) { setText('setup-status', `前回の機器に再接続中: ${remembered}`); setText('p-device', remembered); ws.send(JSON.stringify({ type: 'connect', address: remembered })); }
-    else ws.send(JSON.stringify({ type: 'scan' }));
-  });
-  ws.addEventListener('message', (ev) => { let m; try { m = JSON.parse(ev.data); } catch { return; } const h = wsHandlers[m.type]; if (h) h(m); });
-  ws.addEventListener('close', () => { if (wsConnected) status('bridge 切断'); wsConnected = false; paused = true; });
+  try {
+    client = createBridgeClient(WS_URL, wsHandlers, {
+      onOpen: () => {
+        status('bridge 接続済');
+        updateStepIndicator(0, -1);
+        const remembered = (() => { try { return localStorage.getItem('fujihc.trainer.address'); } catch { return null; } })();
+        if (remembered) {
+          setText('setup-status', `前回の機器に再接続中: ${remembered}`);
+          setText('p-device', remembered);
+          client.sendConnect(remembered);
+        } else {
+          client.sendScan();
+        }
+      },
+      onClose: () => {
+        status('bridge 切断');
+        if (rideState) rideState.end();
+      },
+      onError: () => { /* silent (default) */ },
+    });
+  } catch (err) {
+    status(`bridge 接続失敗: ${err && err.message ? err.message : err}`);
+  }
 }
 
 // brief 22: trainer / bridge 不要の画面操作確認モード.
-// 既存 button (= btnRideStart 等) の `ws.readyState === OPEN` チェックを通すため
-// fake WebSocket object を作って ws に代入する. fake send は type 別に即座に
-// wsHandlers にループバックして bridge 応答を模擬.
+// brief 19b: createTestModeClient に置換、 fake send / state push は lib 側に集約.
 function initTestMode() {
   status('TEST MODE: bridge/trainer 不要、 fake state 1Hz でループ');
   setText('setup-status', 'TEST MODE: 接続スキップ、 ride 開始ボタンが押せる');
@@ -371,48 +386,32 @@ function initTestMode() {
   updateStepIndicator(-1, 3);
   const startBtn = document.getElementById('btnRideStart');
   if (startBtn) startBtn.disabled = false;
-
-  // fake ws: 既存 send 経路の `ws.readyState !== OPEN` early return を回避
-  ws = {
-    readyState: 1,  // WebSocket.OPEN
-    send(payload) {
-      let msg;
-      try { msg = JSON.parse(payload); } catch { return; }
-      // 主要 type だけ即座に応答、 その他は silent drop
-      if (msg.type === 'ride_start') {
-        setTimeout(() => wsHandlers.ride_status({ state: 'started' }), 0);
-      } else if (msg.type === 'ride_end') {
-        setTimeout(() => wsHandlers.ride_status({ state: 'ended' }), 0);
-      } else if (msg.type === 'scan') {
-        setTimeout(() => wsHandlers.scan_status({ state: 'failed', message: 'TEST MODE (no BLE)' }), 0);
-      }
-      // set_slope / connect / position 等は無視 (= trainer 不在のため send だけして応答なし)
+  client = createTestModeClient(wsHandlers, {
+    fakeStateInterval: 1000,
+    fakeStateGenerator: () => {
+      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
+      const moving = snap.active && !snap.paused;
+      const movingSpeed = moving ? (20 / 3.6) : 0;
+      return {
+        speed_mps: movingSpeed,
+        power_w: moving ? 150 : 0,
+        cadence_rpm: moving ? 80 : 0,
+        distance_m: snap.distance,
+        slope_sent_pct: 0,
+        hr_bpm: 120,
+        last_ack: 'OK (TEST MODE)',
+      };
     },
-  };
-  wsConnected = true;
-
-  // 1Hz で fake state を push (= bridge の push_loop 模擬)
-  setInterval(() => {
-    const movingSpeed = (rideActive && !paused) ? (20 / 3.6) : 0;  // 20 km/h
-    wsHandlers.state({
-      speed_mps: movingSpeed,
-      power_w: movingSpeed > 0 ? 150 : 0,
-      cadence_rpm: movingSpeed > 0 ? 80 : 0,
-      distance_m: curDist,
-      slope_sent_pct: 0,
-      hr_bpm: 120,
-      last_ack: 'OK (TEST MODE)',
-    });
-  }, 1000);
+  });
 }
 
 function maybeSendSlope(slope_pct) {
-  if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!client || !client.isOpen()) return;
   const now = performance.now();
   if (now - lastSlopeSendT < SLOPE_SEND_INTERVAL_MS) return;
   const scaled = slope_pct * diffMult;
   if (lastSlopeSent !== null && Math.abs(scaled - lastSlopeSent) < 0.1) return;
-  ws.send(JSON.stringify({ type: 'set_slope', slope_pct: scaled }));
+  client.sendSetSlope(scaled);
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
@@ -429,6 +428,7 @@ async function loadCourse() {
   // brief 23: GPS ジッター除去. lat/lon の short-window moving average (window=5)
   // で短距離ジグザグだけ補正、 道路カーブは保存. distance_m / slope_pct / elevation_m は不変.
   course = smoothCourse(course);
+  rideState = createRideState(course);
   totalDist = course[course.length - 1].distance_m;
   setText('total', totalDist.toFixed(0));
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
@@ -481,20 +481,12 @@ async function loadCourse() {
 
   // 初期 camera: start 地点に寄せる、 起動直後から走行視点っぽい絵にする
   // (全体俯瞰だと goal 側ばかり映って rider が画面外になる、 user 不満を生む)
-  const nextIdx0 = Math.min(20, course.length - 1);
-  const dLon0 = course[nextIdx0].lon - course[0].lon;
-  const dLat0 = course[nextIdx0].lat - course[0].lat;
-  const heading0 = Math.atan2(dLon0 * Math.cos(course[0].lat * Math.PI / 180), dLat0);
   // user 動作確認で確定した default (画面 HUD 由来、 現地の道路幅感覚に合う値)
   userZoom = 23.95;    // 道路 1 車線が画面の中央に収まる、 ほぼ等倍走行視点
   userPitch = 85;      // ほぼ水平、 カーナビ的前方視野
   // user が縦ドラッグ / ホイールで再調整可、 その値が以後 default になる挙動
-  map.jumpTo({
-    center: [course[0].lon, course[0].lat],
-    zoom: userZoom,
-    pitch: userPitch,
-    bearing: heading0 * 180 / Math.PI,
-  });
+  const cam0 = computeCameraParams(course, { curIdx: 0 }, { userZoom, userPitch, lookAhead: 20 });
+  map.jumpTo(cam0);
   lastT = performance.now();
   requestAnimationFrame(tick);
 }
@@ -640,8 +632,12 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
 
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
-  if (!paused && curDist < totalDist) curDist = Math.min(curDist + playSpeed * speedMult * dt, totalDist);
-  while (curIdx < course.length - 1 && course[curIdx + 1].distance_m < curDist) curIdx++;
+  if (!rideState) { requestAnimationFrame(tick); return; }
+  rideState.advance(dt, playSpeed * speedMult);
+  const snap = rideState.snapshot();
+  const curIdx = snap.idx;
+  const curDist = snap.distance;
+
   const p = course[curIdx];
   const pNext = course[Math.min(curIdx + 1, course.length - 1)];
   const segLen = pNext.distance_m - p.distance_m;
@@ -650,30 +646,23 @@ function tick(t) {
   const rLat = p.lat + (pNext.lat - p.lat) * frac;
   const rEle = p.elevation_m + (pNext.elevation_m - p.elevation_m) * frac;
 
-  // 進行方位
-  const nextIdx = Math.min(curIdx + 5, course.length - 1);
-  const dLon = course[nextIdx].lon - rLon;
-  const dLat = course[nextIdx].lat - rLat;
-  const heading = Math.atan2(dLon * Math.cos(rLat * Math.PI / 180), dLat);
+  // camera params (= bearing は course[curIdx]→course[curIdx+5] の travel heading)、
+  // center は interpolated rLon/rLat で sub-meter 精度を保つ
+  const cam = computeCameraParams(course, { curIdx }, { userZoom, userPitch, lookAhead: 5 });
+  const headingRad = cam.bearing * Math.PI / 180;
 
   // スピナー累積角を cadence rpm に応じて進める (rpm → rad/s = rpm * 2π / 60)
   spinAngle += currentCadence * (2 * Math.PI / 60) * dt;
   // rider 立体を rider 位置 + 進行方向 + スピン角で更新
   const ridSrc = map.getSource && map.getSource('rider');
   if (ridSrc) {
-    ridSrc.setData(buildRiderFeatures(rLat, rLon, heading, spinAngle));
+    ridSrc.setData(buildRiderFeatures(rLat, rLon, headingRad, spinAngle));
   }
 
   // camera は ride 中じゃなくても常に rider 中心 + 進行方向。
-  // (ride 中条件にすると、 zoom out/in 操作後に rider から離れたまま戻らないため。)
-  // pitch / zoom は user 操作分を尊重。
+  // pitch / zoom は user 操作分を尊重、 center は interpolated で sub-meter 精度。
   if (course.length > 0) {
-    map.jumpTo({
-      center: [rLon, rLat],
-      bearing: heading * 180 / Math.PI,
-      pitch: userPitch,
-      zoom: userZoom,
-    });
+    map.jumpTo({ ...cam, center: [rLon, rLat] });
   }
 
   if (rideStartedAt !== null) {
@@ -687,48 +676,52 @@ function tick(t) {
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   setText('cam-zoom', map.getZoom().toFixed(2));
   setText('cam-pitch', map.getPitch().toFixed(0));
-  updateMinimap(curDist, rEle, rLat, rLon, heading);
+  updateMinimap(curDist, rEle, rLat, rLon, headingRad);
   const dispKmh = playSpeed * speedMult * 3.6;
-  setText('speed', paused ? (wsConnected ? '待機中' : 'paused') : `${dispKmh.toFixed(1)} km/h${wsConnected ? ' (bridge)' : ' (demo)'}`);
+  const connected = !!(client && client.isOpen());
+  setText('speed', snap.paused ? (connected ? '待機中' : 'paused') : `${dispKmh.toFixed(1)} km/h${connected ? ' (bridge)' : ' (demo)'}`);
 
-  if (!paused) maybeSendSlope(p.slope_pct);
-  if (rideActive && !paused && wsConnected && ws && ws.readyState === WebSocket.OPEN) {
+  if (!snap.paused) maybeSendSlope(p.slope_pct);
+  if (snap.active && !snap.paused && connected) {
     const now = performance.now();
     if (now - lastPositionSendT >= POSITION_SEND_INTERVAL_MS) {
-      ws.send(JSON.stringify({ type: 'position', distance_m: curDist, lat: rLat, lon: rLon, elevation_m: rEle }));
+      client.sendPosition(curDist, rLat, rLon, rEle);
       lastPositionSendT = now;
     }
   }
-  if (curDist < totalDist) requestAnimationFrame(tick);
+  if (!rideState.isAtEnd()) requestAnimationFrame(tick);
   else status('完走');
 }
 
 // ボタン bind
-document.getElementById('btnPause').addEventListener('click', () => { paused = !paused; });
+document.getElementById('btnPause').addEventListener('click', () => { if (rideState) rideState.togglePause(); });
 document.getElementById('btnRideStart').addEventListener('click', () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  curDist = 0; curIdx = 0; paused = false; lastT = performance.now(); lastPositionSendT = 0;
-  ws.send(JSON.stringify({ type: 'ride_start' }));
+  if (!client || !client.isOpen()) return;
+  if (rideState) rideState.start();
+  lastT = performance.now(); lastPositionSendT = 0;
+  client.sendRideStart();
 });
 document.getElementById('btnRideEnd').addEventListener('click', () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  paused = true;
-  ws.send(JSON.stringify({ type: 'ride_end' }));
+  if (!client || !client.isOpen()) return;
+  if (rideState) rideState.end();
+  client.sendRideEnd();
 });
 document.getElementById('btnScan').addEventListener('click', () => {
   scanMode = 'ftms';
   setText('scan-mode-label', '(trainer モード)');
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan' }));
+  if (client && client.isOpen()) client.sendScan();
 });
 document.getElementById('btnScanHrm').addEventListener('click', () => {
   scanMode = 'hrm';
   setText('scan-mode-label', '(心拍計モード)');
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan' }));
+  if (client && client.isOpen()) client.sendScan();
 });
 document.getElementById('btnSkip').addEventListener('click', () => { showConfirm(); });
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
-  playSpeed = 20 / 3.6; curDist = 0; curIdx = 0; paused = false; lastT = performance.now();
+  playSpeed = 20 / 3.6;
+  if (rideState) rideState.start();
+  lastT = performance.now();
   status('デモモード (記録は保存されません)');
 });
 document.getElementById('btnCancelDemo').addEventListener('click', () => { hideConfirm(); });
@@ -738,7 +731,8 @@ document.getElementById('btnCopyPath').addEventListener('click', () => {
 });
 document.getElementById('btnBackToPairing').addEventListener('click', () => {
   hidePostride(); setAppState('pairing'); showPairing();
-  curDist = 0; curIdx = 0; updateStepIndicator(-1, 3);
+  if (rideState) rideState.reset();
+  updateStepIndicator(-1, 3);
   const b = document.getElementById('btnRideStart'); if (b && !b.disabled) requestAnimationFrame(() => b.focus());
 });
 document.getElementById('btnOpenPairing').addEventListener('click', () => { showPairing(); });
