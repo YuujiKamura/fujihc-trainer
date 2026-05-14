@@ -186,8 +186,11 @@ let minimapTopBase = null;
 let minimapBottomBase = null;
 let minimapStats = null;
 // user が操作した zoom / pitch を覚えておく、 tick の jumpTo はこの値を使う
-let userZoom = 16;
-let userPitch = 55;
+// 2026-05-15 user 判断 (= 視認確認後の決め値): zoom 21 / pitch 85 を default に.
+// pitch 85 はほぼ水平で前方道路が遠くまで見える、 zoom 21 は道路 polygon の
+// 道幅が画面 1/4 程度に収まる感覚 (= 走行視点として親密、 遠景も視認可).
+let userZoom = 21;
+let userPitch = 85;
 // rider 上のスピナー (= プロペラ) の累積回転角、 cadence rpm に比例して進む
 let spinAngle = 0;
 // 最新の cadence (state push 経由)、 ride 中ペダル回ってない時は 0 で静止
@@ -736,7 +739,7 @@ async function loadCourse() {
   // MAP_MODE は ?z=N&pitch=M で override 可能にする (= UI 操作なし visual 検証用)
   // 通常起動時は ride 視点 (= 道路 1 車線 + ほぼ水平) の default を hard-set
   if (!MAP_MODE) {
-    userZoom = 23.95;    // 道路 1 車線が画面の中央に収まる、 ほぼ等倍走行視点
+    userZoom = 21;       // 2026-05-15 user 判断: 走行視点として親密、 道路 polygon が画面 1/4 程度
     userPitch = 85;      // ほぼ水平、 カーナビ的前方視野
   }
   // user が縦ドラッグ / ホイールで再調整可、 その値が以後 default になる挙動

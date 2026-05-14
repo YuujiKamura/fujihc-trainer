@@ -30,12 +30,13 @@
 
   #hud {
     /* bottom 2.5rem = 40px: 画面下端の MapLibre attribution (= 国土地理院 / OSM / MapLibre 出典) に
-       重ならないように UI を上に逃がす. attribution 自体は MapLibre が canvas に bottom: 0 で固定描画する. */
+       重ならないように UI を上に逃がす. attribution 自体は MapLibre が canvas に bottom: 0 で固定描画する.
+       font-size 18px に拡大 (= rider HUD と統一、 読みやすさ優先). */
     position: fixed; left: 1rem; bottom: 2.5rem; z-index: 999;
-    background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
-    pointer-events: none; min-width: 14rem;
+    background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
+    pointer-events: none; min-width: 16rem; font-size: 18px; line-height: 1.5;
   }
-  #hud b { color: #ffd54a; }
+  #hud b { color: #ffd54a; font-size: 14px; }
   /* rider 追随 HUD: 豆腐の下に表示、 ride の重要数値を大きめ text。
      left/top は viewer-maplibre.js の tick で map.project([rLon, rLat]) 経由で更新。 */
   #rider-hud {
@@ -52,17 +53,18 @@
   body.state-dbinit #rider-hud,
   body.state-pairing #rider-hud { display: none !important; }
   #controls {
-    /* attribution と重ならないよう bottom 2.5rem (= #hud と同じ) */
+    /* attribution と重ならないよう bottom 2.5rem (= #hud と同じ).
+       font-size 18px に拡大 (= rider HUD と統一)、 button / slider も視認性 up. */
     position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
-    font: 13px ui-monospace, monospace;
-    background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
-    min-width: 18rem;
+    font: 18px ui-monospace, monospace;
+    background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
+    min-width: 20rem;
   }
-  #controls button { font: inherit; margin: 0 0.2rem; padding: 0.2rem 0.6rem; min-height: 32px; }
-  #controls .row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
-  #controls .row label { flex: 0 0 5.2rem; color: #ffd54a; font-size: 12px; }
-  #controls .row input[type=range] { flex: 1; }
-  #controls .row .val { flex: 0 0 3.2rem; text-align: right; font-size: 12px; }
+  #controls button { font: inherit; margin: 0 0.3rem; padding: 0.5rem 1rem; min-height: 44px; border-radius: 4px; }
+  #controls .row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+  #controls .row label { flex: 0 0 6rem; color: #ffd54a; font-size: 16px; }
+  #controls .row input[type=range] { flex: 1; height: 24px; }
+  #controls .row .val { flex: 0 0 4rem; text-align: right; font-size: 16px; }
   #status {
     position: fixed; right: 1rem; top: 1rem; z-index: 999;
     color: #aaa; font: 12px ui-monospace, monospace;

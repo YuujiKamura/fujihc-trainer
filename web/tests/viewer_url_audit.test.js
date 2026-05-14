@@ -262,7 +262,8 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
 
   it('userZoom/Pitch の hard-set は !MAP_MODE で guard されている', () => {
     // loadCourse 末尾の hard-set は MAP_MODE 時に skip、 ?z/?pitch override 可能
-    expect(viewer).toMatch(/if\s*\(\s*!\s*MAP_MODE\s*\)\s*\{[\s\S]{0,200}userZoom\s*=\s*23\.95/);
+    // 数値は user 判断で再調整される可能性、 ここでは guard 構造の有無のみ pin する
+    expect(viewer).toMatch(/if\s*\(\s*!\s*MAP_MODE\s*\)\s*\{[\s\S]{0,200}userZoom\s*=\s*\d/);
   });
 
   it('roads line-width interpolate は z=22 まで定義 (= ride 視点 overzoom 対策)', () => {
