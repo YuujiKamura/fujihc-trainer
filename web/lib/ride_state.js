@@ -2,6 +2,8 @@
 // viewer-maplibre.js 内に散在していた curIdx / curDist / paused / active を
 // 1 module に閉じ込め、 tick 関数の更新ロジックを advance() に集約する.
 //
+// brief 33: trkpts (= ride 中の {t,lat,lon,ele,power,cad,hr} 時系列) 蓄積を追加.
+// advance(dt, speedMps, extras?) で extras={power,cad,hr} を渡せば trkpt 1 件追加.
 // pure module、 DOM / browser global 依存ゼロ.
 
 import { computeTravelHeading } from './heading.js';
@@ -11,15 +13,17 @@ import { computeTravelHeading } from './heading.js';
  *
  * @param {Array<{lat:number, lon:number, distance_m:number, elevation_m:number, slope_pct:number}>} course
  * @returns {{
- *   advance: (dt:number, speedMps:number) => void,
+ *   advance: (dt:number, speedMps:number, extras?:object) => void,
  *   getCurrentSlope: () => number,
  *   getHeading: (lookAhead?:number) => number,
  *   start: () => void,
  *   end: () => void,
  *   togglePause: () => void,
  *   reset: () => void,
- *   snapshot: () => {idx:number, distance:number, paused:boolean, active:boolean, slope:number},
+ *   snapshot: () => {idx:number, distance:number, paused:boolean, active:boolean, slope:number, trkptCount:number},
  *   isAtEnd: () => boolean,
+ *   appendTrkpt: (extras:object) => void,
+ *   getTrkpts: () => Array<object>,
  * }}
  */
 export function createRideState(course) {
@@ -31,6 +35,7 @@ export function createRideState(course) {
   let curDist = 0;
   let paused = true;
   let active = false;
+  let trkpts = [];
 
   const totalDist = course.length > 0
     ? course[course.length - 1].distance_m
@@ -50,14 +55,50 @@ export function createRideState(course) {
     }
   }
 
+  function appendTrkptInternal(extras) {
+    // 現在位置 (= course[curIdx] の lat/lon/ele) を trkpt として記録する.
+    // extras は {power, cad, hr} の任意 subset、 ISO8601 の t は呼び出し側か Date.now() で埋める.
+    if (course.length === 0) return;
+    const p = course[curIdx];
+    if (!p) return;
+    const lat = Number.isFinite(p.lat) ? p.lat : null;
+    const lon = Number.isFinite(p.lon) ? p.lon : null;
+    if (lat === null || lon === null) return;
+    const ele = Number.isFinite(p.elevation_m) ? p.elevation_m : null;
+    const ex = extras || {};
+    trkpts.push({
+      t: typeof ex.t === 'string' && ex.t ? ex.t : new Date().toISOString(),
+      lat, lon, ele,
+      power: (ex.power === null || ex.power === undefined || !Number.isFinite(Number(ex.power))) ? null : Number(ex.power),
+      cad: (ex.cad === null || ex.cad === undefined || !Number.isFinite(Number(ex.cad))) ? null : Number(ex.cad),
+      hr: (ex.hr === null || ex.hr === undefined || !Number.isFinite(Number(ex.hr))) ? null : Number(ex.hr),
+    });
+  }
+
   return {
-    advance(dt, speedMps) {
+    advance(dt, speedMps, extras) {
       if (paused) return;
       if (course.length === 0) return;
       if (!(dt > 0) || !(speedMps >= 0)) return;
       if (curDist >= totalDist) return;
       curDist = clampDist(curDist + speedMps * dt);
       advanceIdx();
+      // brief 33: extras が渡されたとき trkpt を 1 件 push (= ride 中の時系列蓄積).
+      // 既存 caller (= advance(dt, speedMps) の 2 引数) は extras=undefined で副作用ゼロ、
+      // 12 件の ride_state.test.js を壊さない後方互換.
+      if (extras !== undefined) {
+        appendTrkptInternal(extras);
+      }
+    },
+
+    appendTrkpt(extras) {
+      // 明示 push API (= viewer 側の tick から advance とは別 cadence で呼べる).
+      appendTrkptInternal(extras);
+    },
+
+    getTrkpts() {
+      // immutable shallow copy. 各要素も新規 object で返す (= caller が mutate しても内部に影響しない).
+      return trkpts.map((p) => ({ ...p }));
     },
 
     getCurrentSlope() {
@@ -75,6 +116,7 @@ export function createRideState(course) {
       curDist = 0;
       paused = false;
       active = true;
+      trkpts = [];  // brief 33: ride 開始ごとに trkpt 蓄積を初期化
     },
 
     end() {
@@ -89,6 +131,7 @@ export function createRideState(course) {
     reset() {
       curIdx = 0;
       curDist = 0;
+      trkpts = [];  // brief 33: reset でも trkpt クリア
     },
 
     snapshot() {
@@ -99,6 +142,7 @@ export function createRideState(course) {
         paused,
         active,
         slope: this.getCurrentSlope(),
+        trkptCount: trkpts.length,  // brief 33
       };
     },
 

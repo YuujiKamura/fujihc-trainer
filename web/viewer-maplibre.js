@@ -20,6 +20,12 @@ import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.
 // vendored pmtiles.js は web/lib/vendor/pmtiles.js (BSD-3-Clause)、 index.html の
 // <script> で window.pmtiles を IIFE 化、 ここでは window 経由で参照する。
 import { registerPmtilesProtocol } from './lib/pmtiles_loader.js';
+// brief 33: ride 終了時の 4 button bind (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
+// IndexedDB 履歴 / Strava OAuth / 一覧 UI を viewer 側 inline 化せず module 経由で呼ぶ
+// (= NG-R1-7 同型予防、 4 module 分離).
+import { bindPostRideButtons } from './lib/postride_buttons.js';
+import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
+import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -1360,3 +1366,156 @@ const btnExtractOsm = document.getElementById('btnExtractOsm');
 if (btnExtractOsm) btnExtractOsm.addEventListener('click', startOsmExtract);
 const btnDbinitSkip = document.getElementById('btnDbinitSkip');
 if (btnDbinitSkip) btnDbinitSkip.addEventListener('click', skipDbinit);
+
+// brief 33: ride 履歴 + Strava 連携 button bind.
+// IndexedDB は遅延 open (= ride 終了 / 履歴 open 時に初めて開く、 起動時に open しない).
+let _rideDbInstance = null;
+async function getRideDb() {
+  if (_rideDbInstance) return _rideDbInstance;
+  try { _rideDbInstance = await openRideDb(); } catch (err) { console.warn('openRideDb failed:', err); throw err; }
+  return _rideDbInstance;
+}
+
+// fujihc-trainer の Strava client_id は user 各自が自分の Strava app を作って setup する運用.
+// repo に固定 client_id は埋め込まない (= 各 user の activity が混線しない、 brief 33 §ハマる罠).
+// localStorage 'fujihc.strava.client_id' に user が貼る、 未設定なら upload button が status を出す.
+function getStravaClientId() {
+  try { return localStorage.getItem('fujihc.strava.client_id') || null; } catch { return null; }
+}
+function getStravaRedirectUri() {
+  // GitHub Pages base + oauth-callback.html (= same-origin、 PKCE redirect 先)
+  const base = location.pathname.replace(/\/[^/]*$/, '/');
+  return `${location.origin}${base}oauth-callback.html`;
+}
+
+function setPostrideStatus(text) {
+  const el = document.getElementById('postride-upload-status');
+  if (el) el.textContent = String(text || '');
+}
+
+function buildRideSummary(rideState, course) {
+  const snap = rideState ? rideState.snapshot() : { distance: 0 };
+  return {
+    id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
+    date: new Date().toISOString(),
+    distance_m: snap.distance || 0,
+    duration_s: rideStartedAt ? Math.round((performance.now() - rideStartedAt) / 1000) : 0,
+    elevation_gain_m: 0,  // TODO: course から差分計算 (= 別 brief、 brief 33 範囲外)
+    avg_power_w: null,
+    course_name: 'fujihc',
+  };
+}
+
+bindPostRideButtons({
+  getTrkpts: () => (rideState ? rideState.getTrkpts() : []),
+  getSummary: () => buildRideSummary(rideState, []),
+  getCourseName: () => 'fujihc',
+  addRide: async (rec) => { const db = await getRideDb(); await rideDbAdd(db, rec); },
+  getClientId: getStravaClientId,
+  getRedirectUri: getStravaRedirectUri,
+  onViewHistory: () => { showHistoryOverlay().catch((err) => setPostrideStatus(`history error: ${err.message}`)); },
+  onStatus: setPostrideStatus,
+});
+
+// brief 33 atom H: history-overlay の render + button bind.
+async function showHistoryOverlay() {
+  setAppState('history');
+  const list = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  const status = document.getElementById('history-status');
+  if (!list) return;
+  list.replaceChildren();
+  let rides = [];
+  try { const db = await getRideDb(); rides = await rideDbList(db); }
+  catch (err) { if (status) status.textContent = `読み込み失敗: ${err.message}`; return; }
+  if (rides.length === 0) {
+    if (empty) empty.hidden = false;
+    if (status) status.textContent = '';
+    return;
+  }
+  if (empty) empty.hidden = true;
+  if (status) status.textContent = `${rides.length} 件`;
+  for (const r of rides) {
+    const li = document.createElement('li');
+    const meta = document.createElement('div');
+    meta.className = 'ride-meta';
+    const dateEl = document.createElement('div');
+    dateEl.className = 'ride-date';
+    dateEl.textContent = r.date || r.id;
+    const sumEl = document.createElement('div');
+    sumEl.className = 'ride-summary';
+    const s = r.summary || {};
+    sumEl.textContent = `${Math.round((s.distance_m || 0) / 100) / 10} km / ${Math.round(s.duration_s || 0)}s / ${(r.trkpts || []).length}pt`;
+    meta.appendChild(dateEl); meta.appendChild(sumEl);
+    const actions = document.createElement('div');
+    actions.className = 'ride-actions';
+    const bDel = document.createElement('button');
+    bDel.textContent = '削除';
+    bDel.addEventListener('click', async () => {
+      try { const db = await getRideDb(); await rideDbDelete(db, r.id); showHistoryOverlay(); }
+      catch (err) { if (status) status.textContent = `削除失敗: ${err.message}`; }
+    });
+    actions.appendChild(bDel);
+    li.appendChild(meta); li.appendChild(actions);
+    list.appendChild(li);
+  }
+}
+
+const btnHistoryClose = document.getElementById('btnHistoryClose');
+if (btnHistoryClose) btnHistoryClose.addEventListener('click', () => {
+  setAppState('pairing'); showPairing();
+});
+const btnViewHistoryFromSetup = document.getElementById('btnViewHistoryFromSetup');
+if (btnViewHistoryFromSetup) btnViewHistoryFromSetup.addEventListener('click', () => { showHistoryOverlay(); });
+
+// Strava 連携 / 解除 button (= setup-overlay 内)
+function updateStravaStatusUI() {
+  const status = document.getElementById('strava-status');
+  const btnConn = document.getElementById('btnStravaConnect');
+  const btnDis = document.getElementById('btnStravaDisconnect');
+  let tok = null;
+  try { tok = localStorage.getItem(STRAVA_TOKEN_LS_KEY); } catch {}
+  if (tok) {
+    if (status) status.textContent = '連携済 (= access_token あり)';
+    if (btnDis) btnDis.hidden = false;
+    if (btnConn) btnConn.textContent = '再連携';
+  } else {
+    if (status) status.textContent = '未連携';
+    if (btnDis) btnDis.hidden = true;
+    if (btnConn) btnConn.textContent = 'Strava と連携';
+  }
+}
+updateStravaStatusUI();
+
+const btnStravaConnect = document.getElementById('btnStravaConnect');
+if (btnStravaConnect) btnStravaConnect.addEventListener('click', async () => {
+  const clientId = getStravaClientId();
+  if (!clientId) {
+    const status = document.getElementById('strava-status');
+    if (status) status.textContent = 'client_id 未設定 (= localStorage "fujihc.strava.client_id" に Strava app の Client ID を入れてください)';
+    return;
+  }
+  // PKCE 認可 URL を開く
+  const { makeCodeVerifier, makeCodeChallenge, buildAuthorizeUrl,
+          STRAVA_PKCE_VERIFIER_SS_KEY, STRAVA_PKCE_CLIENT_ID_SS_KEY } =
+    await import('./lib/strava_oauth.js');
+  const verifier = makeCodeVerifier();
+  const challenge = await makeCodeChallenge(verifier);
+  sessionStorage.setItem(STRAVA_PKCE_VERIFIER_SS_KEY, verifier);
+  sessionStorage.setItem(STRAVA_PKCE_CLIENT_ID_SS_KEY, String(clientId));
+  const url = buildAuthorizeUrl({ clientId, redirectUri: getStravaRedirectUri(), codeChallenge: challenge });
+  location.assign(url);
+});
+
+const btnStravaDisconnect = document.getElementById('btnStravaDisconnect');
+if (btnStravaDisconnect) btnStravaDisconnect.addEventListener('click', () => {
+  revokeLocalToken();
+  updateStravaStatusUI();
+});
+
+// oauth-callback.html から postMessage で完了通知が来る (= 別 tab 経路).
+window.addEventListener('message', (ev) => {
+  if (!ev || !ev.data || ev.data.type !== 'strava-oauth-done') return;
+  if (ev.origin !== location.origin) return;  // same-origin only
+  updateStravaStatusUI();
+});

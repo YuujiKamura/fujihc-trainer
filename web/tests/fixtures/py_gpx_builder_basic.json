@@ -1,0 +1,64 @@
+{
+  "input_trkpts": [
+    {
+      "t": "2026-05-15T07:30:00Z",
+      "lat": 35.4,
+      "lon": 138.7,
+      "ele": 1000.0,
+      "power": 210,
+      "cad": 85,
+      "hr": 142
+    },
+    {
+      "t": "2026-05-15T07:30:01Z",
+      "lat": 35.401,
+      "lon": 138.7,
+      "ele": 1010.5,
+      "power": 215,
+      "cad": null,
+      "hr": null
+    },
+    {
+      "t": "2026-05-15T07:30:02Z",
+      "lat": 35.402,
+      "lon": 138.7,
+      "ele": 1021.0,
+      "power": null,
+      "cad": 88,
+      "hr": null
+    },
+    {
+      "t": "2026-05-15T07:30:03Z",
+      "lat": 35.403,
+      "lon": 138.7,
+      "ele": 1031.5,
+      "power": null,
+      "cad": null,
+      "hr": null
+    },
+    {
+      "t": "2026-05-15T07:30:04Z",
+      "lat": 35.404,
+      "lon": 138.7,
+      "ele": null,
+      "power": 200,
+      "cad": 80,
+      "hr": 140
+    },
+    {
+      "t": "",
+      "lat": 35.405,
+      "lon": 138.7,
+      "ele": 1052.0,
+      "power": 200,
+      "cad": 80,
+      "hr": 140
+    }
+  ],
+  "opts": {
+    "name": "fujihc ride",
+    "activity_type": "Virtual Ride"
+  },
+  "expected_gpx": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"fujihc-trainer\" xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\" xmlns:gpxpx=\"http://www.garmin.com/xmlschemas/PowerExtension/v1\">\n  <trk>\n    <name>fujihc ride</name>\n    <type>Virtual Ride</type>\n    <trkseg>\n      <trkpt lat=\"35.4000000\" lon=\"138.7000000\">\n        <ele>1000.00</ele>\n        <time>2026-05-15T07:30:00Z</time>\n        <extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>85</gpxtpx:cad><gpxtpx:hr>142</gpxtpx:hr></gpxtpx:TrackPointExtension><gpxpx:PowerInWatts>210</gpxpx:PowerInWatts><power>210</power></extensions>\n      </trkpt>\n      <trkpt lat=\"35.4010000\" lon=\"138.7000000\">\n        <ele>1010.50</ele>\n        <time>2026-05-15T07:30:01Z</time>\n        <extensions><gpxpx:PowerInWatts>215</gpxpx:PowerInWatts><power>215</power></extensions>\n      </trkpt>\n      <trkpt lat=\"35.4020000\" lon=\"138.7000000\">\n        <ele>1021.00</ele>\n        <time>2026-05-15T07:30:02Z</time>\n        <extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>88</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions>\n      </trkpt>\n      <trkpt lat=\"35.4030000\" lon=\"138.7000000\">\n        <ele>1031.50</ele>\n        <time>2026-05-15T07:30:03Z</time>\n      </trkpt>\n      <trkpt lat=\"35.4040000\" lon=\"138.7000000\">\n        <time>2026-05-15T07:30:04Z</time>\n        <extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>80</gpxtpx:cad><gpxtpx:hr>140</gpxtpx:hr></gpxtpx:TrackPointExtension><gpxpx:PowerInWatts>200</gpxpx:PowerInWatts><power>200</power></extensions>\n      </trkpt>\n      <trkpt lat=\"35.4050000\" lon=\"138.7000000\">\n        <ele>1052.00</ele>\n        <extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>80</gpxtpx:cad><gpxtpx:hr>140</gpxtpx:hr></gpxtpx:TrackPointExtension><gpxpx:PowerInWatts>200</gpxpx:PowerInWatts><power>200</power></extensions>\n      </trkpt>\n    </trkseg>\n  </trk>\n</gpx>\n",
+  "count": 6
+}

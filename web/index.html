@@ -2,9 +2,14 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<!-- brief 33: CSP `script-src 'self'` (= XSS 経由 token exfiltration の物理 gate). connect-src は Strava endpoint 経由を許可。
+     img-src に https://*.strava.com を含めるのは将来の activity サムネ表示用 (= 本 brief では使わないが将来余白)。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
 <title>fujihc viewer (MapLibre 試験版)</title>
-<script src="https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.js"></script>
-<link href="https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.css" rel="stylesheet">
+<!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
+     license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->
+<script src="./lib/vendor/maplibre-gl.js"></script>
+<link href="./lib/vendor/maplibre-gl.css" rel="stylesheet">
 <!-- brief 31: pmtiles.js v3.0.6 (= BSD-3-Clause, vendored, GitHub Pages 静的 mode 用) -->
 <script src="./lib/vendor/pmtiles.js"></script>
 <style>
@@ -158,6 +163,45 @@
   #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
   #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
   #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
+  /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
+  #history-overlay {
+    position: fixed; inset: 0; z-index: 1550;
+    background: rgba(0, 0, 0, 0.92);
+    display: none; align-items: flex-start; justify-content: center;
+    padding-top: 4rem;
+  }
+  body.state-history #history-overlay { display: flex; }
+  body.state-history #setup-overlay,
+  body.state-history #postride-overlay,
+  body.state-history #dbinit-overlay,
+  body.state-history #hud,
+  body.state-history #controls,
+  body.state-history #minimap-container,
+  body.state-history #rider-hud { display: none !important; }
+  #history-panel {
+    background: #1a1a22; border: 1px solid #444; border-radius: 10px;
+    padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px;
+    max-height: 80vh; overflow-y: auto;
+  }
+  #history-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #history-list { list-style: none; padding: 0; margin: 0.6rem 0; }
+  #history-list li { background: #14141a; border: 1px solid #333; border-radius: 6px;
+    padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+  #history-list .ride-meta { flex: 1; }
+  #history-list .ride-date { color: #ffd54a; font-weight: bold; }
+  #history-list .ride-summary { color: #aaa; font-size: 12px; }
+  #history-list .ride-actions button { font: inherit; padding: 0.3rem 0.6rem; margin-left: 0.3rem; min-height: 32px; cursor: pointer; }
+  #history-empty { color: #888; padding: 0.6rem; }
+  #history-buttons { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
+  #history-buttons button { font: inherit; padding: 0.4rem 0.9rem; min-height: 36px; cursor: pointer; }
+
+  /* brief 33: setup-overlay 内 Strava 連携セクション */
+  #strava-section { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid #333; }
+  #strava-section h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #strava-section .strava-status { color: #aaa; font-size: 12px; margin-bottom: 0.4rem; }
+  #strava-section button { font: inherit; padding: 0.4rem 0.9rem; margin-right: 0.4rem; min-height: 36px; cursor: pointer; }
+  #strava-section a { color: #7fff00; text-decoration: underline; font-size: 12px; }
+
   /* ローディングインジケータ (= MAP_MODE 起動時、 全描画完了まで表示).
      画面中央上部、 大きめ font、 半透明黒背景。 idle で hide。 */
   #loading-indicator {
@@ -286,6 +330,20 @@
     </section>
     <button id="btnRideStart" disabled>▶ ライド開始</button>
     <div style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">trainer のハンドシェイク完了後に押せるようになります</div>
+
+    <!-- brief 33: Strava 連携 / 履歴セクション (= ride 前から open できる導線). -->
+    <section id="strava-section">
+      <h3>Strava 連携 / 履歴</h3>
+      <div class="strava-status" id="strava-status">未連携</div>
+      <button id="btnStravaConnect">Strava と連携</button>
+      <button id="btnStravaDisconnect" hidden>連携を解除</button>
+      <button id="btnViewHistoryFromSetup">過去 ride を見る</button>
+      <div style="color:#888; font-size:11px; margin-top:0.4rem;">
+        連携解除後、 完全に断つには Strava 側で
+        <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer">設定 → 連携アプリ</a>
+        から fujihc-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
+      </div>
+    </section>
   </div>
 </div>
 
@@ -294,10 +352,31 @@
     <h2>✓ ライド保存完了</h2>
     <div>保存ファイル (<span id="post-points">0</span> 点):</div>
     <div class="gpx-line" id="post-gpx-path">--</div>
-    <div class="hint">Strava の「アクティビティをアップロード」でこのファイルを投げると Virtual Ride として取り込まれる</div>
+    <div class="hint">下記 button から GPX を保存 / Strava へ直送 / 履歴に蓄積できます (= brief 33)。</div>
+    <!-- brief 33: 4 button (= GPX download / Strava upload / 履歴に保存 / 履歴を見る). -->
     <div>
+      <button id="btnGpxDownload">GPX をダウンロード</button>
+      <button id="btnStravaUpload">Strava へアップロード</button>
+      <button id="btnSaveHistory">履歴に保存</button>
+      <button id="btnViewHistory">履歴を見る</button>
+    </div>
+    <div style="margin-top:0.4rem;">
       <button id="btnCopyPath">パスをコピー <span id="copy-status" style="color:#7fff00;"></span></button>
       <button id="btnBackToPairing">続けてもう一度</button>
+    </div>
+    <div class="strava-status" id="postride-upload-status" style="color:#aaa; font-size:12px; margin-top:0.4rem;"></div>
+  </div>
+</div>
+
+<!-- brief 33 atom H: 履歴 overlay (= IndexedDB の rides 一覧). -->
+<div id="history-overlay" role="dialog" aria-modal="true" aria-labelledby="history-title">
+  <div id="history-panel">
+    <h2 id="history-title">過去の ride 履歴</h2>
+    <div class="strava-status" id="history-status" style="color:#aaa; font-size:12px;"></div>
+    <ul id="history-list"></ul>
+    <div id="history-empty" hidden>履歴は空です。 ride 終了画面で「履歴に保存」を押すと蓄積されます。</div>
+    <div id="history-buttons">
+      <button id="btnHistoryClose">閉じる</button>
     </div>
   </div>
 </div>

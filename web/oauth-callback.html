@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'">
+<title>fujihc-trainer Strava OAuth</title>
+<style>
+  html, body { background: #000; color: #fff; font: 16px ui-monospace, "Cascadia Code", monospace; margin: 0; padding: 2rem; }
+  h1 { color: #ffd54a; font-size: 20px; }
+  #status { margin-top: 1rem; color: #aaa; }
+  #status.ok { color: #7fff00; }
+  #status.err { color: #ff5050; }
+</style>
+</head>
+<body>
+<h1>Strava 連携</h1>
+<div id="status">token 交換中...</div>
+<script type="module" src="./lib/oauth_callback_main.js"></script>
+</body>
+</html>

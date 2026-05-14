@@ -77,3 +77,33 @@ python scripts/fetch_gsi_dem.py --user-agent "fujihc-trainer/0.1 (your-email@exa
 ### bind は 127.0.0.1 限定
 
 `bridge.py` は HTTP server (port 8000) も WebSocket server (port 8765) も `127.0.0.1` bind 明示、 LAN 内の他端末からアクセス不可。 これは ODbL タイルを LAN 内に再配布する事故を物理的に止めるため、 `0.0.0.0` への変更は禁止。
+
+## Strava 連携 (brief 33)
+
+ride 終了画面から (a) GPX を browser download、 (b) Strava に直送 (= OAuth PKCE)、 (c) IndexedDB に履歴保存 の 3 分岐が browser だけで完結する。
+
+### Strava app の用意
+
+repo に固定 client_id は埋め込まない (= 各 user の activity が混線しないため)。 各自で自分の Strava app を作って setup する:
+
+1. [Strava API Settings](https://www.strava.com/settings/api) で My API Application を作成
+2. Authorization Callback Domain に GitHub Pages の host (例: `<your>.github.io`) を登録
+3. browser dev console で `localStorage.setItem('fujihc.strava.client_id', '<your_client_id>')` を実行
+
+### 連携解除
+
+setup-overlay 内の「連携を解除」 button で localStorage の token を削除可能。 ただし**これだけでは Strava 側に app 登録が残ったまま**になる、 完全に断つには [Strava 設定 → 連携アプリ](https://www.strava.com/settings/apps) から fujihc-trainer を revoke すること。
+
+### ToS 適合性 (= Rule 11 class C2)
+
+本実装は Strava API Agreement §5.1 「本人 OAuth で取得した自分のデータを本人 UI で扱う」例外の範囲内:
+
+- upload は user 自身の Strava アカウントへの self-publish (= 第三者再配布ではない)
+- IndexedDB の trkpts 保存先は user の browser local のみ (= cloud sync / server upload なし)
+- 履歴 UI は本人 UI 内の本人 ride 一覧のみ (= §2.10 publicly viewable 制約から外)
+
+公開リポに ride 実データを commit しない (= `data/`, IndexedDB は repo 外)、 第三者の Strava activity を扱わない。
+
+### XSS 防御 / token 漏洩境界
+
+`access_token` / `refresh_token` は `localStorage` 保存、 XSS で読み取られると本人の Strava への任意 upload (= scope=`activity:write`) が可能になる。 防御は (a) `index.html` / `oauth-callback.html` の CSP `script-src 'self'`、 (b) 外部 CDN / analytics / font CDN 一切なし (= `web/lib/vendor/` 配下に self-host)、 (c) inline `<script>` を avoid (= oauth-callback の token 交換は `web/lib/oauth_callback_main.js` に externalize) の 3 重 gate。 完了条件として grep gate (`web/tests/brief33_grep_gate.test.js`) で CI 上 pin。
