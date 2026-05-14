@@ -3,6 +3,7 @@ import {
   offsetSegment,
   buildRoadPolygons,
   buildGradeColoredRoadPolygons,
+  computeMiterOffsets,
 } from '../lib/road_polygon.js';
 
 // brief 25: course 各点列を「一定幅の道路 polygon」として描画するための buffer 化.
@@ -158,6 +159,77 @@ describe('buildRoadPolygons — happy path (富士ヒル風 mini course)', () =>
   it('course が空 / 1 点 → 空 FeatureCollection', () => {
     expect(buildRoadPolygons([]).features).toHaveLength(0);
     expect(buildRoadPolygons([{ lat: FUJI_LAT, lon: FUJI_LON }]).features).toHaveLength(0);
+  });
+});
+
+describe('Fix1: miter offset で隣接 segment が頂点を共有 (= 隙間ゼロ)', () => {
+  it('直線 3 点 course で seg0 の右上 (= b 側 left) == seg1 の左上 (= a 側 left)', () => {
+    const course = [
+      { lat: 35.40, lon: 138.70 },
+      { lat: 35.41, lon: 138.71 },
+      { lat: 35.42, lon: 138.72 },
+    ];
+    const fc = buildRoadPolygons(course, 5);
+    expect(fc.features).toHaveLength(2);
+    const seg0 = fc.features[0].geometry.coordinates[0];
+    const seg1 = fc.features[1].geometry.coordinates[0];
+    // ring = [aLeft, bLeft, bRight, aRight, aLeft]
+    // seg0.bLeft (idx 1) == seg1.aLeft (idx 0), seg0.bRight (idx 2) == seg1.aRight (idx 3)
+    expect(seg0[1]).toEqual(seg1[0]);
+    expect(seg0[2]).toEqual(seg1[3]);
+  });
+
+  it('カーブ 3 点 course でも同じく頂点共有 (= 累積誤差ゼロ)', () => {
+    const course = [
+      { lat: 35.40, lon: 138.70 },
+      { lat: 35.41, lon: 138.71 },
+      { lat: 35.42, lon: 138.705 }, // 折れる
+    ];
+    const fc = buildRoadPolygons(course, 5);
+    const seg0 = fc.features[0].geometry.coordinates[0];
+    const seg1 = fc.features[1].geometry.coordinates[0];
+    expect(seg0[1]).toEqual(seg1[0]);
+    expect(seg0[2]).toEqual(seg1[3]);
+  });
+
+  it('computeMiterOffsets は course.length 個の offset を返す', () => {
+    const course = [
+      { lat: 35.40, lon: 138.70 },
+      { lat: 35.41, lon: 138.71 },
+      { lat: 35.42, lon: 138.72 },
+      { lat: 35.43, lon: 138.73 },
+    ];
+    const offs = computeMiterOffsets(course, 2.5);
+    expect(offs).toHaveLength(4);
+    for (const o of offs) {
+      expect(typeof o.leftLon).toBe('number');
+      expect(typeof o.leftLat).toBe('number');
+      expect(typeof o.rightLon).toBe('number');
+      expect(typeof o.rightLat).toBe('number');
+    }
+  });
+
+  it('中間点の miter 法線は前後 segment の方向の bisector で計算', () => {
+    // 北東 → 北 のカーブ. 中間点の法線は両方向の中間.
+    const course = [
+      { lat: 35.40, lon: 138.70 },
+      { lat: 35.41, lon: 138.71 }, // 中間: 北東→北の折点
+      { lat: 35.42, lon: 138.71 },
+    ];
+    const offs = computeMiterOffsets(course, 2.5);
+    // 中間点の left は course[1] から見て「進行方向の左側」に位置.
+    // bisector が両 segment の中間なので、 単純な左右オフセット (= 退化セグメント
+    // のオフセット) とは異なる方向に振れる.
+    const mid = offs[1];
+    expect(mid.leftLon).not.toBe(course[1].lon);
+    expect(mid.leftLat).not.toBe(course[1].lat);
+    // 左右対称.
+    const dxL = mid.leftLon - course[1].lon;
+    const dyL = mid.leftLat - course[1].lat;
+    const dxR = mid.rightLon - course[1].lon;
+    const dyR = mid.rightLat - course[1].lat;
+    expect(dxL).toBeCloseTo(-dxR, 10);
+    expect(dyL).toBeCloseTo(-dyR, 10);
   });
 });
 

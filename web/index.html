@@ -9,16 +9,18 @@
   html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace; color: #fff; }
   #map { position: fixed; inset: 0; }
   /* brief 26b: state-checking / state-dbinit でも HUD / controls / minimap は隠す
-     (= まだ ride 中ではない、 BLE pairing 前段階の UI フロー)。 */
+     (= まだ ride 中ではない、 BLE pairing 前段階の UI フロー)。
+     brief 28: #minimap (canvas) → #minimap-container (div+div+canvas) に変更、
+     state セレクタも container 側に向ける。 */
   body.state-checking #hud,
   body.state-checking #controls,
-  body.state-checking #minimap,
+  body.state-checking #minimap-container,
   body.state-dbinit #hud,
   body.state-dbinit #controls,
-  body.state-dbinit #minimap,
+  body.state-dbinit #minimap-container,
   body.state-pairing #hud,
   body.state-pairing #controls,
-  body.state-pairing #minimap { display: none !important; }
+  body.state-pairing #minimap-container { display: none !important; }
   /* brief 26b: state 別の overlay 排他制御 (= 同時表示禁止 = NG-R1-3 再演回避) */
   body.state-dbinit #setup-overlay { display: none !important; }
   body.state-dbinit #dbinit-overlay { display: flex; }
@@ -27,13 +29,16 @@
   body.state-checking #dbinit-overlay { display: none !important; }
 
   #hud {
-    position: fixed; left: 1rem; bottom: 1rem; z-index: 999;
+    /* bottom 2.5rem = 40px: 画面下端の MapLibre attribution (= 国土地理院 / OSM / MapLibre 出典) に
+       重ならないように UI を上に逃がす. attribution 自体は MapLibre が canvas に bottom: 0 で固定描画する. */
+    position: fixed; left: 1rem; bottom: 2.5rem; z-index: 999;
     background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
     pointer-events: none; min-width: 14rem;
   }
   #hud b { color: #ffd54a; }
   #controls {
-    position: fixed; right: 1rem; bottom: 1rem; z-index: 999;
+    /* attribution と重ならないよう bottom 2.5rem (= #hud と同じ) */
+    position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
     font: 13px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.65); padding: 0.6rem 0.9rem; border-radius: 6px;
     min-width: 18rem;
@@ -48,11 +53,15 @@
     color: #aaa; font: 12px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
   }
-  #minimap {
+  /* brief 28: minimap を上半分 (MapLibre 2nd instance = OSM 地図) と
+     下半分 (canvas = 標高プロファイル) の 2 領域に分割。 旧単一 canvas 廃止。 */
+  #minimap-container {
     position: fixed; left: 1rem; top: 1rem; z-index: 999;
-    background: rgba(0, 0, 0, 0.8); border-radius: 6px;
-    display: block;
+    width: 320px; height: 720px;
+    background: rgba(0, 0, 0, 0.8); border-radius: 6px; overflow: hidden;
   }
+  #minimap-top    { width: 100%; height: 561px; }   /* 78% = 平面マップ */
+  #minimap-bottom { display: block; width: 100%; height: 159px; } /* 22% = 標高 */
 
   #setup-overlay {
     position: fixed; inset: 0; z-index: 1500;
@@ -245,7 +254,10 @@
   </div>
 </div>
 
-<canvas id="minimap" width="320" height="720"></canvas>
+<div id="minimap-container">
+  <div id="minimap-top"></div>
+  <canvas id="minimap-bottom" width="320" height="159"></canvas>
+</div>
 <script type="module" src="viewer-maplibre.js?v=30"></script>
 </body>
 </html>

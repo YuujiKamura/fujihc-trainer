@@ -245,8 +245,37 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
     expect(viewer).toMatch(/['"]line-width['"]:\s*\[['"]interpolate['"],\s*\[['"]linear['"]\],\s*\[['"]zoom['"]\][\s\S]{0,80}22,\s*\d/);
   });
 
-  it('route-fill は OSM roads layer の前 (= beforeId="roads") に挿入', () => {
-    // addLayer の第 2 引数で 'roads' を渡す
-    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]\s*\)/);
+  it('route-fill は最前面 (= beforeId 無し) で addLayer される', () => {
+    // Fix2: OSM roads-major (= 橙線) が polygon を貫く問題を解消するため、
+    // route-fill は addLayer 第 2 引数 'roads' を持たず、 最後尾 (= 最前面) に挿入する.
+    // addLayer({id: 'route-fill', ...}) の直後が `)` で終わる (= 第 2 引数なし)
+    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*\)\s*;/);
+    // 念のため 'route-fill' の addLayer 直後に 'roads' リテラルが入ってない
+    expect(viewer).not.toMatch(/id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
+  });
+
+  it('route-line も最前面 (= beforeId 無し) で addLayer される', () => {
+    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-line['"][\s\S]{0,400}\}\s*\)\s*;/);
+    expect(viewer).not.toMatch(/id:\s*['"]route-line['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
+  });
+});
+
+// brief 28: minimap MapLibre 化 regression gate (= 17b 単色制約解除を物理化)。
+// 旧 buildMinimapBase 復活 / 単一 canvas 復活 / OSM source 共有 helper 退化 を grep で止める。
+describe('brief 28: minimap MapLibre 化 regression gate', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+  const INDEX_PATH = resolve(__dirname, '..', 'index.html');
+  const indexHtml = readFileSync(INDEX_PATH, 'utf8');
+
+  it('index.html に #minimap-top div が存在する (= 2nd MapLibre instance container)', () => {
+    expect(indexHtml).toMatch(/<div\s+id="minimap-top"/);
+  });
+
+  it('viewer に function initMinimapMap 定義が存在する (= 上半分の MapLibre 化)', () => {
+    expect(viewer).toMatch(/function\s+initMinimapMap\s*\(/);
+  });
+
+  it('viewer に ctx.fillStyle = \'#e8e8e8\' の単色塗り literal が無い (= 17b 制約解除を物理 pin)', () => {
+    expect(viewer).not.toMatch(/ctx\.fillStyle\s*=\s*['"]#e8e8e8['"]/);
   });
 });

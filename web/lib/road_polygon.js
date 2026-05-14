@@ -73,9 +73,94 @@ export function offsetSegment(a, b, widthM) {
 }
 
 /**
- * brief 25: course 各点列を「一定幅の道路 polygon」として buffer 化.
+ * course 各点に対する「miter 法線 offset 点」を事前計算する.
  *
- * 各 segment (= 隣接 2 点間) を offsetSegment で 4 頂点 Polygon に変換.
+ * 隣接 segment が共通の端点 offset を **共有** することで、
+ * segment ごとに独立計算した時に発生する微小な隙間 / 重なり (= 累積誤差)
+ * を物理的にゼロ化する.
+ *
+ * 各点 i の進行方向 dir(i) は:
+ *   - 端点 i=0:        course[0] → course[1] 方向
+ *   - 端点 i=N-1:      course[N-2] → course[N-1] 方向
+ *   - 中間 0<i<N-1:    (dirPrev + dirNext) を normalize した bisector
+ * 法線 = dir を 90° CCW 回転 (-dy, dx).
+ *
+ * meter ↔ degree 換算は各点の lat に応じた cosLat で個別に計算
+ * (= 富士スバルラインの緯度幅は無視できないほどではないが、 整合性のため per-point).
+ *
+ * @param {Array<{lat: number, lon: number}>} course
+ * @param {number} halfWidthM
+ * @returns {Array<{leftLon, leftLat, rightLon, rightLat}>} length === course.length
+ */
+export function computeMiterOffsets(course, halfWidthM) {
+  const n = course.length;
+  if (n < 2) return [];
+
+  // unit vector in meter-space (cosLat 補正済) from p → q.
+  function unitVec(p, q) {
+    const cosLat = Math.cos((p.lat * Math.PI) / 180);
+    const dx = (q.lon - p.lon) * 111320 * cosLat;
+    const dy = (q.lat - p.lat) * 111320;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return { x: 0, y: 0 };
+    return { x: dx / len, y: dy / len };
+  }
+
+  const result = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = course[i];
+    const dPrev = i > 0 ? unitVec(course[i - 1], course[i]) : null;
+    const dNext = i < n - 1 ? unitVec(course[i], course[i + 1]) : null;
+
+    let dx, dy;
+    if (dPrev && dNext) {
+      // bisector = dPrev + dNext, then normalize.
+      dx = dPrev.x + dNext.x;
+      dy = dPrev.y + dNext.y;
+      const blen = Math.hypot(dx, dy);
+      if (blen === 0) {
+        // 180° 折返し (= ありえないが) → 進行方向を dNext で代用.
+        dx = dNext.x;
+        dy = dNext.y;
+      } else {
+        dx /= blen;
+        dy /= blen;
+      }
+    } else if (dNext) {
+      dx = dNext.x;
+      dy = dNext.y;
+    } else if (dPrev) {
+      dx = dPrev.x;
+      dy = dPrev.y;
+    } else {
+      dx = 0;
+      dy = 1;
+    }
+
+    // 法線 (= 進行方向の左 90°): (-dy, dx)
+    const nx = -dy;
+    const ny = dx;
+
+    // 法線方向に halfWidthM (meter) → degree 変換.
+    const cosLat = Math.cos((p.lat * Math.PI) / 180);
+    const metersPerDegLon = METERS_PER_DEG_LAT * cosLat;
+    const offLon = (nx * halfWidthM) / metersPerDegLon;
+    const offLat = (ny * halfWidthM) / METERS_PER_DEG_LAT;
+
+    result[i] = {
+      leftLon: p.lon + offLon,
+      leftLat: p.lat + offLat,
+      rightLon: p.lon - offLon,
+      rightLat: p.lat - offLat,
+    };
+  }
+  return result;
+}
+
+/**
+ * brief 25 + Fix1: course 各点列を「一定幅の道路 polygon」として buffer 化.
+ *
+ * miter offset で **隣接 segment が頂点を共有** (= 隙間ゼロ).
  * segment 数 = course.length - 1.
  *
  * @param {Array<{lat: number, lon: number, slope_pct?: number, distance_m?: number}>} course
@@ -89,11 +174,23 @@ export function buildRoadPolygons(course, widthM = 5) {
   if (!Array.isArray(course) || course.length < 2) {
     return { type: 'FeatureCollection', features: [] };
   }
+  const halfW = widthM / 2;
+  const offsets = computeMiterOffsets(course, halfW);
   const features = [];
   for (let i = 0; i < course.length - 1; i++) {
     const a = course[i];
     const b = course[i + 1];
-    const ring = offsetSegment(a, b, widthM);
+    const oa = offsets[i];
+    const ob = offsets[i + 1];
+
+    // 4 頂点 CCW + close: aLeft, bLeft, bRight, aRight, aLeft.
+    const ring = [
+      [oa.leftLon, oa.leftLat],
+      [ob.leftLon, ob.leftLat],
+      [ob.rightLon, ob.rightLat],
+      [oa.rightLon, oa.rightLat],
+      [oa.leftLon, oa.leftLat],
+    ];
 
     // brief 24 と同じ「次区間の勾配」semantics.
     let slope = b.slope_pct;
