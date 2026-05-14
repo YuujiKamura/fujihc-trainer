@@ -17,16 +17,21 @@ from pathlib import Path
 from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
+    MINIMAP_BBOX,
+    MINIMAP_OSM_ZOOM,
     OSM_VECTOR_ZOOMS,
 )
-from fujihc.tile_coverage import enumerate_coverage_tiles
+from fujihc.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 CONTENT_TYPES = {
     'png': 'image/png',
     'jpg': 'image/jpeg',
     'pbf': 'application/x-protobuf',
 }
-VALID_SOURCES = ('osm', 'gsi_dem')
+# brief 30: 'osm_raster' は minimap (= #minimap-top canvas) 用の raster PNG.
+# 起動時 1-shot fetch → DB 保存、 以降は DB から hit. 既存 'osm' (vector pbf)
+# / 'gsi_dem' (raster-dem PNG) と同格.
+VALID_SOURCES = ('osm', 'gsi_dem', 'osm_raster')
 
 # brief 20 section 4: source 別 status 別 hit count。
 # get_tile の戻り status を str 化して累積。
@@ -173,14 +178,25 @@ def get_setup_status(db_path, course_path):
     if not isinstance(course, list) or not course:
         return (503, None)
 
+    # source 別 expected 数の計算スキーム:
+    # - gsi_dem / osm (vector): course 点列を corridor で覆う → enumerate_coverage_tiles.
+    # - osm_raster (minimap): bbox 直接列挙 → enumerate_bbox_tiles. brief 30.
     sources_spec = (
-        ('gsi_dem', GSI_DEM_ZOOMS),
-        ('osm', OSM_VECTOR_ZOOMS),
+        ('gsi_dem', ('coverage', GSI_DEM_ZOOMS)),
+        ('osm', ('coverage', OSM_VECTOR_ZOOMS)),
+        ('osm_raster', ('bbox', [MINIMAP_OSM_ZOOM])),
     )
     sources_out = {}
     db_exists = Path(db_path).exists()
-    for source, zooms in sources_spec:
-        expected = len(enumerate_coverage_tiles(course, zooms, DEFAULT_CORRIDOR_TILES))
+    for source, (mode, zooms) in sources_spec:
+        if mode == 'bbox':
+            # minimap raster は bbox 直接列挙. zoom は 1 段だけだが同 helper を反復.
+            expected_set: set = set()
+            for z in zooms:
+                expected_set |= enumerate_bbox_tiles(MINIMAP_BBOX, z)
+            expected = len(expected_set)
+        else:
+            expected = len(enumerate_coverage_tiles(course, zooms, DEFAULT_CORRIDOR_TILES))
         if db_exists:
             with sqlite3.connect(db_path) as db:
                 present = db.execute(

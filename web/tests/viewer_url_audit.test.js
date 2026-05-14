@@ -28,6 +28,21 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(insideMatches).toBeGreaterThan(0);
   });
 
+  it('loadOsmTile 内に osm_raster 経路 literal が現れる (= brief 30 DB cache 一次経路、 TILE_BASE_URL 経由)', () => {
+    const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    // TILE_BASE_URL は ${location.origin}/tiles に展開される. source 上は
+    // `${TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png` で書かれる.
+    expect(m[0]).toMatch(/TILE_BASE_URL[^`]*\/osm_raster\//);
+  });
+
+  it('buildMinimapTopBase 内に /tiles/_fetch_minimap_raster POST 呼出 (= brief 30 起動時 cache 構築)', () => {
+    const m = viewer.match(/function\s+buildMinimapTopBase\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/\/tiles\/_fetch_minimap_raster/);
+    expect(m[0]).toMatch(/method:\s*['"]POST['"]/);
+  });
+
   it('cyberjapandata.gsi.go.jp を直接叩いていない (= minimap には GSI 不要、 brief 29 で維持)', () => {
     expect(viewer).not.toMatch(/https?:\/\/cyberjapandata\.gsi\.go\.jp/);
   });

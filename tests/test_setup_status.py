@@ -98,16 +98,22 @@ def test_partial_gsi_only_returns_partial(empty_db, course_path):
 
 
 def test_all_ready_returns_ready_overall(empty_db, course_path):
-    """両 source の expected 数だけ insert すると overall=ready."""
+    """3 source の expected 数だけ insert すると overall=ready (= brief 30 で osm_raster 追加)."""
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
     for src, zooms in (('gsi_dem', GSI_DEM_ZOOMS), ('osm', OSM_VECTOR_ZOOMS)):
         for z, x, y in sorted(enumerate_coverage_tiles(
                 COURSE_FIXTURE, zooms, DEFAULT_CORRIDOR_TILES)):
             _insert_tile(empty_db, src, z, x, y, status=200, data=b'\x01')
+    # brief 30: osm_raster の expected 数だけ insert
+    for z, x, y in sorted(enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM)):
+        _insert_tile(empty_db, 'osm_raster', z, x, y, status=200, data=b'\x89PNG')
     status, body = tile_server.get_setup_status(empty_db, course_path)
     assert status == 200
     assert body['overall'] == 'ready'
     assert body['sources']['gsi_dem']['status'] == 'ready'
     assert body['sources']['osm']['status'] == 'ready'
+    assert body['sources']['osm_raster']['status'] == 'ready'
 
 
 def test_fetch_status_404_rows_not_counted(empty_db, course_path):
@@ -120,6 +126,37 @@ def test_fetch_status_404_rows_not_counted(empty_db, course_path):
     assert status == 200
     assert body['sources']['gsi_dem']['status'] == 'empty'
     assert body['sources']['gsi_dem']['tiles_present'] == 0
+
+
+def test_osm_raster_source_present_in_empty_db(empty_db, course_path):
+    """brief 30: osm_raster source が empty で存在し、 expected が bbox 由来."""
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
+    status, body = tile_server.get_setup_status(empty_db, course_path)
+    assert status == 200
+    assert 'osm_raster' in body['sources']
+    assert body['sources']['osm_raster']['status'] == 'empty'
+    assert body['sources']['osm_raster']['tiles_present'] == 0
+    expected = len(enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM))
+    assert body['sources']['osm_raster']['tiles_expected'] == expected
+    assert expected > 0  # 富士山 bbox + z=11 で必ず 1 タイル以上
+
+
+def test_osm_raster_partial_then_ready(empty_db, course_path):
+    """brief 30: osm_raster の expected 数だけ insert すると osm_raster=ready."""
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
+    tiles = sorted(enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM))
+    # 1 件だけ insert → partial
+    z, x, y = tiles[0]
+    _insert_tile(empty_db, 'osm_raster', z, x, y, status=200, data=b'\x89PNG')
+    status, body = tile_server.get_setup_status(empty_db, course_path)
+    assert body['sources']['osm_raster']['status'] == 'partial'
+    # 残り全部 → ready
+    for z, x, y in tiles[1:]:
+        _insert_tile(empty_db, 'osm_raster', z, x, y, status=200, data=b'\x89PNG')
+    status, body = tile_server.get_setup_status(empty_db, course_path)
+    assert body['sources']['osm_raster']['status'] == 'ready'
 
 
 def test_course_path_missing_returns_503(empty_db, tmp_path):

@@ -130,6 +130,34 @@ def make_http_app(
         inflight['gsi_dem'] = asyncio.create_task(_runner())
         return web.json_response({'state': 'started', 'source': 'gsi_dem'}, status=202)
 
+    async def h_fetch_minimap_raster(request: web.Request) -> web.Response:
+        """brief 30: minimap raster の起動時 1-shot fetch を spawn.
+
+        body 不要 (= bbox / zoom は tile_constants の中央定数). 既に走行中なら
+        409 (= GSI / OSM 抽出と同じ inflight 制御).
+        """
+        if 'osm_raster' in inflight and not inflight['osm_raster'].done():
+            return web.json_response(
+                {'state': 'busy', 'source': 'osm_raster'}, status=409,
+            )
+
+        async def _runner():
+            try:
+                await dbinit.fetch_minimap_raster_async(
+                    db_path=str(db_path), progress_cb=_progress,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning('fetch_minimap_raster_async failed: %s', exc)
+                await _progress({
+                    'source': 'osm_raster', 'n': 0, 'total': 0,
+                    'phase': 'error', 'message': str(exc),
+                })
+
+        inflight['osm_raster'] = asyncio.create_task(_runner())
+        return web.json_response(
+            {'state': 'started', 'source': 'osm_raster'}, status=202,
+        )
+
     async def h_extract_osm(request: web.Request) -> web.Response:
         if 'osm' in inflight and not inflight['osm'].done():
             return web.json_response({'state': 'busy', 'source': 'osm'}, status=409)
@@ -172,6 +200,7 @@ def make_http_app(
     app.router.add_get("/tiles/_setup_status", h_setup_status)
     app.router.add_post("/tiles/_fetch_gsi", h_fetch_gsi)
     app.router.add_post("/tiles/_extract_osm", h_extract_osm)
+    app.router.add_post("/tiles/_fetch_minimap_raster", h_fetch_minimap_raster)
     app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
 
     # 静的 file 配信 (= viewer HTML / JS / CSS / course.json)、 同一 origin で /tiles/ と並走。

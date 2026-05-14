@@ -253,6 +253,7 @@ def test_metrics_count_up_on_get_tile(populated_db):
     assert tile_server.get_metrics() == {
         'osm': {'200': 0, '404': 0},
         'gsi_dem': {'200': 0, '404': 0},
+        'osm_raster': {'200': 0, '404': 0},
     }
     # osm hit x2, miss x1
     tile_server.get_tile(populated_db, 'osm', 16, 57983, 25750)  # 200
@@ -274,6 +275,7 @@ def test_metrics_400_503_not_counted(populated_db, tmp_path):
     assert m == {
         'osm': {'200': 0, '404': 0},
         'gsi_dem': {'200': 0, '404': 0},
+        'osm_raster': {'200': 0, '404': 0},
     }
 
 
@@ -285,6 +287,7 @@ def test_reset_metrics_zeros_all_counters(populated_db):
     assert tile_server.get_metrics() == {
         'osm': {'200': 0, '404': 0},
         'gsi_dem': {'200': 0, '404': 0},
+        'osm_raster': {'200': 0, '404': 0},
     }
 
 

@@ -31,3 +31,13 @@ TILE_FETCH_WARN_THRESHOLD = 1000
 
 # DB schema version (migration 用、 PRAGMA user_version と同期)
 SCHEMA_VERSION = 1
+
+# brief 30: minimap raster (= 上半分 #minimap-top の OSM タイル) の DB cache 用.
+# 起動時 1 回だけ OSM タイルサーバから fetch して tiles table に
+# source='osm_raster' で保存、 2 回目以降は DB から hit (= OSM 再 fetch ゼロ).
+# brief 29 で確定した z=11 + 富士山周辺 bbox を中央定数化.
+MINIMAP_OSM_ZOOM = 11
+# (lon_min, lat_min, lon_max, lat_max). 富士スバルライン 24 km + 周辺余裕、
+# z=11 で 9-16 タイルに収まる範囲. 個人小規模 1-shot, OSM Tile Usage Policy
+# 「cache aggressively」推奨に積極準拠.
+MINIMAP_BBOX = (138.65, 35.30, 138.85, 35.50)

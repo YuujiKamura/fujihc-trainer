@@ -67,6 +67,38 @@ def enumerate_coverage_tiles(
     return tiles
 
 
+def enumerate_bbox_tiles(
+    bbox: Tuple[float, float, float, float],
+    zoom: int,
+) -> Set[Tuple[int, int, int]]:
+    """bbox (lon_min, lat_min, lon_max, lat_max) を覆う (zoom, x, y) set を返す.
+
+    brief 30: minimap raster の DB cache 用に course 点列依存ではなく
+    bbox 直接列挙が必要なため新規追加. enumerate_coverage_tiles と同じ XYZ
+    scheme の _lonlat_to_tile を共有する pure function.
+
+    Args:
+        bbox: (lon_min, lat_min, lon_max, lat_max) tuple of floats.
+        zoom: 整数 zoom level.
+
+    Returns:
+        set of (zoom, x, y) tuples (XYZ scheme).
+    """
+    lon_min, lat_min, lon_max, lat_max = bbox
+    # 北端の方が y が小さい (= Web Mercator は北上向きで y 増加で南下).
+    x0, y0 = _lonlat_to_tile(lon_min, lat_max, zoom)
+    x1, y1 = _lonlat_to_tile(lon_max, lat_min, zoom)
+    xs = (min(x0, x1), max(x0, x1))
+    ys = (min(y0, y1), max(y0, y1))
+    n = 1 << zoom
+    tiles: Set[Tuple[int, int, int]] = set()
+    for x in range(xs[0], xs[1] + 1):
+        for y in range(ys[0], ys[1] + 1):
+            if 0 <= x < n and 0 <= y < n:
+                tiles.add((zoom, x, y))
+    return tiles
+
+
 def compute_bounds(
     course: Sequence[Mapping[str, float]],
     buffer_m: float = DEFAULT_BUFFER_M,

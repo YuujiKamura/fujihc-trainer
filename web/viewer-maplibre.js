@@ -287,10 +287,19 @@ function updateDbinitBar(source, info) {
 
 function handleDbinitProgress(msg) {
   // bridge から WS で push される { type:'dbinit_progress', source, n, total, phase }
+  // brief 30: source='osm_raster' (= minimap) は backend で発火するが UI bar は持たない
+  // (= 任意拡張 scope 外)、 done event での maybeAdvanceToPairing は走らせる。
   const source = msg && msg.source;
-  if (source !== 'gsi_dem' && source !== 'osm') return;
-  const bar = document.getElementById(`dbinit-${source === 'gsi_dem' ? 'gsi' : source}-bar`);
-  if (!bar) return;
+  if (source !== 'gsi_dem' && source !== 'osm' && source !== 'osm_raster') return;
+  const barId = source === 'gsi_dem' ? 'gsi'
+              : source === 'osm_raster' ? null
+              : source;
+  const bar = barId ? document.getElementById(`dbinit-${barId}-bar`) : null;
+  if (!bar) {
+    // osm_raster は bar 不在で正常 (= silent)、 done のみ追って維持
+    if (msg.phase === 'done') maybeAdvanceToPairing();
+    return;
+  }
   const total = Number(msg.total) || 0;
   const n = Number(msg.n) || 0;
   const fill = bar.querySelector('.fill');
@@ -724,14 +733,17 @@ async function loadCourse() {
 // 注意: ここで OSM 直叩きが復活している (= viewer_url_audit.test.js は loadOsmTile 限定で例外緩和)。
 // ride hot path には絶対戻さない、 prefetchTilesAlongCourse 復活も絶対 NG (= brief 13 物理 freeze)。
 
-// loadOsmTile: 旧版踏襲。 1 タイル fetch + drawImage、 失敗時は resolve のみ (= reject しない)。
+// loadOsmTile: brief 30 で DB cache 化。 一次経路は ${TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png
+// (= bridge.py が SQLite から PNG を返す)、 fallback で OSM 直叩き (= 起動直後 / DB 不在 / bridge 未起動でも minimap が出る)。
+// 失敗時は resolve のみ (= reject しない、 旧版踏襲)。
 // crossOrigin='anonymous' は canvas tainted 回避用 (= drawImage 後 getImageData は呼ばないので
 // 必須ではないが旧版踏襲、 OSM 側は CORS 許可ヘッダを返すので無害)。
-// User-Agent は browser が自動で `Mozilla/5.0 ...` を送る (= OSM Tile Usage Policy 識別要件を満たす)。
+// User-Agent は browser が自動で送る (= bridge 側で fetch するときは fujihc-trainer/0.1 UA を明示)。
 function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
+    let tried = false;
     img.onload = () => {
       const lonW = tileXToLon(tx, z), lonE = tileXToLon(tx + 1, z);
       const latN = tileYToLat(ty, z), latS = tileYToLat(ty + 1, z);
@@ -745,10 +757,19 @@ function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
       ctx.restore();
       resolve();
     };
-    img.onerror = () => resolve();
-    // brief 29: ToS 範囲内 1-shot 9-16 タイル fetch (= z=11)、 起動時 1 回限り。
-    // ride hot path / prefetch には絶対使わない (= brief 13 物理 freeze)、 minimap 専用。
-    img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
+    img.onerror = () => {
+      // brief 30: 一次経路 (= DB cache) が 404/503 で空振ったら、 fallback で OSM 直叩き
+      // (= 起動直後 / bridge 未起動 / cache 構築前)。 二度目の error は silent resolve.
+      if (!tried) {
+        tried = true;
+        img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
+        return;
+      }
+      resolve();
+    };
+    // brief 30 一次経路: bridge 経由で DB tiles table から hit (= source='osm_raster')。
+    // 2 回目以降の起動では完全に DB hit、 OSM サーバへの再 fetch ゼロ。
+    img.src = `${TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`;
   });
 }
 
@@ -778,6 +799,15 @@ function drawDirTriangle(ctx, x, y, heading, size) {
 async function buildMinimapTopBase() {
   const onscreen = document.getElementById('minimap-top');
   if (!onscreen || course.length === 0) return;
+  // brief 30: 起動時 1 回、 bridge に minimap raster の DB cache 構築を fire-and-forget で依頼。
+  // 既に DB に揃っていれば 9-16 タイル分の skipped で完走 (= OSM fetch ゼロ)、
+  // 不足分のみ 1 req/sec で fetch + insert。 完走後は次回起動から完全 DB hit。
+  // bridge 未起動 / 失敗時は無視 (= OSM 直叩き fallback が loadOsmTile 内で動く)。
+  fetch(`${HTTP_BASE_URL}/tiles/_fetch_minimap_raster`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  }).catch(() => { /* silent: fallback は loadOsmTile が担う */ });
   const W = onscreen.width, H = onscreen.height;
   const PAD = 12;
   // course bbox を 20% margin で広げる

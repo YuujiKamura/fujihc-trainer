@@ -25,11 +25,14 @@ from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
     GSI_RATE_LIMIT_SEC,
+    MINIMAP_BBOX,
+    MINIMAP_OSM_ZOOM,
     OSM_VECTOR_ZOOMS,
 )
-from fujihc.tile_coverage import enumerate_coverage_tiles
+from fujihc.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'
+OSM_RASTER_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 DEFAULT_USER_AGENT = (
     'fujihc-trainer/0.1 (https://github.com/YuujiKamura/fujihc-trainer)'
 )
@@ -52,6 +55,22 @@ def _fetch_one_sync(z: int, x: int, y: int, user_agent: str, timeout: float = 10
         GSI_URL.format(z=z, x=x, y=y),
         headers={'User-Agent': user_agent},
     )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return (200, resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return (404, None)
+        raise
+
+
+def _fetch_one_url_sync(url: str, user_agent: str, timeout: float = 10.0):
+    """1 タイルを任意 URL から sync で取得 (= to_thread 経由で呼ぶ).
+
+    brief 30: OSM raster (= minimap) 用. GSI と並列の URL pattern を持つため
+    _fetch_one_sync (= GSI 固定) を再利用せず、 url 引数を取る変種を追加.
+    """
+    req = urllib.request.Request(url, headers={'User-Agent': user_agent})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return (200, resp.read())
@@ -165,6 +184,94 @@ async def fetch_gsi_async(
 
     await _emit(progress_cb, {
         'source': 'gsi_dem',
+        'n': total,
+        'total': total,
+        'phase': 'done',
+    })
+
+    return {
+        'fetched': fetched,
+        'skipped': skipped,
+        'errors': errors,
+        'total': total,
+    }
+
+
+async def fetch_minimap_raster_async(
+    db_path,
+    bbox=MINIMAP_BBOX,
+    zoom: int = MINIMAP_OSM_ZOOM,
+    rate_limit_sec: float = GSI_RATE_LIMIT_SEC,
+    user_agent: str = DEFAULT_USER_AGENT,
+    progress_cb: ProgressCb = None,
+) -> dict:
+    """OSM raster タイルを bbox + zoom 内で 1 req/sec 逐次 DL → DB 格納 (brief 30).
+
+    minimap (= #minimap-top canvas) 用の事前 fetch + DB cache. 起動時 1 回だけ
+    呼び出され、 以降は viewer が ${TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png
+    で DB から hit する. OSM Tile Usage Policy の「cache aggressively」推奨
+    に積極準拠.
+
+    Args:
+        db_path: 出力先 SQLite. 既に schema 初期化済前提 (init_tile_db).
+        bbox: (lon_min, lat_min, lon_max, lat_max) tuple of floats.
+        zoom: zoom 整数 (中央定数 MINIMAP_OSM_ZOOM=11 が default).
+        rate_limit_sec: 各 fetch 後の sleep 秒数 (= GSI と同じく 1 req/s 安全側).
+        user_agent: OSM に送る UA (= GSI と同じ自前 UA).
+        progress_cb: 1 タイル fetch ごとに { source: 'osm_raster', n, total, phase } を渡す.
+
+    Returns:
+        { fetched: int, skipped: int, errors: int, total: int }
+    """
+    db_path = Path(db_path)
+    tiles = sorted(enumerate_bbox_tiles(bbox, zoom))
+    existing = await asyncio.to_thread(_existing_tiles_sync, db_path, 'osm_raster')
+    to_fetch = [t for t in tiles if t not in existing]
+    total = len(tiles)
+
+    fetched = 0
+    errors = 0
+    skipped = len(existing & set(tiles))
+
+    await _emit(progress_cb, {
+        'source': 'osm_raster', 'n': skipped, 'total': total, 'phase': 'fetching',
+    })
+
+    for i, (z, x, y) in enumerate(to_fetch):
+        url = OSM_RASTER_URL.format(z=z, x=x, y=y)
+        try:
+            status, data = await asyncio.to_thread(
+                _fetch_one_url_sync, url, user_agent,
+            )
+        except urllib.error.HTTPError:
+            errors += 1
+            continue
+        await asyncio.to_thread(
+            _insert_tile_sync, db_path, 'osm_raster', z, x, y, status, data, 'png',
+        )
+        if status == 200:
+            fetched += 1
+        await _emit(progress_cb, {
+            'source': 'osm_raster',
+            'n': skipped + i + 1,
+            'total': total,
+            'phase': 'fetching',
+        })
+        if rate_limit_sec > 0:
+            await asyncio.sleep(rate_limit_sec)
+
+    await asyncio.to_thread(_upsert_metadata_sync, db_path, 'osm_raster', [
+        ('attribution', '© OpenStreetMap contributors (ODbL)'),
+        ('license', 'ODbL-1.0'),
+        ('format', 'png'),
+        ('minzoom', str(zoom)),
+        ('maxzoom', str(zoom)),
+        ('user_agent_used', user_agent),
+        ('fetched_by', 'fujihc.dbinit.fetch_minimap_raster_async'),
+    ])
+
+    await _emit(progress_cb, {
+        'source': 'osm_raster',
         'n': total,
         'total': total,
         'phase': 'done',
