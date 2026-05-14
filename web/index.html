@@ -275,6 +275,15 @@
       <button id="btnSkip">trainer なしでデモ走行</button>
       <button id="btnClosePairing" hidden>ライドに戻る</button>
     </div>
+    <!-- brief 32: ?ble=1 (BLE_MODE) のときのみ unhide される直接 Web Bluetooth 接続 button 群.
+         bridge mode の #setup-buttons / #setup-list とは独立 (= 排他、 NG-R1-3 / NG-R1-7 再演回避). -->
+    <section id="ble-section" hidden>
+      <h3>Web Bluetooth 直接接続</h3>
+      <p style="color:#aaa; font-size:11px; margin:0 0 0.4rem;">bridge.py 無し、 ブラウザから直接 FTMS trainer と心拍計に接続します。</p>
+      <button id="btn-ble-trainer">Trainer に接続 (BLE)</button>
+      <button id="btn-ble-hrm">心拍計に接続 (BLE、 任意)</button>
+      <p class="ble-support-msg" style="color:#ff8; font-size:12px; margin-top:0.4rem;" hidden>このブラウザは Web Bluetooth 非対応です (= iOS Safari / Firefox)。 Chrome / Edge / Android Chrome をご利用ください。</p>
+    </section>
     <button id="btnRideStart" disabled>▶ ライド開始</button>
     <div style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">trainer のハンドシェイク完了後に押せるようになります</div>
   </div>

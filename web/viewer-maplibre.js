@@ -10,6 +10,7 @@ import { smoothCourse } from './lib/gpx_smooth.js';
 import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
 // brief 19b: WebSocket / ride state / camera を lib に集約
 import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
+import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
 import { createRideState } from './lib/ride_state.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
@@ -420,6 +421,10 @@ const TEST_MODE = new URLSearchParams(location.search).has('test');
 // createTestModeClient、 加えて pairing overlay を即 hide + ride を自動 start.
 // 用途: AI / 自動 capture で OSM/dem/polygon の visual 検証だけしたい時.
 const MAP_MODE = new URLSearchParams(location.search).has('map');
+// brief 32: ?ble=1 で Web Bluetooth 経由の直接 FTMS / HRM 接続モード.
+// bridge.py 無し、 viewer から Web BT API (= ble_client.js 内に閉じる) で
+// trainer / 心拍計と話す. iOS Safari / Firefox は非対応で fallback UI を出す.
+const BLE_MODE = new URLSearchParams(location.search).has('ble');
 let client = null;
 let lastSlopeSent = null;
 let lastSlopeSendT = 0;
@@ -590,6 +595,41 @@ function connectBridge() {
   }
 }
 
+// brief 32: ?ble=1 で Web Bluetooth 経由の直接接続モード.
+// bridge.py 無し、 Web BT API (ble_client.js 内に閉じる) で trainer / 心拍計と話す.
+// scan / connect は user gesture (button click) からのみ呼べる Web Bluetooth 仕様、
+// setup-overlay 内に専用 button group (#ble-section) を unhide して click 起点で発火.
+async function initBleMode() {
+  // map は既存 default mode と同じ. bridge への HTTP 不在で static tile に倒す.
+  if (!map) { ensureMapBooted().then(() => initBleMode()); return; }
+  setAppState('pairing');
+  setText('setup-status', 'BLE モード: お使いの trainer / 心拍計を直接選んでください');
+  setText('p-device', '(未接続)');
+  setText('p-state', 'BLE 待機中');
+  // 既存 setup-overlay の scan list (= bridge mode 専用) は隠し、 #ble-section を unhide.
+  const bleSection = document.getElementById('ble-section');
+  const scanBtnArea = document.getElementById('setup-buttons');
+  if (bleSection) bleSection.hidden = false;
+  if (scanBtnArea) scanBtnArea.hidden = true;
+
+  const supported = isWebBluetoothSupported();
+  const supportMsg = document.querySelector('#ble-section .ble-support-msg');
+  const btnTrainer = document.getElementById('btn-ble-trainer');
+  const btnHrm = document.getElementById('btn-ble-hrm');
+  if (!supported) {
+    if (supportMsg) supportMsg.hidden = false;
+    if (btnTrainer) btnTrainer.disabled = true;
+    if (btnHrm) btnHrm.disabled = true;
+    setText('setup-status', 'このブラウザは BLE 非対応 (= iOS Safari / Firefox)、 Chrome / Edge / Android Chrome をご利用ください');
+    // client は test mode fake で立てて map は動くようにする (= 視覚 fallback).
+    client = createTestModeClient(wsHandlers, { fakeStateInterval: 1000 });
+    return;
+  }
+  client = createBleClient(wsHandlers);
+  if (btnTrainer) btnTrainer.addEventListener('click', () => { client && client.sendConnect(); });
+  if (btnHrm) btnHrm.addEventListener('click', () => { client && client.sendHrmConnect(); });
+}
+
 // brief 22: trainer / bridge 不要の画面操作確認モード.
 // brief 19b: createTestModeClient に置換、 fake send / state push は lib 側に集約.
 // brief 31: map 未生成なら checkSetupStatus 経由で bridgeReachable 確定 + bootMap、
@@ -680,6 +720,7 @@ function bootCheckSetupStatus() {
 // initTestMode の入口で `if (!map) ...` 経由 (= 既存 dispatch 行のリテラルを保持)。
 if (MAP_MODE) initMapMode();
 else if (TEST_MODE) initTestMode();
+else if (BLE_MODE) initBleMode();
 else bootCheckSetupStatus();
 
 function initMapMode() {
