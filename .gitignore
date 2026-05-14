@@ -4,4 +4,5 @@ __pycache__/
 logs/
 .venv/
 data/measurements/*.jsonl
+data/*.sqlite
 node_modules/
