@@ -137,7 +137,8 @@ describe('buildRoadPolygons — happy path (富士ヒル風 mini course)', () =>
 
   it('properties に slope_pct / distance_m_start / distance_m_end が入る', () => {
     const fc = buildRoadPolygons(miniCourse);
-    expect(fc.features[0].properties.slope_pct).toBe(2.5); // 次区間 = course[1].slope_pct.
+    // 2026-05-15 fix: 「始点側 = course[i].slope_pct」 semantics (= 視覚と trainer 体感の同期).
+    expect(fc.features[0].properties.slope_pct).toBe(0.5); // 始点 = course[0].slope_pct.
     expect(fc.features[0].properties.distance_m_start).toBe(0);
     expect(fc.features[0].properties.distance_m_end).toBe(100);
     expect(fc.features[3].properties.distance_m_start).toBe(300);
@@ -251,12 +252,11 @@ describe('buildGradeColoredRoadPolygons', () => {
       expect(typeof f.properties.color).toBe('string');
       expect(f.properties.color).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
-    // segment 0: slope = course[1].slope_pct = 2.5 → gentle / #a3c853.
-    expect(fc.features[0].properties.grade).toBe('gentle');
-    expect(fc.features[0].properties.color).toBe('#a3c853');
-    // segment 3: slope = course[4].slope_pct = 12.0 → very_hard / #e74c3c.
-    expect(fc.features[3].properties.grade).toBe('very_hard');
-    expect(fc.features[3].properties.color).toBe('#e74c3c');
+    // 2026-05-15 fix: 「始点側」semantics. segment 0 = course[0].slope_pct = 0.5 → flat.
+    expect(fc.features[0].properties.grade).toBe('flat');
+    // segment 3: slope = course[3].slope_pct = 8.0 → hard / #e67e22.
+    expect(fc.features[3].properties.grade).toBe('hard');
+    expect(fc.features[3].properties.color).toBe('#e67e22');
   });
 
   it('slope_pct null 安全 (= 欠落しても flat default 緑、 落ちない)', () => {
