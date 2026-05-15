@@ -1100,7 +1100,10 @@ function introConsented() {
 //   ?map=1 等を URL に残したまま「コースを観る」を選んだら view mode に入れない。
 function dispatchAfterIntro() {
   // 観るモード優先 (= intro の明示選択を URL 引数より上に置く).
-  const ic = getIntroConsent();
+  // 2026-05-15 fix: ?consent=dev で起動した時は localStorage の前回 consent (= 過去 session で
+  // 選んだ mode='view' 等) を無視、 default (= ride) で走る。 dev session で毎回 setup-overlay に
+  // 到達したい開発者の意図を満たす (= 過去訂正「最初の画面から始まらない」反映).
+  const ic = CONSENT_DEV_BYPASS ? null : getIntroConsent();
   if (ic && ic.mode === 'view') {
     initViewMode();
     return;
