@@ -62,26 +62,19 @@ describe('brief 31: BASE_PATH 計算 (= location.pathname から末尾 file 名�
   });
 });
 
-describe('brief 31: checkSetupStatus が AbortSignal.timeout + bridgeReachable を返す', () => {
-  it('AbortSignal.timeout(500) を fetch に渡す', () => {
-    expect(viewer).toMatch(/AbortSignal\.timeout\(\s*500\s*\)/);
+describe('brief 31 commit γ: checkSetupStatus は lib に抽出済、 viewer は wrapper のみ', () => {
+  // 旧 grep gate (= 出現回数 == N の literal counting) は撤廃。
+  // 仕様 5 経路の decision table は web/tests/check_setup_status.test.js (= behavioral test) で
+  // fetch stub 経由で直接検証する。 viewer 側はそれを import して使う wrapper のみ持つ。
+  it('viewer は lib/check_setup_status.js を import (= 実装本体は lib 側)', () => {
+    expect(viewer).toMatch(/from\s+['"]\.\/lib\/check_setup_status\.js['"]/);
+    expect(viewer).toMatch(/import\s+\{[^}]*checkSetupStatus[^}]*\}\s+from\s+['"]\.\/lib\/check_setup_status\.js['"]/);
   });
 
-  it('bridgeReachable は 200 と 503 のみ true、 404 / non-ok / catch は false', () => {
-    // checkSetupStatus 関数 body 全体を取って、 各 path で bridgeReachable: true/false を返すことを確認
-    const m = viewer.match(/async\s+function\s+checkSetupStatus\s*\([\s\S]*?\n\}/);
+  it('viewer の checkSetupStatus は lib helper への thin wrapper (= HTTP_BASE_URL bind のみ)', () => {
+    const m = viewer.match(/async\s+function\s+checkSetupStatus\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    const body = m[0];
-    // true 経路は 2 つ: 200 OK (= body 展開) + 503 (= bridge 起動済 DB 未充足)
-    expect((body.match(/bridgeReachable:\s*true/g) || []).length).toBe(2);
-    // false 経路は 2 つ以上: 404 / non-ok + catch (timeout / network)
-    expect((body.match(/bridgeReachable:\s*false/g) || []).length).toBeGreaterThanOrEqual(2);
-    // 503 だけは特殊 (= bridge 認知して true)
-    expect(body).toMatch(/resp\.status\s*===?\s*503[\s\S]*bridgeReachable:\s*true/);
-    // non-ok (= 404 含む) は false
-    expect(body).toMatch(/!resp\.ok[\s\S]*bridgeReachable:\s*false/);
-    // catch path で bridgeReachable: false
-    expect(body).toMatch(/catch[\s\S]*bridgeReachable:\s*false/);
+    expect(m[0]).toMatch(/checkSetupStatusLib\(\s*HTTP_BASE_URL\s*\)/);
   });
 });
 

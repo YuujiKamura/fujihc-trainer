@@ -20,6 +20,8 @@ import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.
 // vendored pmtiles.js は web/lib/vendor/pmtiles.js (BSD-3-Clause)、 index.html の
 // <script> で window.pmtiles を IIFE 化、 ここでは window 経由で参照する。
 import { registerPmtilesProtocol } from './lib/pmtiles_loader.js';
+// brief 31 commit γ: checkSetupStatus を lib 抽出して behavioral test 可能に
+import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_status.js';
 // brief 33: ride 終了時の 4 button bind (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
 // IndexedDB 履歴 / Strava OAuth / 一覧 UI を viewer 側 inline 化せず module 経由で呼ぶ
 // (= NG-R1-7 同型予防、 4 module 分離).
@@ -343,26 +345,11 @@ setAppState('checking');
 // brief 26b: bridge への HTTP fetch base. WebSocket とは別経路 (= /tiles/* aiohttp app)。
 const HTTP_BASE_URL = location.origin;
 
+// brief 31 commit γ: 実装本体は lib/check_setup_status.js に抽出済 (= behavioral test 用)。
+// ここでは viewer の HTTP_BASE_URL を bind した thin wrapper のみを残す。
+// AbortSignal.timeout(500) は lib default に同梱。
 async function checkSetupStatus() {
-  // brief 31: bridge 不在 (= GitHub Pages 等) 判定のため AbortSignal.timeout(500) を追加。
-  // 戻り値に `bridgeReachable` flag (= bridge mode / static mode の単一判定軸) を含める。
-  // 既存 caller (= showDbinit / maybeAdvanceToPairing) は `overall` のみ参照、 後方互換。
-  try {
-    const resp = await fetch(
-      `${HTTP_BASE_URL}/tiles/_setup_status`,
-      { signal: AbortSignal.timeout(500) },
-    );
-    // 200 OK: bridge 起動済 + DB 充足の通常応答
-    // 503: bridge 起動済だが DB 未充足 (= dbinit 必要、 bridge 経路は使う)
-    // 404 / その他 non-ok: 静的サーバ (= /tiles/_setup_status 不在) → static mode
-    if (resp.status === 503) return { overall: 'empty', sources: {}, bridgeReachable: true };
-    if (!resp.ok) return { overall: 'empty', sources: {}, bridgeReachable: false };
-    const body = await resp.json();
-    return { ...body, bridgeReachable: true };
-  } catch (err) {
-    // timeout / network error: bridge 未到達 = static mode 確定
-    return { overall: 'empty', sources: {}, bridgeReachable: false };
-  }
+  return checkSetupStatusLib(HTTP_BASE_URL);
 }
 
 let _advancedFromDbinit = false;

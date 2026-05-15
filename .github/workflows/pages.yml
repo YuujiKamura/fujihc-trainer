@@ -51,6 +51,21 @@ jobs:
           cp -r web/lib _site/lib
           cp -r web/static _site/static
 
+      # brief 31 commit γ: 静的アセットの件数 guard
+      # export_static.py が走らなかった or 出力が空 (= .gitkeep のみ) なら CI を fail させる。
+      # silent deploy (= 空 dir で Pages 公開 → 訪問者は地図が出ない) を物理 block。
+      - name: Verify static assets staged
+        run: |
+          set -e
+          test -f _site/static/map.pmtiles || (echo "ERROR: _site/static/map.pmtiles missing" && exit 1)
+          test -f _site/static/course.json || (echo "ERROR: _site/static/course.json missing" && exit 1)
+          dem_count=$(find _site/static/tiles/gsi_dem -name '*.png' 2>/dev/null | wc -l)
+          if [ "$dem_count" -lt 100 ]; then
+            echo "ERROR: GSI dem tile count too low ($dem_count < 100). export_static.py 未実行 or 失敗の疑い"
+            exit 1
+          fi
+          echo "OK: pmtiles + course.json + $dem_count GSI dem tiles staged"
+
       - uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
