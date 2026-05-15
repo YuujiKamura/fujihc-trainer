@@ -36,7 +36,7 @@ describe('brief 34 ε-1 integration: intro overlay 構造 + consent 保存 round
     expect(introDiv[0]).not.toMatch(/visible/);
   });
 
-  it('intro-overlay の DOM 構造: 必須 4 要素 (h2 / 4 段落以上 / btnIntroStart / btnIntroClose)', () => {
+  it('intro-overlay の DOM 構造: 必須 5 要素 (h2 / 4 段落以上 / btnIntroStart / btnIntroView / btnIntroClose)', () => {
     const introBlock = html.match(/<div\s+id="intro-overlay"[\s\S]*?<\/div>\s*<\/div>/);
     expect(introBlock).not.toBeNull();
     const body = introBlock[0];
@@ -45,6 +45,8 @@ describe('brief 34 ε-1 integration: intro overlay 構造 + consent 保存 round
     const pCount = (body.match(/<p[\s>]/g) || []).length;
     expect(pCount).toBeGreaterThanOrEqual(4);
     expect(body).toMatch(/<button[^>]*id="btnIntroStart"/);
+    // brief 34 ε-8: 「コースを観る」button が追加された (= 3 ボタン化)
+    expect(body).toMatch(/<button[^>]*id="btnIntroView"/);
     expect(body).toMatch(/<button[^>]*id="btnIntroClose"/);
   });
 
@@ -91,9 +93,18 @@ describe('brief 34 ε-1 integration: intro 文言 4 軸 (= 公開ガードレー
     expect(html).toMatch(/サーバ送信なし/);
   });
 
-  it('intro に「FTMS 対応 trainer」 + 「Web Bluetooth で直接繋ぎ」 + 「trainer 無し.*出来ることはありません」が揃う (= trainer 必須明示)', () => {
+  it('intro に「FTMS 対応 trainer」 + 「Web Bluetooth で直接繋」 + 「走る」モード説明が揃う (= trainer 必要の選択肢を明示)', () => {
+    // brief 34 ε-8: 2 モード (= 走る / 観る) 説明に変更。 旧 「trainer 無しで出来ることはありません」は撤回、
+    // 観るモードで trainer 無し訪問者にも価値を提供する設計。
     expect(html).toMatch(/FTMS 対応 trainer/);
-    expect(html).toMatch(/Web Bluetooth で直接繋ぎ/);
-    expect(html).toMatch(/trainer 無し.*出来ることはありません/);
+    expect(html).toMatch(/Web Bluetooth で直接繋/);  // 「繋ぎ」「繋いで」両対応
+    expect(html).toMatch(/走る/);
+  });
+
+  it('brief 34 ε-8: intro に「観る」モードの説明 (= trainer 不要 + 区間勾配 + ログなし) が含まれる', () => {
+    expect(html).toMatch(/観る/);
+    expect(html).toMatch(/trainer 不要/);
+    expect(html).toMatch(/10 区間/);
+    expect(html).toMatch(/ログ保存なし/);
   });
 });

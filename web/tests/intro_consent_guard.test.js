@@ -216,7 +216,9 @@ describe('brief 34 ε-2: viewer source 上の guard 構造を pin (= grep + beha
   it('btnIntroStart click は setIntroConsent + hideIntroOverlay + dispatchAfterIntro の 3 連動 (= brief 34 ε-1 で btnIntroDemo から rename)', () => {
     // brief 34 ε-1 (= 2026-05-15 user 方向修正): 旧 btnIntroDemo (= 試走デモを見る) を撤去、
     // btnIntroStart (= 自分の trainer で走る) に rename。 デモ走行 button は提供しない。
-    expect(viewer).toMatch(/btnIntroStart[\s\S]{0,300}setIntroConsent\(\)[\s\S]{0,300}hideIntroOverlay\(\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+    // brief 34 ε-8: setIntroConsent に optional {mode:'ride'|'view'} 引数を渡せるように拡張。
+    // btnIntroStart は明示 mode='ride' を渡す (= view と区別するため).
+    expect(viewer).toMatch(/btnIntroStart[\s\S]{0,300}setIntroConsent\(\{[^}]*mode:\s*['"]ride['"][^}]*\}\)[\s\S]{0,300}hideIntroOverlay\(\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
     expect(viewer).not.toMatch(/btnIntroDemo/);
   });
 

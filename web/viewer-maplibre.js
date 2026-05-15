@@ -35,6 +35,8 @@ import {
 } from './lib/consent.js';
 // brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
 import { clearAllLocalData } from './lib/clear_local_data.js';
+// brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
+import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -766,11 +768,13 @@ function showAttributionWarning(detail) {
 
 // brief 34 ε-2 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay 表示 / ボタン bind.
 // 「閉じる」= 何もしない (= overlay は閉じるが consent は保存しない、 reload 時に再表示)。
-// 「自分の trainer で走る」= setIntroConsent() 保存 + overlay 隠す + dispatchAfterIntro。
+// 「自分の trainer で走る」= setIntroConsent({mode:'ride'}) 保存 + overlay 隠す + dispatchAfterIntro。
 //   default 経路 (= 無 URL 引数) では bootCheckSetupStatus 経由で initBleMode に向かう
 //   (= Web Bluetooth で trainer 直接接続、 brief 32 で landed 済の経路を流用)。
+// brief 34 ε-8: 「コースを観る」= setIntroConsent({mode:'view'}) 保存 + initViewMode に向かう
+//   (= trainer 不要、 区間選択で fake state ride、 走行ログ保存なし)。
 //   ?map=1 / ?test=1 / ?ble=1 等の URL 引数経由は開発者本人の動作確認用 path、
-//   一般訪問者は intro 通過後の default 経路 (= initBleMode) のみに到達する。
+//   一般訪問者は intro 通過後の default 経路 (= ride or view) のみに到達する。
 function showIntroOverlay() {
   const ov = document.getElementById('intro-overlay');
   if (ov) ov.classList.add('visible');
@@ -791,16 +795,64 @@ function hideConsentOverlay() {
   const ov = document.getElementById('consent-overlay');
   if (ov) ov.classList.remove('visible');
 }
+// brief 34 ε-8: 「観る」モード section-overlay 表示 / hide / list render.
+// section-overlay は 10 区間のリストを表示、 行クリックで該当 section.start_idx を rideState に
+// inject して fake state ride を開始する。 ride 中の「区間リストに戻る」ボタンで再表示する。
+function showSectionOverlay() {
+  const ov = document.getElementById('section-overlay');
+  if (ov) ov.classList.add('visible');
+}
+function hideSectionOverlay() {
+  const ov = document.getElementById('section-overlay');
+  if (ov) ov.classList.remove('visible');
+}
+// section リストの DOM を course から再構築 (= 「コースを観る」初回 + 「区間リストに戻る」で呼ぶ).
+// 各 li に role=button + data-start-idx + tabindex を付け、 click で onSelect を発火させる.
+function renderSectionList(courseArr, onSelect) {
+  const list = document.getElementById('section-list');
+  if (!list) return;
+  list.replaceChildren();
+  const sections = splitCourseIntoSections(courseArr, 10);
+  for (const sec of sections) {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'button');
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('data-start-idx', String(sec.start_idx));
+    li.setAttribute('data-section-index', String(sec.index));
+    const label = document.createElement('span');
+    label.className = 'sec-label';
+    label.textContent = formatSectionLabel(sec);
+    const meta = document.createElement('span');
+    meta.className = 'sec-meta';
+    meta.textContent = `${(sec.start_ele).toFixed(0)}m → ${(sec.end_ele).toFixed(0)}m`;
+    li.appendChild(label);
+    li.appendChild(meta);
+    li.addEventListener('click', () => onSelect(sec));
+    li.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onSelect(sec); }
+    });
+    list.appendChild(li);
+  }
+}
 
 // 起動時に 1 回 bind (= multiple click でも 1 度しか発火しない、 addEventListener 性質).
 // document が無い test 環境 (= 直 import) では skip。
 if (typeof document !== 'undefined') {
   // brief 34 ε-1 (= 2026-05-15 user 方向修正反映): btnIntroStart = 「自分の trainer で走る」.
   // デモ走行ボタンは撤去、 trainer 無し試触者は default 想定外。
+  // brief 34 ε-8: btnIntroView = 「コースを観る」 (= trainer 不要、 区間勾配を眺める).
   const btnIntroStart = document.getElementById('btnIntroStart');
+  const btnIntroView = document.getElementById('btnIntroView');
   const btnIntroClose = document.getElementById('btnIntroClose');
   if (btnIntroStart) btnIntroStart.addEventListener('click', () => {
-    setIntroConsent();
+    // brief 34 ε-8: 'ride' mode を明示保存 (= default だが view 切替時に区別するため).
+    setIntroConsent({ mode: 'ride' });
+    hideIntroOverlay();
+    dispatchAfterIntro();
+  });
+  if (btnIntroView) btnIntroView.addEventListener('click', () => {
+    // brief 34 ε-8: 'view' mode で consent 保存 → dispatchAfterIntro で initViewMode に分岐.
+    setIntroConsent({ mode: 'view' });
     hideIntroOverlay();
     dispatchAfterIntro();
   });
@@ -808,6 +860,24 @@ if (typeof document !== 'undefined') {
     // 「閉じる」は consent を保存しない (= reload 時に再表示).
     // ride / map fetch は走らせない (= 帯域消費ゼロ).
     hideIntroOverlay();
+  });
+
+  // brief 34 ε-8: section-overlay の bind (= 「閉じる (= intro に戻る)」 button).
+  // 行クリックは renderSectionList 内で onSelect callback として inject (= initViewMode 経路).
+  const btnSectionClose = document.getElementById('btnSectionClose');
+  if (btnSectionClose) btnSectionClose.addEventListener('click', () => {
+    hideSectionOverlay();
+    // intro overlay に戻る (= mode 選び直し)、 view mode の consent は残すが intro は再表示.
+    showIntroOverlay();
+  });
+  // 「区間リストに戻る」 button (= ride 中 view mode 専用) の bind.
+  // ride を end して section-overlay を再表示、 別区間選び直しの導線。
+  const btnViewModeBackToList = document.getElementById('btnViewModeBackToList');
+  if (btnViewModeBackToList) btnViewModeBackToList.addEventListener('click', () => {
+    if (rideState) rideState.end();
+    setAppState('pairing');  // ride 状態を抜ける (= state-riding を外す)
+    document.body.classList.add('mode-view');  // mode-view class は維持
+    showSectionOverlay();
   });
 
   // brief 34 ε-3: consent-overlay の bind. accept で flag を保存 + ride 再発火、
@@ -907,11 +977,67 @@ function introConsented() {
   return getIntroConsent() !== null;
 }
 // dispatch を関数化: introConsented なら mode 別に init、 未通過なら showIntroOverlay。
+// brief 34 ε-8: getIntroConsent().mode === 'view' なら initViewMode に分岐 (= 観るモード).
+//   URL 引数 (MAP_MODE/TEST_MODE/BLE_MODE) より intro の mode 選択を優先。 そうしないと
+//   ?map=1 等を URL に残したまま「コースを観る」を選んだら view mode に入れない。
 function dispatchAfterIntro() {
+  // 観るモード優先 (= intro の明示選択を URL 引数より上に置く).
+  const ic = getIntroConsent();
+  if (ic && ic.mode === 'view') {
+    initViewMode();
+    return;
+  }
   if (MAP_MODE) initMapMode();
   else if (TEST_MODE) initTestMode();
   else if (BLE_MODE) initBleMode();
   else bootCheckSetupStatus();
+}
+
+// brief 34 ε-8: 観るモードの起動関数.
+// trainer / bridge / Web Bluetooth 不要、 区間 list を表示して user の選択を待つ。
+// section 選択 → rideState.startFrom(start_idx) で fake state ride を開始、
+// 走行ログは保存しない (= IndexedDB / Strava upload を物理 disable は body.mode-view CSS + flag 経由).
+function initViewMode() {
+  if (!map) { ensureMapBooted().then(() => initViewMode()); return; }
+  status('VIEW MODE: 観るモード (= trainer 不要、 区間勾配を眺める)');
+  document.body.classList.add('mode-view');
+  // 全 overlay を hide してから section-overlay を出す (= 視覚的に他 UI を排他).
+  hideDbinit();
+  document.getElementById('setup-overlay')?.classList.remove('visible');
+  setAppState('pairing');  // riding ではない (= section 選択待ち).
+  // fake state client (= TEST_MODE / MAP_MODE と同じ生成器). state-riding は section 選択後.
+  client = createTestModeClient(wsHandlers, {
+    fakeStateInterval: 1000,
+    fakeStateGenerator: () => {
+      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
+      const moving = snap.active && !snap.paused;
+      return {
+        speed_mps: moving ? (20 / 3.6) : 0,
+        power_w: moving ? 150 : 0,
+        cadence_rpm: moving ? 80 : 0,
+        distance_m: snap.distance,
+        slope_sent_pct: 0,
+        hr_bpm: 120,
+        last_ack: 'OK (VIEW MODE)',
+      };
+    },
+  });
+
+  // course が読み込まれるまで待ち、 揃ったら section-overlay を表示する.
+  const waitForCourse = setInterval(() => {
+    if (course && course.length > 0) {
+      clearInterval(waitForCourse);
+      renderSectionList(course, (sec) => {
+        // section 行クリック → rideState を section 始点から開始.
+        if (!rideState) return;
+        rideState.startFrom(sec.start_idx);
+        rideStartedAt = performance.now();
+        hideSectionOverlay();
+        setAppState('riding');
+      });
+      showSectionOverlay();
+    }
+  }, 100);
 }
 if (introConsented()) {
   dispatchAfterIntro();
@@ -1644,8 +1770,15 @@ bindPostRideButtons({
   getSummary: () => buildRideSummary(rideState, []),
   getCourseName: () => 'fujihc',
   // brief 34 ε-3: IndexedDB 書込を consent flag で guard (= history consent off なら no-op).
+  // brief 34 ε-8: 「観る」モード (= intro consent mode === 'view') も二重 guard (= 観るは記録対象外).
   // getRideConsent('history') が false なら status を出して return、 IndexedDB 接続もしない。
   addRide: async (rec) => {
+    // 観るモードは記録対象外 (= brief 34 ε-8、 仕様上 IndexedDB 書込禁止).
+    const ic = getIntroConsent();
+    if (ic && ic.mode === 'view') {
+      setPostrideStatus('観るモードは記録対象外です (= 走行ログ保存なし).');
+      return;
+    }
     if (!getRideConsent('history')) {
       setPostrideStatus('履歴保存は同意されていません (= ride 開始前の consent で OFF 選択). 設定画面から再 ride で同意可。');
       return;
@@ -1654,8 +1787,11 @@ bindPostRideButtons({
     await rideDbAdd(db, rec);
   },
   // brief 34 ε-3: Strava 機能を consent flag で guard (= strava consent off なら client_id を返さない).
+  // brief 34 ε-8: 「観る」モードも上書きで disable (= 観るは Strava upload 対象外).
   // getClientId が null を返せば postride_buttons.js 側で「client_id 未設定」の status が出る。
   getClientId: () => {
+    const ic = getIntroConsent();
+    if (ic && ic.mode === 'view') return null;  // 観るモードは Strava 非対応
     if (!getRideConsent('strava')) return null;
     return getStravaClientId();
   },

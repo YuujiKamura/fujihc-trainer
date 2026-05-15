@@ -119,6 +119,29 @@ export function createRideState(course) {
       trkpts = [];  // brief 33: ride 開始ごとに trkpt 蓄積を初期化
     },
 
+    /**
+     * brief 34 ε-8: 「観るモード」用の区間始点 inject 経路.
+     * 指定 idx の course point から ride を開始する (= 通常 start は idx=0 リセット).
+     * 観るモード以外で呼ばれる場合は無いが、 汎用 API として有効. trkpts は通常 start 同様クリア.
+     *
+     * idx の正規化: 0..course.length-1 にクランプ、 course が空なら no-op.
+     * curDist は course[idx].distance_m を採用 (= advance ロジックが distance ベースのため整合).
+     *
+     * @param {number} idx
+     */
+    startFrom(idx) {
+      if (course.length === 0) return;
+      let safeIdx = Math.floor(Number(idx));
+      if (!Number.isFinite(safeIdx)) safeIdx = 0;
+      if (safeIdx < 0) safeIdx = 0;
+      if (safeIdx > lastIdx) safeIdx = lastIdx;
+      curIdx = safeIdx;
+      curDist = course[safeIdx].distance_m;
+      paused = false;
+      active = true;
+      trkpts = [];
+    },
+
     end() {
       paused = true;
       active = false;

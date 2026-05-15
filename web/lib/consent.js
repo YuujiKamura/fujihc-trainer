@@ -50,7 +50,7 @@ function writeJson(ls, key, value) {
 /**
  * intro consent を読み出す. hash 一致時のみ truthy を返す.
  * @param {{storage?: Storage}} [opts]
- * @returns {{hash: string, accepted_at: string} | null}
+ * @returns {{hash: string, accepted_at: string, mode?: 'ride'|'view'} | null}
  */
 export function getIntroConsent(opts = {}) {
   const ls = getStorage(opts.storage);
@@ -62,14 +62,22 @@ export function getIntroConsent(opts = {}) {
 
 /**
  * intro consent を記録する.
- * @param {{storage?: Storage, now?: () => Date}} [opts]
+ *
+ * brief 34 ε-8: 「観る」モード追加に伴い optional `mode` を保存できる拡張。
+ *   mode='ride' (= default、 「自分の trainer で走る」経路) と
+ *   mode='view' (= 「コースを観る」経路) を区別。 mode 未指定時は 'ride' を保存する。
+ *
+ * @param {{storage?: Storage, now?: () => Date, mode?: 'ride'|'view'}} [opts]
  */
 export function setIntroConsent(opts = {}) {
   const ls = getStorage(opts.storage);
   const now = (opts.now || (() => new Date()))();
+  // mode 不正値は 'ride' に倒す (= 安全寄り、 default の trainer 必須経路へ).
+  const mode = (opts.mode === 'view') ? 'view' : 'ride';
   writeJson(ls, INTRO_CONSENT_LS_KEY, {
     hash: INTRO_CONSENT_HASH,
     accepted_at: now.toISOString(),
+    mode,
   });
 }
 

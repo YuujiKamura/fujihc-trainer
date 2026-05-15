@@ -26,17 +26,20 @@ describe('brief 34 ε-6: 全 overlay の z-index 順序が単調 (= 重なり順
     expect(getZIndex('#dbinit-overlay')).toBe(1400);
     expect(getZIndex('#intro-overlay')).toBe(1450);
     expect(getZIndex('#consent-overlay')).toBe(1460);
+    // brief 34 ε-8: section-overlay (= 観るモードの区間リスト) は consent (1460) と setup (1500) の間.
+    expect(getZIndex('#section-overlay')).toBe(1470);
     expect(getZIndex('#setup-overlay')).toBe(1500);
     expect(getZIndex('#history-overlay')).toBe(1550);
     expect(getZIndex('#postride-overlay')).toBe(1600);
     expect(getZIndex('#confirm-overlay')).toBe(1700);
   });
 
-  it('z 順序: dbinit (1400) < intro (1450) < consent (1460) < setup (1500) < history (1550) < postride (1600) < confirm (1700) (= 単調増加)', () => {
+  it('z 順序: dbinit (1400) < intro (1450) < consent (1460) < section (1470) < setup (1500) < history (1550) < postride (1600) < confirm (1700) (= 単調増加)', () => {
     const zs = [
       getZIndex('#dbinit-overlay'),
       getZIndex('#intro-overlay'),
       getZIndex('#consent-overlay'),
+      getZIndex('#section-overlay'),  // brief 34 ε-8
       getZIndex('#setup-overlay'),
       getZIndex('#history-overlay'),
       getZIndex('#postride-overlay'),
@@ -101,11 +104,12 @@ describe('brief 34 ε-6 integration: 全 overlay の HTML 初期 state (= defaul
     expect(HTML).toMatch(/<body\s+class="state-checking"/);
   });
 
-  it('intro / consent / dbinit / history / postride / confirm / clear-confirm / clear-done は default で visible class 無し', () => {
+  it('intro / consent / section / dbinit / history / postride / confirm / clear-confirm / clear-done は default で visible class 無し', () => {
     // 各 overlay の opening tag に visible class が含まれないことを確認 (= 起動直後は全 hidden、
     // setup-overlay のみ visible class が default で付く = 既存 brief 26b の挙動).
+    // brief 34 ε-8: section-overlay も追加 (= default hidden、 「コースを観る」click で visible).
     for (const id of [
-      'intro-overlay', 'consent-overlay', 'dbinit-overlay',
+      'intro-overlay', 'consent-overlay', 'section-overlay', 'dbinit-overlay',
       'history-overlay', 'postride-overlay', 'confirm-overlay',
       'clear-confirm-overlay', 'clear-done-overlay',
     ]) {

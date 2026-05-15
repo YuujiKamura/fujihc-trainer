@@ -177,6 +177,27 @@
   #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
 
+  /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
+     intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
+     区間勾配を眺めるための UI。 Zwift Climb Portal 風 (= ただし trainer 不要 + ログ保存なし). */
+  #section-overlay { position: fixed; inset: 0; z-index: 1470; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #section-overlay.visible { display: flex; }
+  #section-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
+  #section-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #section-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
+  #section-list { list-style: none; padding: 0; margin: 0.6rem 0; }
+  #section-list li { background: #14141a; border: 1px solid #333; border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+  #section-list li:hover, #section-list li:focus { background: #2a2a36; border-color: #7fff00; outline: none; }
+  #section-list .sec-label { color: #ffd54a; font-weight: bold; }
+  #section-list .sec-meta { color: #aaa; font-size: 12px; }
+  #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
+  #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  /* state-riding 中の view モード戻り button (= section list に戻るための導線). */
+  #btnViewModeBackToList { position: fixed; right: 1rem; top: 1rem; z-index: 1000; display: none; padding: 0.5rem 1rem; background: rgba(0, 0, 0, 0.8); color: #7fff00; border: 1px solid #7fff00; border-radius: 4px; font: 14px ui-monospace, monospace; cursor: pointer; }
+  body.state-riding.mode-view #btnViewModeBackToList { display: block; }
+  /* view モード中は postride / strava 系を一切表示しない (= 観るモードは記録対象外). */
+  body.mode-view #postride-overlay { display: none !important; }
+
   /* brief 34 ε-1: 公開ガードレール consent-overlay (= z-index 1460、 ride 開始前の opt-in).
      intro (1450) より上、 setup (1500) より下に挟むと「intro 通過 → setup 画面 → ride 開始ボタンで consent 表示」が成立. */
   #consent-overlay { position: fixed; inset: 0; z-index: 1460; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
@@ -422,11 +443,12 @@
   </div>
 </div>
 
-<!-- brief 34 ε-1 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay.
-     ボタンは「自分の trainer で走る」/「閉じる」の 2 つ、 default は何もしない。
-     デモ走行 button は提供しない (= 1m 豆腐が地図を動くだけの demo は第三者提示価値ゼロ)、
-     開発者本人の動作確認用 bypass は URL 引数 (?map=1&consent=dev / ?test=1&consent=dev) 経由のみ。
-     ボタン id: btnIntroStart = 「自分の trainer で走る」 / btnIntroClose = 「閉じる」. -->
+<!-- brief 34 ε-1 (= 2026-05-15 user 方向修正反映) + ε-8 (= 2026-05-15 「観る」モード追加):
+     公開ガードレール intro-overlay。 ボタンは 3 つ:
+       - btnIntroStart = 「自分の trainer で走る」 (= FTMS trainer 必要、 走行ログ保存可)
+       - btnIntroView  = 「コースを観る」 (= trainer 不要、 区間勾配を眺める、 記録なし、 brief 34 ε-8)
+       - btnIntroClose = 「閉じる」 (= 何もしない、 次回再表示)
+     default は何もしない。 開発者本人の動作確認用 bypass は URL 引数 (?consent=dev) 経由のみ。 -->
 <div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title">
   <div id="intro-panel">
     <h2 id="intro-title">fujihc-trainer (= 富士ヒルクライム シミュレータ)</h2>
@@ -435,13 +457,33 @@
     <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
     <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 公道は車両以外通行制限があり、 第三者が検証する手段が事実上ありません。 この不確実性を許容してご利用ください。</p>
     <p>データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし、 browser を消すと履歴も消えます)。</p>
-    <p>動作には FTMS 対応 trainer (= 室内ローラー) と Chrome / Edge が必要です。 訪問者の trainer に Web Bluetooth で直接繋ぎ、 富士ヒルコースの起伏を再現して走ります。 trainer 無しでこのサイトに来ても出来ることはありません。</p>
+    <p>2 つのモードがあります:</p>
+    <p style="margin-left:1rem;"><strong style="color:#7fff00;">走る</strong> ── FTMS 対応 trainer (= 室内ローラー) と Chrome / Edge があれば、 Web Bluetooth で直接繋いで負荷連動で走れます。 走行ログを残せます。</p>
+    <p style="margin-left:1rem;"><strong style="color:#7fff00;">観る</strong> ── trainer なしでも、 コース全 24km を 10 区間に分け、 各区間の平均勾配を表示、 選んだ区間を rider が一定速度で走る様子を任意視点で眺められます (Zwift Climb Portal と同じ発想、 ただし trainer 不要、 ログ保存なし)。</p>
     <div class="actions">
       <button id="btnIntroClose" type="button">閉じる</button>
+      <button id="btnIntroView" type="button">コースを観る</button>
       <button id="btnIntroStart" type="button">自分の trainer で走る</button>
     </div>
   </div>
 </div>
+
+<!-- brief 34 ε-8: 「観る」モード用 section-overlay (= 10 区間リスト、 z-index 1470).
+     intro で「コースを観る」を選んだあと表示、 各行クリックで該当区間の start_idx から
+     fake-state ride を開始する。 ride 中の「区間リストに戻る」button (= #btnViewModeBackToList) は
+     viewer 側で配置 + show/hide 制御する (= state-riding.mode-view CSS で表示制御). -->
+<div id="section-overlay" role="dialog" aria-modal="true" aria-labelledby="section-title">
+  <div id="section-panel">
+    <h2 id="section-title">区間を選んで観る (= コース 10 等分)</h2>
+    <p>コース全長を 10 区間に分け、 各区間の平均勾配を表示します。 行をクリックすると、 その区間の始点から rider が一定速度で走る様子を眺められます。 走行ログは保存されません (= 観るモードは記録対象外)。</p>
+    <ul id="section-list" aria-label="コース区間リスト"></ul>
+    <div class="actions">
+      <button id="btnSectionClose" type="button">閉じる (= intro に戻る)</button>
+    </div>
+  </div>
+</div>
+<!-- brief 34 ε-8: 観るモード中の「区間リストに戻る」ボタン. body.state-riding.mode-view 時のみ表示. -->
+<button id="btnViewModeBackToList" type="button">← 区間リストに戻る</button>
 
 <!-- brief 34 ε-3: 公開ガードレール consent-overlay (= ride 開始前の opt-in、 default 全 OFF). -->
 <div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
