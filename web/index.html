@@ -98,7 +98,9 @@
 
   #setup-overlay {
     position: fixed; inset: 0; z-index: 1500;
-    background: rgba(0, 0, 0, 0.86);
+    /* 2026-05-15 fix: 背景を半透明 (0.86 → 0.55) に薄めて、 後ろの地図 (= 富士山 + コース) が
+       うっすら見えるようにする。 「何のアプリか」を直感で伝えるには地図が見えてる必要。 */
+    background: rgba(0, 0, 0, 0.55);
     display: none;
     align-items: center; justify-content: center;
   }
@@ -136,7 +138,7 @@
   #btnRideStart:disabled { background: #444; color: #888; cursor: not-allowed; }
   #btnRideStart:focus { outline: 3px solid #ffd54a; outline-offset: 2px; }
 
-  #postride-overlay { position: fixed; inset: 0; z-index: 1600; background: rgba(0, 0, 0, 0.86); display: none; align-items: center; justify-content: center; }
+  #postride-overlay { position: fixed; inset: 0; z-index: 1600; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; }
   #postride-overlay.visible { display: flex; }
   #postride-panel { background: #1a1a22; border: 1px solid #444; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
   #postride-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
@@ -147,7 +149,7 @@
   /* brief 26b: dbinit-overlay (= 起動時 DB 構築 UI、 setup-overlay とは独立 DOM)
      z-index: 1400 (= setup 1500 / postride 1600 / confirm 1700 より下)、
      BLE pairing 中は body class で抑止される */
-  #dbinit-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(0, 0, 0, 0.92); display: none; align-items: center; justify-content: center; }
+  #dbinit-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; }
   #dbinit-panel { background: #1a1a22; border: 1px solid #444; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; }
   #dbinit-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
   #dbinit-panel h3 { margin: 0.8rem 0 0.4rem; color: #ffd54a; font-size: 14px; }
@@ -172,7 +174,7 @@
 
   /* brief 34 ε-1: 公開ガードレール intro-overlay (= z-index 1450、 ページ読込直後に必ず表示).
      setup-overlay (1500) より下、 dbinit-overlay (1400) / history-overlay (1550) との衝突なし. */
-  #intro-overlay { position: fixed; inset: 0; z-index: 1450; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #intro-overlay { position: fixed; inset: 0; z-index: 1450; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
   #intro-overlay.visible { display: flex; }
   #intro-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
   #intro-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
@@ -186,7 +188,7 @@
   /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
      intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
      区間勾配を眺めるための UI。 Zwift Climb Portal 風 (= ただし trainer 不要 + ログ保存なし). */
-  #section-overlay { position: fixed; inset: 0; z-index: 1470; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #section-overlay { position: fixed; inset: 0; z-index: 1470; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
   #section-overlay.visible { display: flex; }
   #section-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
   #section-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
@@ -206,7 +208,7 @@
 
   /* brief 34 ε-1: 公開ガードレール consent-overlay (= z-index 1460、 ride 開始前の opt-in).
      intro (1450) より上、 setup (1500) より下に挟むと「intro 通過 → setup 画面 → ride 開始ボタンで consent 表示」が成立. */
-  #consent-overlay { position: fixed; inset: 0; z-index: 1460; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #consent-overlay { position: fixed; inset: 0; z-index: 1460; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
   #consent-overlay.visible { display: flex; }
   #consent-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
   #consent-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
@@ -222,7 +224,7 @@
   /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
   #history-overlay {
     position: fixed; inset: 0; z-index: 1550;
-    background: rgba(0, 0, 0, 0.92);
+    background: rgba(0, 0, 0, 0.55);
     display: none; align-items: flex-start; justify-content: center;
     padding-top: 4rem;
   }
@@ -337,8 +339,12 @@
       <input id="osmPmtilesPath" type="text" placeholder="ローカル PMTiles file path (例: ~/Downloads/japan.pmtiles)">
       <button id="btnExtractOsm">PMTiles から取り込み</button>
     </div>
-    <div class="row">
-      <button id="btnDbinitSkip">skip (地形のみで進む)</button>
+    <!-- 2026-05-15 fix: 出口ボタン明示。 自動遷移に頼らず、 user が押せる「次へ」/「キャンセル」を常設。
+         過去訂正「アフォーダンスのセンス無い、 ノーマルエグジットボタンが絶対要る」反映。 -->
+    <div class="row" style="margin-top: 1rem; border-top: 1px solid #444; padding-top: 0.8rem; gap: 0.6rem;">
+      <button id="btnDbinitProceed" style="background:#2a4418; color:#7fff00; border-color:#7fff00; font-weight:bold;">▶ 機器選択へ進む</button>
+      <button id="btnDbinitSkip">スキップ (地形だけで進む)</button>
+      <button id="btnDbinitClose" style="margin-left:auto;">× 閉じる</button>
     </div>
   </div>
 </div>

@@ -1324,11 +1324,33 @@ function startOsmExtract() {
 }
 
 function skipDbinit() {
-  // 「地形のみで進む」 = OSM 抽出を後回しにして BLE pairing flow に移る。
-  // dbinit overlay を閉じて state-pairing へ、 setup-overlay は元から visible 維持。
+  // 「スキップ (地形だけで進む)」 = OSM 抽出を後回しにして BLE pairing flow に移る。
+  // dbinit overlay を閉じて state-pairing へ、 setup-overlay を明示 visible 化 (= 2026-05-15 fix)。
   _advancedFromDbinit = true;
   hideDbinit();
   setAppState('pairing');
+  document.getElementById('setup-overlay')?.classList.add('visible');
+}
+
+// 2026-05-15 fix: ノーマルエグジット 2 種を追加 (= user 指摘「出口ボタンが絶対要る」反映).
+// btnDbinitProceed = 「▶ 機器選択へ進む」 (= DB が揃ってる時の通常出口、 setup-overlay を表示).
+// btnDbinitClose   = 「× 閉じる」 (= 何も進めない、 intro overlay に戻る or close)。
+function proceedFromDbinit() {
+  // DB 構築 panel から強制で機器選択画面 (setup-overlay) に進む。 自動遷移を待たない明示 exit。
+  _advancedFromDbinit = true;
+  hideDbinit();
+  setAppState('pairing');
+  document.getElementById('setup-overlay')?.classList.add('visible');
+}
+
+function closeDbinit() {
+  // dbinit overlay を閉じる + intro overlay を再表示 (= 「もうやめる、 最初に戻る」)。
+  // setIntroConsent は cleared、 user は intro から走る / 観る / 閉じる を再選択できる。
+  _advancedFromDbinit = false;
+  hideDbinit();
+  setAppState('checking');
+  // intro を出して訪問者が選び直せる状態に戻す。
+  showIntroOverlay();
 }
 
 // === コース読み込み ===
@@ -1937,6 +1959,11 @@ const btnExtractOsm = document.getElementById('btnExtractOsm');
 if (btnExtractOsm) btnExtractOsm.addEventListener('click', startOsmExtract);
 const btnDbinitSkip = document.getElementById('btnDbinitSkip');
 if (btnDbinitSkip) btnDbinitSkip.addEventListener('click', skipDbinit);
+// 2026-05-15 fix: 明示出口 2 種を bind (= 「▶ 機器選択へ進む」「× 閉じる」、 user 指摘反映).
+const btnDbinitProceed = document.getElementById('btnDbinitProceed');
+if (btnDbinitProceed) btnDbinitProceed.addEventListener('click', proceedFromDbinit);
+const btnDbinitClose = document.getElementById('btnDbinitClose');
+if (btnDbinitClose) btnDbinitClose.addEventListener('click', closeDbinit);
 
 // brief 33: ride 履歴 + Strava 連携 button bind.
 // IndexedDB は遅延 open (= ride 終了 / 履歴 open 時に初めて開く、 起動時に open しない).
