@@ -68,13 +68,20 @@ export function createRideState(course) {
 
   function _legacyAppendTrkpt(extras) {
     if (course.length === 0) return;
-    const idx = _legacyIdx();
-    const p = course[idx];
-    if (!p) return;
-    const lat = Number.isFinite(p.lat) ? p.lat : null;
-    const lon = Number.isFinite(p.lon) ? p.lon : null;
+    // 2026-05-15 fix: 旧実装は `course[_idx]` の raw 値を使っていたが、 viewer が
+    // brief 35 で rider.tick 直接呼びに rewire された後 `_idx` は shim.advance 経由
+    // でしか更新されない state machine になっていた。 結果 viewer rewire 後の
+    // ride では `_idx=0` のまま全 trkpt が course[0] の lat/lon で push され、
+    // Strava upload で 0km 認識される実害が出た (= user 報告)。
+    // 修正: rider.position (= terrain query 経由の interpolated lat/lon/elevation)
+    // を SoT として使う。 viewer が advance か rider.tick 直接かに関わらず
+    // rider.distanceTraveled が増えれば lat/lon が正しく動く。
+    const pos = rider.position;
+    if (!pos) return;
+    const lat = Number.isFinite(pos.lat) ? pos.lat : null;
+    const lon = Number.isFinite(pos.lon) ? pos.lon : null;
     if (lat === null || lon === null) return;
-    const ele = Number.isFinite(p.elevation_m) ? p.elevation_m : null;
+    const ele = Number.isFinite(pos.elevation) ? pos.elevation : null;
     const ex = extras || {};
     legacyTrkpts.push({
       t: typeof ex.t === 'string' && ex.t ? ex.t : new Date().toISOString(),
