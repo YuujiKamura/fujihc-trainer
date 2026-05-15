@@ -317,13 +317,16 @@
   body.state-history #rider-hud { display: none !important; }
   /* 2026-05-16: ?debug=1 で右上に debug HUD 表示 (= rider 座標 / camera 差分 / frame timing 等、
      ride 中の挙動を user が目視確認できる開発者向け). 公開時は default 非表示. */
+  /* 2026-05-16: 右上は観るモードの区間リストと重なるため、 左上に移動 + opacity 下げて
+     他 UI に被っても邪魔にならないようにする (= user 「debug HUD が他 GUI と重なってウザい」). */
   #debug-hud {
-    position: fixed; top: 8px; right: 8px; z-index: 1700;
-    background: rgba(0, 0, 0, 0.75); color: #7fff00;
-    padding: 6px 10px;
-    font: 11px/1.45 ui-monospace, "Cascadia Code", monospace;
-    border: 1px solid #444; border-radius: 4px;
+    position: fixed; top: 8px; left: 8px; z-index: 1700;
+    background: rgba(0, 0, 0, 0.55); color: #7fff00;
+    padding: 4px 8px;
+    font: 10px/1.35 ui-monospace, "Cascadia Code", monospace;
+    border: 1px solid #333; border-radius: 4px;
     display: none; pointer-events: none; white-space: nowrap;
+    opacity: 0.75;
   }
   body.debug-on #debug-hud { display: block; }
   #history-panel {

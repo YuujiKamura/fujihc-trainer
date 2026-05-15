@@ -11,7 +11,9 @@ const DEFAULT_LOOK_AHEAD = 5;
 const DEFAULT_MIN_ZOOM = 13;
 const DEFAULT_MAX_ZOOM = 24;
 const DEFAULT_MIN_PITCH = 0;
-const DEFAULT_MAX_PITCH = 85;
+// 2026-05-16: user 「mouse 視点の上下可動域はまだ広くていい」 → 85 → 95 に拡張.
+// MapLibre 内部上限は 85、 95 で打つと自動 clamp されるが UI 体感上は「これ以上ない」 と分かる.
+const DEFAULT_MAX_PITCH = 95;
 
 /**
  * ride state + user 設定 → MapLibre camera params.
