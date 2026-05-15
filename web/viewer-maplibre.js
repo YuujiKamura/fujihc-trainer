@@ -355,21 +355,30 @@ function setupWheelZoom() {
   }, { passive: false });
 }
 
+// 2026-05-15 user 指示「マウスの横移動でカメラを横にも旋回できるようにしよう」:
+// 横ドラッグ分を userBearingOffset に蓄積し、 tick で進行方向 + offset の bearing を適用。
+// 縦ドラッグは既存通り pitch を変える。
+let userBearingOffset = 0;
+
 function setupPitchDrag() {
   const mapEl = map.getContainer();
   let drag = null;
   mapEl.addEventListener('mousedown', (e) => {
-    drag = { y: e.clientY, pitch: map.getPitch() };
+    drag = { x: e.clientX, y: e.clientY, pitch: map.getPitch(), bearingOffset: userBearingOffset };
     e.preventDefault();
   });
   window.addEventListener('mousemove', (e) => {
     if (!drag) return;
     const dy = e.clientY - drag.y;
+    const dx = e.clientX - drag.x;
     // マウスを下にドラッグで水平に近づける、 上にドラッグで真上へ。 感度は user 指示で 5 倍
     // 既存式: newPitch = drag.pitch - dy * 2.0、 adjustPitch(currentPitch, delta) で同じ結果に: delta = -dy * 2.0
     const newPitch = adjustPitch(drag.pitch, -dy * 2.0);
     userPitch = newPitch;
     map.setPitch(newPitch);
+    // 横移動で bearing offset を加算 (= 1 pixel = 0.5 度、 360 で正規化).
+    // 進行方向に対する相対視線として持つので、 tick で smoothBearing に足し込んで適用.
+    userBearingOffset = ((drag.bearingOffset + dx * 0.5) % 360 + 360) % 360;
   });
   window.addEventListener('mouseup', () => { drag = null; });
   // 右クリックメニュー抑止
@@ -1911,7 +1920,9 @@ function tick(t) {
   const nextIdx = Math.min(curIdx + 1, course.length - 1);
   const camNext = computeCameraParams(course, { curIdx: nextIdx }, { userZoom, userPitch, lookAhead: 5 });
   let bearingDiff = ((camNext.bearing - cam.bearing + 540) % 360) - 180;
-  const smoothBearing = cam.bearing + bearingDiff * frac;
+  const courseBearing = cam.bearing + bearingDiff * frac;
+  // 2026-05-15: user の横ドラッグ分を進行方向に加算 (= 旋回オフセットを維持).
+  const smoothBearing = (courseBearing + userBearingOffset + 360) % 360;
   const headingRad = smoothBearing * Math.PI / 180;
 
   // スピナー累積角を cadence rpm に応じて進める (rpm → rad/s = rpm * 2π / 60)
