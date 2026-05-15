@@ -7,7 +7,10 @@ import {
   ensureAccessToken, buildAuthorizeUrl, makeCodeVerifier, makeCodeChallenge,
   STRAVA_PKCE_VERIFIER_SS_KEY, STRAVA_PKCE_CLIENT_ID_SS_KEY, STRAVA_TOKEN_LS_KEY,
 } from './strava_oauth.js';
-import { postUpload, pollUploadStatus } from './strava_upload.js';
+import {
+  postUpload, pollUploadStatus,
+  withTrademarkSuffix, withTrademarkPrefix,
+} from './strava_upload.js';
 
 /**
  * 4 button の click handler を element に bind する.
@@ -98,8 +101,14 @@ export function bindPostRideButtons(cfg) {
     const courseName = (cfg.getCourseName && cfg.getCourseName()) || 'fujihc ride';
     const xml = buildGpxXml(trkpts, { name: courseName, activity_type: 'Virtual Ride' });
     setStatus(`Strava へ送信中... (${trkpts.length} 点)`);
+    // brief 34 ε-4: 商標混同対策の 2 重 gate 外側. caller (= ここ) でも先行 append/prepend、
+    // strava_upload.js 側でも再 append/prepend (= idempotent helper)、 どちらかが消えても文言が残る。
+    const decoratedName = withTrademarkSuffix(courseName);
+    const decoratedDescription = withTrademarkPrefix('');
     const res = await postUpload({
-      accessToken: token, gpxXml: xml, name: courseName,
+      accessToken: token, gpxXml: xml,
+      name: decoratedName,
+      description: decoratedDescription,
       activityType: 'VirtualRide',
       externalId: summary.id || `ride-${Date.now()}`,
     });
