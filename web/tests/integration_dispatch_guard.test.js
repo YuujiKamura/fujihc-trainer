@@ -167,3 +167,99 @@ describe('brief 34 ε-2 integration: 改竄耐性 (= hash 不一致は非 consen
     expect(spies.rec.initMapMode).toBe(0);
   });
 });
+
+// brief 34 ε-9: introConsented gate と terrainReady gate を AND で運用するシナリオ.
+// 二重 gate の振る舞いを ε-2 のテストファイル内でも pin (= ε-2 / ε-9 が同時に効く保証).
+function createDispatcherWithTerrain(env) {
+  const { storage, devBypass, mapMode, testMode, bleMode, spies, terrainReady } = env;
+  return {
+    introConsented() {
+      if (devBypass) return true;
+      return getIntroConsent({ storage }) !== null;
+    },
+    terrainReady() { return !!terrainReady; },
+    dispatchAfterIntro() {
+      if (mapMode) spies.initMapMode();
+      else if (testMode) spies.initTestMode();
+      else if (bleMode) spies.initBleMode();
+      else spies.bootCheckSetupStatus();
+    },
+    /**
+     * AI の click handler 同等: intro overlay は terrainReady 不問で表示するが、
+     * intro 内 button 経由の dispatch (= 「自分の trainer で走る」等) は
+     * terrainReady === false で短絡する。
+     */
+    go() {
+      if (!this.introConsented()) {
+        spies.showIntroOverlay();
+        return;
+      }
+      // ε-9: consent 通過済でも terrain 未完なら dispatch しない (= click handler 短絡 等価).
+      if (!this.terrainReady()) {
+        spies.blockedByTerrain();
+        return;
+      }
+      this.dispatchAfterIntro();
+    },
+  };
+}
+
+describe('brief 34 ε-9: terrainReady=false の間は dispatch しない (= ε-2 と AND の二重 gate)', () => {
+  it('introConsented + terrainReady=false → blockedByTerrain (= init 系は呼ばれない)', () => {
+    const storage = memStorage();
+    setIntroConsent({ storage });  // intro 通過済
+    const rec = { initMapMode: 0, initTestMode: 0, initBleMode: 0, bootCheckSetupStatus: 0, showIntroOverlay: 0, blockedByTerrain: 0 };
+    const spies = {
+      rec,
+      initMapMode: () => { rec.initMapMode += 1; },
+      initTestMode: () => { rec.initTestMode += 1; },
+      initBleMode: () => { rec.initBleMode += 1; },
+      bootCheckSetupStatus: () => { rec.bootCheckSetupStatus += 1; },
+      showIntroOverlay: () => { rec.showIntroOverlay += 1; },
+      blockedByTerrain: () => { rec.blockedByTerrain += 1; },
+    };
+    const d = createDispatcherWithTerrain({ storage, devBypass: false, mapMode: false, testMode: false, bleMode: false, spies, terrainReady: false });
+    d.go();
+    expect(rec.blockedByTerrain).toBe(1);
+    expect(rec.bootCheckSetupStatus).toBe(0);
+    expect(rec.initMapMode).toBe(0);
+  });
+
+  it('introConsented + terrainReady=true → 通常の dispatch (= bootCheckSetupStatus 等が発火)', () => {
+    const storage = memStorage();
+    setIntroConsent({ storage });
+    const rec = { initMapMode: 0, initTestMode: 0, initBleMode: 0, bootCheckSetupStatus: 0, showIntroOverlay: 0, blockedByTerrain: 0 };
+    const spies = {
+      rec,
+      initMapMode: () => { rec.initMapMode += 1; },
+      initTestMode: () => { rec.initTestMode += 1; },
+      initBleMode: () => { rec.initBleMode += 1; },
+      bootCheckSetupStatus: () => { rec.bootCheckSetupStatus += 1; },
+      showIntroOverlay: () => { rec.showIntroOverlay += 1; },
+      blockedByTerrain: () => { rec.blockedByTerrain += 1; },
+    };
+    const d = createDispatcherWithTerrain({ storage, devBypass: false, mapMode: false, testMode: false, bleMode: false, spies, terrainReady: true });
+    d.go();
+    expect(rec.bootCheckSetupStatus).toBe(1);
+    expect(rec.blockedByTerrain).toBe(0);
+  });
+
+  it('intro 未通過 + terrainReady=true → showIntroOverlay (= intro が先に出る、 ε-2 が ε-9 より外側)', () => {
+    const storage = memStorage();  // 非 consent
+    const rec = { initMapMode: 0, initTestMode: 0, initBleMode: 0, bootCheckSetupStatus: 0, showIntroOverlay: 0, blockedByTerrain: 0 };
+    const spies = {
+      rec,
+      initMapMode: () => { rec.initMapMode += 1; },
+      initTestMode: () => { rec.initTestMode += 1; },
+      initBleMode: () => { rec.initBleMode += 1; },
+      bootCheckSetupStatus: () => { rec.bootCheckSetupStatus += 1; },
+      showIntroOverlay: () => { rec.showIntroOverlay += 1; },
+      blockedByTerrain: () => { rec.blockedByTerrain += 1; },
+    };
+    const d = createDispatcherWithTerrain({ storage, devBypass: false, mapMode: false, testMode: false, bleMode: false, spies, terrainReady: true });
+    d.go();
+    expect(rec.showIntroOverlay).toBe(1);
+    expect(rec.blockedByTerrain).toBe(0);  // intro 段階で止まる、 terrain check には届かない
+    expect(rec.bootCheckSetupStatus).toBe(0);
+  });
+});

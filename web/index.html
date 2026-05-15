@@ -341,12 +341,19 @@
   <div id="setup-panel">
     <h2 id="pairing-title">fujihc trainer ライド準備 (MapLibre 試験版)</h2>
     <div class="status-line" id="setup-status">起動中...</div>
+    <!-- brief 34 ε-9: 既存 4 step indicator の頭に「0. 地形データ準備」を追加して 5 step 化.
+         terrain ready === false の間は他 step は到達不能 (= 全アクションボタン disabled). -->
     <div id="step-indicator">
+      <div class="step active" id="step-terrain">0. 地形データ準備</div>
       <div class="step" id="step-scan">1. 機器検出</div>
       <div class="step" id="step-connect">2. BLE 接続</div>
       <div class="step" id="step-handshake">3. ハンドシェイク</div>
       <div class="step" id="step-ready">4. 走行準備完了</div>
     </div>
+    <!-- brief 34 ε-9: 地形データ準備のステータスバー. terrainReady === false の間は
+         「pmtiles 読み込み中 / GSI 標高 N/M / 完了」 を表示、 phase で色を変える
+         (= pending/loading=黄、 done=緑、 failed=赤). 完了で setup-status が表面に戻る. -->
+    <div id="terrain-status" class="status-line" style="color:#ffd54a; margin:0.3rem 0;">地形データ準備中...</div>
     <div class="pair-cols">
       <section><h3>trainer</h3><dl>
         <dt>機種</dt><dd><span id="p-device">--</span></dd>

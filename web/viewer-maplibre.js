@@ -37,6 +37,8 @@ import {
 import { clearAllLocalData } from './lib/clear_local_data.js';
 // brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
+// brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
+import { createTerrainLoader } from './lib/terrain_loader.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -447,6 +449,9 @@ function handleDbinitProgress(msg) {
 }
 
 function updateStepIndicator(activeIdx, doneIdx) {
+  // brief 34 ε-9: 既存 4 step (scan/connect/handshake/ready) の頭に step-terrain を追加。
+  // step-terrain は本関数では触らず、 terrain_loader の subscribe callback で別途更新する
+  // (= 引数の activeIdx/doneIdx は scan 以降の index のまま、 caller への破壊変更回避).
   const steps = ['step-scan', 'step-connect', 'step-handshake', 'step-ready'];
   steps.forEach((id, i) => {
     const el = document.getElementById(id);
@@ -455,6 +460,43 @@ function updateStepIndicator(activeIdx, doneIdx) {
     if (i <= doneIdx) el.classList.add('done');
     else if (i === activeIdx) el.classList.add('active');
   });
+}
+
+// brief 34 ε-9: 地形データ準備 step の表示更新 (= updateStepIndicator とは別経路).
+//   phase pending/loading → active 黄、 done → done 緑、 failed → 赤.
+//   既存 4 step は updateStepIndicator が触る、 terrain は単独で本関数が管理。
+function updateTerrainStep(phase) {
+  const el = document.getElementById('step-terrain');
+  if (!el) return;
+  el.classList.remove('active', 'done');
+  if (phase === 'done') {
+    el.classList.add('done');
+  } else if (phase === 'failed') {
+    // failed 用 class は無いので、 active を付けつつ赤系の inline color を当てる.
+    el.classList.add('active');
+    el.style.color = '#ff5050';
+    el.style.borderColor = '#ff5050';
+    el.style.background = '#221408';
+  } else {
+    el.classList.add('active');
+  }
+}
+
+// brief 34 ε-9: 地形データ準備のステータステキスト更新 (= #terrain-status).
+//   phase で色を変える: pending/loading=黄 / done=緑 / failed=赤.
+function setTerrainStatusUI(snap) {
+  const el = document.getElementById('terrain-status');
+  if (!el) return;
+  if (snap.phase === 'done') {
+    el.textContent = `地形データ準備 完了 (${snap.label})`;
+    el.style.color = '#7fff00';
+  } else if (snap.phase === 'failed') {
+    el.textContent = `地形データ準備 失敗: ${snap.error || ''} ── reload してください`;
+    el.style.color = '#ff5050';
+  } else {
+    el.textContent = `地形データ読み込み中... ${snap.label} (${snap.percent}%)`;
+    el.style.color = '#ffd54a';
+  }
 }
 
 function setText(id, text) {
@@ -536,8 +578,18 @@ const wsHandlers = {
       setText('p-state', '✓ 準備完了');
       updateStepIndicator(-1, 3);
       try { localStorage.setItem('fujihc.trainer.address', msg.address); } catch {}
+      // brief 34 ε-9: pair 完了 flag を立て、 terrain gate の状態に応じて btnRideStart 制御.
+      _pairConnected = true;
       const startBtn = document.getElementById('btnRideStart');
-      if (startBtn) { startBtn.disabled = false; requestAnimationFrame(() => startBtn.focus()); }
+      // terrainReady === true なら enable + focus、 false なら disabled のまま (terrain が遅延中).
+      if (startBtn) {
+        if (terrainReady) {
+          startBtn.disabled = false;
+          requestAnimationFrame(() => startBtn.focus());
+        } else {
+          startBtn.disabled = true;  // terrain 完了で updateActionButtonsForTerrain が enable する
+        }
+      }
       lastSlopeSent = null; lastSlopeSendT = 0;
     }
   },
@@ -679,8 +731,9 @@ async function initBleMode() {
     return;
   }
   client = createBleClient(wsHandlers);
-  if (btnTrainer) btnTrainer.addEventListener('click', () => { client && client.sendConnect(); });
-  if (btnHrm) btnHrm.addEventListener('click', () => { client && client.sendHrmConnect(); });
+  // brief 34 ε-9: BLE 直接接続 button にも terrain gate (= 地形未完なら何もしない).
+  if (btnTrainer) btnTrainer.addEventListener('click', () => { if (!terrainReady) return; client && client.sendConnect(); });
+  if (btnHrm) btnHrm.addEventListener('click', () => { if (!terrainReady) return; client && client.sendHrmConnect(); });
 }
 
 // brief 22: trainer / bridge 不要の画面操作確認モード.
@@ -827,9 +880,16 @@ function renderSectionList(courseArr, onSelect) {
     meta.textContent = `${(sec.start_ele).toFixed(0)}m → ${(sec.end_ele).toFixed(0)}m`;
     li.appendChild(label);
     li.appendChild(meta);
-    li.addEventListener('click', () => onSelect(sec));
+    // brief 34 ε-9: terrainReady === false の間は section 行クリックを block.
+    // 視覚 disable は updateActionButtonsForTerrain が pointer-events:none で行うが、
+    // keyboard activation や programmatic click を物理 short-circuit するためここでも check.
+    li.addEventListener('click', () => { if (!terrainReady) return; onSelect(sec); });
     li.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onSelect(sec); }
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        if (!terrainReady) return;
+        onSelect(sec);
+      }
     });
     list.appendChild(li);
   }
@@ -845,12 +905,16 @@ if (typeof document !== 'undefined') {
   const btnIntroView = document.getElementById('btnIntroView');
   const btnIntroClose = document.getElementById('btnIntroClose');
   if (btnIntroStart) btnIntroStart.addEventListener('click', () => {
+    // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 属性の二重 gate、 keyboard activation 経由でも block).
+    if (!terrainReady) return;
     // brief 34 ε-8: 'ride' mode を明示保存 (= default だが view 切替時に区別するため).
     setIntroConsent({ mode: 'ride' });
     hideIntroOverlay();
     dispatchAfterIntro();
   });
   if (btnIntroView) btnIntroView.addEventListener('click', () => {
+    // brief 34 ε-9: 地形 load 未完なら何もしない.
+    if (!terrainReady) return;
     // brief 34 ε-8: 'view' mode で consent 保存 → dispatchAfterIntro で initViewMode に分岐.
     setIntroConsent({ mode: 'view' });
     hideIntroOverlay();
@@ -1039,6 +1103,126 @@ function initViewMode() {
     }
   }, 100);
 }
+// brief 34 ε-9: 地形データ準備 gate.
+// 起動直後 terrainReady=false の状態で全アクションボタン disabled、 terrain probe 完了で
+// enabled に遷移。 「中途半端な地図で走り出せる」事故 (= 過去訂正 2026-05-14T12:19 の同型) を
+// 構造的に止める前段。 dispatch (= introConsented 判定後の遷移) は terrain と並列で動かす
+// (= intro overlay は terrain 未完でも表示してよい、 ボタンだけ disabled で「クリック不可」 を見せる).
+//
+// 監視対象ボタン (= terrainReady===false の間 disabled):
+//   - btnIntroStart   (intro 「自分の trainer で走る」)
+//   - btnIntroView    (intro 「コースを観る」)
+//   - btnTrainerScan  (= #btnScan、 setup-overlay)
+//   - btnHrmScan      (= #btnScanHrm)
+//   - btnSkip         (= 「trainer なしでデモ走行」)
+//   - btnRideStart    (= ride 開始、 pair 完了とも AND)
+//   - section-list の各 li (= 観るモードの区間選択)
+//   - btn-ble-trainer / btn-ble-hrm (= BLE 直接接続)
+//   - btnIntroClose は disable しない (= 単に閉じるだけは terrain 不要、 UX 配慮)
+//
+// terrainReady の保存ボタン状態 (= ride 開始は pair 完了でないと disabled の既存挙動) は維持、
+// 本 gate は AND 結合 (= terrainReady === false で問答無用 disable、 true で「他の不変条件が許せば enable」).
+let terrainReady = false;
+// btnRideStart は元々 HTML で disabled、 pair 完了で enabled になる既存挙動を保持するため、
+// terrain gate 単独で setRideStartEnabled する場合は pair 状態を二重 check する必要がある。
+// pair 状態は wsHandlers.connect_status('connected') で btn.disabled=false に遷移する DOM 直接書込、
+// terrain gate は「pair が enabled にした後で再度 disable できる」+「terrain enable 時に pair の
+// 過去通知を override しない」を満たすため、 「pair 完了通知を 1 度でも受けたか」の独立 flag を持つ。
+let _pairConnected = false;
+
+function updateActionButtonsForTerrain() {
+  // intro
+  const introStart = typeof document !== 'undefined' ? document.getElementById('btnIntroStart') : null;
+  const introView = typeof document !== 'undefined' ? document.getElementById('btnIntroView') : null;
+  if (introStart) introStart.disabled = !terrainReady;
+  if (introView) introView.disabled = !terrainReady;
+  // setup
+  const btnScan = typeof document !== 'undefined' ? document.getElementById('btnScan') : null;
+  const btnScanHrm = typeof document !== 'undefined' ? document.getElementById('btnScanHrm') : null;
+  const btnSkip = typeof document !== 'undefined' ? document.getElementById('btnSkip') : null;
+  if (btnScan) btnScan.disabled = !terrainReady;
+  if (btnScanHrm) btnScanHrm.disabled = !terrainReady;
+  if (btnSkip) btnSkip.disabled = !terrainReady;
+  // BLE
+  const btnBleTrainer = typeof document !== 'undefined' ? document.getElementById('btn-ble-trainer') : null;
+  const btnBleHrm = typeof document !== 'undefined' ? document.getElementById('btn-ble-hrm') : null;
+  if (btnBleTrainer) btnBleTrainer.disabled = !terrainReady;
+  if (btnBleHrm) btnBleHrm.disabled = !terrainReady;
+  // ride start: terrainReady === false なら強制 disable、 true なら pair 通過済の場合のみ enable.
+  const btnRide = typeof document !== 'undefined' ? document.getElementById('btnRideStart') : null;
+  if (btnRide) {
+    if (!terrainReady) {
+      btnRide.disabled = true;
+    } else if (_pairConnected) {
+      btnRide.disabled = false;
+    }
+    // else: pair 未完なら disabled のまま (= 既存挙動).
+  }
+  // section list の行は terrainReady === false で pointer-events を切る (= 視覚 + 操作両方).
+  // 個別 li の disabled は <li> に効かないので class + style 経由で抑止する.
+  const list = typeof document !== 'undefined' ? document.getElementById('section-list') : null;
+  if (list) {
+    if (terrainReady) {
+      list.classList.remove('terrain-gate-disabled');
+      list.style.pointerEvents = '';
+      list.style.opacity = '';
+    } else {
+      list.classList.add('terrain-gate-disabled');
+      list.style.pointerEvents = 'none';
+      list.style.opacity = '0.5';
+    }
+  }
+}
+
+// 初回適用 (= terrainReady=false の状態で全 button を disabled に強制).
+// document が無い test 環境 (= 直 import) では skip.
+if (typeof document !== 'undefined') {
+  // DOM がまだ parse されていない場合 (= module 最上位で実行) に備えて defer.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateActionButtonsForTerrain);
+  } else {
+    updateActionButtonsForTerrain();
+  }
+}
+
+// brief 34 ε-9: terrain loader の起動関数. URL は ENV から取り出すが、 ENV 未確定でも
+// 物理 URL は static / bridge どちらでも構築できる (= location.origin + BASE_PATH 経由).
+// ここで bridge 判定を避けて static 側 URL で probe する (= bridge mode でも /tiles/gsi_dem は
+// 同じ位置に存在、 失敗したら failed 状態で UI 表示).
+function startTerrainProbe() {
+  if (typeof document === 'undefined') return null;
+  // bridge / static は起動時点で判別困難 (= checkSetupStatus は async).
+  // ここは「bridge / static のどちらでも到達可能な URL」 = static 側 path で probe.
+  // bridge mode 起動済の localhost でも /static/* は web/static/ にあるため 404 にならない.
+  // static mode (= GitHub Pages) でも同じ path で配信される。
+  const courseUrl = `${BASE_PATH}static/course.json`;
+  const pmtilesUrl = `${BASE_PATH}static/map.pmtiles`;
+  const gsiTileBaseUrl = `${BASE_PATH}static/tiles/gsi_dem`;
+  const loader = createTerrainLoader({ courseUrl, pmtilesUrl, gsiTileBaseUrl });
+  loader.subscribe((snap) => {
+    setTerrainStatusUI(snap);
+    updateTerrainStep(snap.phase);
+    if (snap.phase === 'done') {
+      terrainReady = true;
+      updateActionButtonsForTerrain();
+    } else {
+      // failed / loading / pending 中は強制 disable を維持
+      terrainReady = false;
+      updateActionButtonsForTerrain();
+    }
+  });
+  // start は fire-and-forget (= 完了は subscribe 経由).
+  loader.start().catch((e) => {
+    console.warn('[fujihc] terrain probe error:', e);
+  });
+  return loader;
+}
+// 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
+let _terrainLoader = null;
+if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
+  try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihc] terrain probe init failed:', e); }
+}
+
 if (introConsented()) {
   dispatchAfterIntro();
 } else {
@@ -1637,6 +1821,8 @@ function startRideConfirmed() {
   client.sendRideStart();
 }
 document.getElementById('btnRideStart').addEventListener('click', () => {
+  // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 二重 gate).
+  if (!terrainReady) return;
   if (!client || !client.isOpen()) return;
   // brief 34 ε-3: consent 未取得 (= 通過 signal 不在) なら consent-overlay 表示。
   if (!getRideConsent('asked')) {
@@ -1651,16 +1837,24 @@ document.getElementById('btnRideEnd').addEventListener('click', () => {
   client.sendRideEnd();
 });
 document.getElementById('btnScan').addEventListener('click', () => {
+  // brief 34 ε-9: 地形 load 未完なら何もしない.
+  if (!terrainReady) return;
   scanMode = 'ftms';
   setText('scan-mode-label', '(trainer モード)');
   if (client && client.isOpen()) client.sendScan();
 });
 document.getElementById('btnScanHrm').addEventListener('click', () => {
+  // brief 34 ε-9: 地形 load 未完なら何もしない.
+  if (!terrainReady) return;
   scanMode = 'hrm';
   setText('scan-mode-label', '(心拍計モード)');
   if (client && client.isOpen()) client.sendScan();
 });
-document.getElementById('btnSkip').addEventListener('click', () => { showConfirm(); });
+document.getElementById('btnSkip').addEventListener('click', () => {
+  // brief 34 ε-9: 地形 load 未完なら何もしない.
+  if (!terrainReady) return;
+  showConfirm();
+});
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
   playSpeed = 20 / 3.6;

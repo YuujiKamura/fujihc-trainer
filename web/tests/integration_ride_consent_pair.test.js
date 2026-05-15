@@ -157,6 +157,107 @@ describe('brief 34 ε-3 integration: consent + pair 両方揃わないと ride �
   });
 });
 
+// brief 34 ε-9: terrain gate も AND で効かせる版 shim (= ε-3 の上に ε-9 を重ねた end-to-end).
+function createRideStartShimWithTerrain({ storage, spies, initialDisabled = true, terrainReady = false }) {
+  const btn = { disabled: initialDisabled };
+  let _pairConnected = false;
+  let _terrainReady = terrainReady;
+  function syncBtn() {
+    if (!_terrainReady) { btn.disabled = true; return; }
+    if (_pairConnected) { btn.disabled = false; return; }
+    // pair 未完なら disabled (= 既存挙動)
+  }
+  syncBtn();
+  const wsHandlers = {
+    connect_status(msg) {
+      if (msg.state === 'connected') {
+        _pairConnected = true;
+        syncBtn();
+        spies.rec.connectedTransition += 1;
+      }
+    },
+  };
+  function setTerrainReady(v) { _terrainReady = v; syncBtn(); }
+  function onBtnClick() {
+    // viewer の click handler 同等:
+    //   1. terrainReady === false で即 return (= ε-9 短絡)
+    //   2. disabled (= pair 未完) で return
+    //   3. consent 未取得で overlay 表示
+    //   4. startRideConfirmed
+    if (!_terrainReady) {
+      spies.rec.blockedByTerrain += 1;
+      return;
+    }
+    if (btn.disabled) {
+      spies.rec.blockedByDisabled += 1;
+      return;
+    }
+    if (!getRideConsent('asked', { storage })) {
+      spies.showConsentOverlay();
+      return;
+    }
+    spies.startRideConfirmed();
+  }
+  return { btn, wsHandlers, onBtnClick, setTerrainReady };
+}
+
+describe('brief 34 ε-9 integration: terrainReady=false 中は ride 開始経路がすべて短絡', () => {
+  it('terrainReady=false + pair 完了 + consent 取得済 でも click は terrain 短絡で stop', () => {
+    const storage = memStorage();
+    setRideConsent({ history: true, asked: true }, { storage });
+    const spies = makeSpies();
+    spies.rec.blockedByTerrain = 0;
+    const shim = createRideStartShimWithTerrain({ storage, spies, terrainReady: false });
+    shim.wsHandlers.connect_status({ state: 'connected' });  // pair 完了
+    expect(shim.btn.disabled).toBe(true);  // terrain 未完なので強制 disabled 維持
+    shim.onBtnClick();
+    expect(spies.rec.blockedByTerrain).toBe(1);
+    expect(spies.rec.startRideConfirmed).toBe(0);
+    expect(spies.rec.showConsentOverlay).toBe(0);
+  });
+
+  it('terrainReady=true 移行 → pair + consent が揃って初めて startRideConfirmed', () => {
+    const storage = memStorage();
+    setRideConsent({ history: true, asked: true }, { storage });
+    const spies = makeSpies();
+    spies.rec.blockedByTerrain = 0;
+    const shim = createRideStartShimWithTerrain({ storage, spies, terrainReady: false });
+    shim.wsHandlers.connect_status({ state: 'connected' });
+    // terrain 未完 click は block
+    shim.onBtnClick();
+    expect(spies.rec.startRideConfirmed).toBe(0);
+    // terrain 完了 → btn enable + click で発火
+    shim.setTerrainReady(true);
+    expect(shim.btn.disabled).toBe(false);
+    shim.onBtnClick();
+    expect(spies.rec.startRideConfirmed).toBe(1);
+  });
+
+  it('terrainReady=false + pair 未完 + consent 未取得 → terrain 短絡が最外で block (= 最強 gate)', () => {
+    const storage = memStorage();
+    const spies = makeSpies();
+    spies.rec.blockedByTerrain = 0;
+    const shim = createRideStartShimWithTerrain({ storage, spies, terrainReady: false });
+    shim.onBtnClick();
+    expect(spies.rec.blockedByTerrain).toBe(1);
+    expect(spies.rec.blockedByDisabled).toBe(0);
+    expect(spies.rec.showConsentOverlay).toBe(0);
+    expect(spies.rec.startRideConfirmed).toBe(0);
+  });
+
+  it('terrainReady → false → terrainReady → false 切替で btn.disabled が同期', () => {
+    const storage = memStorage();
+    const spies = makeSpies();
+    const shim = createRideStartShimWithTerrain({ storage, spies, terrainReady: false });
+    shim.wsHandlers.connect_status({ state: 'connected' });
+    expect(shim.btn.disabled).toBe(true);
+    shim.setTerrainReady(true);
+    expect(shim.btn.disabled).toBe(false);
+    shim.setTerrainReady(false);
+    expect(shim.btn.disabled).toBe(true);
+  });
+});
+
 describe('brief 34 ε-3 integration: consent flag 別 IndexedDB / Strava の有効/無効', () => {
   it('history consent OFF (= default) → addRide callback は no-op、 IndexedDB 接続せず', async () => {
     const storage = memStorage();
