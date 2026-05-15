@@ -203,10 +203,12 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     expect(viewer).toMatch(/btnIntroView\.addEventListener\(['"]click['"][\s\S]{0,200}if\s*\(\s*!terrainReady\s*\)\s*return/);
   });
 
-  it('走行系 (btnRideStart / btnSkip) の handler に地形 gate 短絡 (2026-05-15 narrow: scan 系は地形と無関係で gate 不要)', () => {
+  it('走行系 (btnRideStart) の handler に地形 gate 短絡 (2026-05-15 narrow: scan 系は地形と無関係で gate 不要、 btnSkip は撤去済)', () => {
     // 走行開始系のみ地形必須 (= terrainReady or isActionableNow). scan / pair は地形と独立.
+    // btnSkip (= 「trainer なしでデモ走行」) は 7e14ac3 で撤去済、 残るは btnRideStart のみ.
     expect(viewer).toMatch(/btnRideStart['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!(?:terrainReady|isActionableNow\(\))\s*\)\s*return/);
-    expect(viewer).toMatch(/btnSkip['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!(?:terrainReady|isActionableNow\(\))\s*\)\s*return/);
+    // btnSkip click handler は viewer に残っていない事 (= 撤去済 button への bind は throw 原因).
+    expect(viewer).not.toMatch(/getElementById\(['"]btnSkip['"]\)\.addEventListener/);
   });
 
   it('section list の onSelect 行クリック handler に terrainReady === false 短絡', () => {

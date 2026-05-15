@@ -1999,17 +1999,11 @@ document.getElementById('btnScanHrm').addEventListener('click', () => {
   setText('scan-mode-label', '(心拍計モード)');
   if (client && client.isOpen()) client.sendScan();
 });
-document.getElementById('btnSkip').addEventListener('click', () => {
-  // brief 34 ε-9: 地形 load 未完なら何もしない.
-  if (!isActionableNow()) return;
-  // 2026-05-15 fix: 確認ダイアログ撤去、 即デモ走行開始 (= user 指摘「わざわざ確認ダイアログ出すな」).
-  // デモ走行は trainer 無し + 記録保存無し、 確認を要するクリティカル操作ではない.
-  hideConfirm(); hidePairing();
-  playSpeed = 20 / 3.6;
-  if (rideState) rideState.start();
-  lastT = performance.now();
-  status('デモモード (記録は保存されません)');
-});
+// 2026-05-15 fix: btnSkip 撤去 (7e14ac3) で HTML 側 button は消えたが、 viewer 側の
+// bind 行が残っていたため getElementById('btnSkip') が null を返し、 ここで
+// throw → 以降の全 bind (= btnCopyPath / btnBackToPairing / bindPostRideButtons 等)
+// が走らず、 ライド保存ダイアログの button が全部反応しなくなる事故が起きた。
+// 撤去済の button への bind を削除。
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
   playSpeed = 20 / 3.6;
