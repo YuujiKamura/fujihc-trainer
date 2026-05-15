@@ -195,14 +195,16 @@ describe('brief 34 ε-2: viewer source 上の guard 構造を pin (= grep + beha
     expect(viewer).toMatch(/else\s*\{[\s\S]{0,80}showIntroOverlay\(/);
   });
 
-  it('dispatchAfterIntro 内に 4 init 全部 (= MAP_MODE / TEST_MODE / BLE_MODE / default)', () => {
+  it('dispatchAfterIntro 内の init 分岐 (= MAP_MODE / TEST_MODE / BRIDGE_MODE / default=initBleMode、 2026-05-15 fix)', () => {
+    // 2026-05-15 fix: default 経路を bootCheckSetupStatus (= bridge mode) から
+    // initBleMode (= Web Bluetooth) に変更。 旧 bridge 経路は ?bridge=1 明示時のみ復活。
     const m = viewer.match(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
     expect(body).toMatch(/if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
     expect(body).toMatch(/else\s+if\s*\(\s*TEST_MODE\s*\)\s*initTestMode\(\)/);
-    expect(body).toMatch(/else\s+if\s*\(\s*BLE_MODE\s*\)\s*initBleMode\(\)/);
-    expect(body).toMatch(/else\s+bootCheckSetupStatus\(\)/);
+    expect(body).toMatch(/else\s+if\s*\(\s*BRIDGE_MODE\s*\)\s*bootCheckSetupStatus\(\)/);
+    expect(body).toMatch(/else\s+initBleMode\(\)/);
   });
 
   it('introConsented() の実装は CONSENT_DEV_BYPASS と getIntroConsent() の OR', () => {

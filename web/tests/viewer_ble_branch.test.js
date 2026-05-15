@@ -16,8 +16,11 @@ describe('brief 32: viewer 起動分岐 5-way 化', () => {
     expect(viewer).toMatch(/const\s+BLE_MODE\s*=\s*new\s+URLSearchParams\(location\.search\)\.has\(['"]ble['"]\)/);
   });
 
-  it('起動分岐に BLE_MODE 経路が含まれる (= initBleMode 呼び出し)', () => {
-    expect(viewer).toMatch(/else\s+if\s*\(\s*BLE_MODE\s*\)\s*initBleMode\(\)/);
+  it('起動分岐の default は initBleMode (= Web Bluetooth、 2026-05-15 fix で旧 bridge 経路は BRIDGE_MODE 明示時のみ)', () => {
+    // 旧: default は bootCheckSetupStatus (= bridge mode、 python BLE 経由)
+    // 新: default は initBleMode (= Web Bluetooth、 browser 直接)、 ?bridge=1 のみ bridge 経路復活
+    expect(viewer).toMatch(/else\s+initBleMode\(\)/);
+    expect(viewer).toMatch(/BRIDGE_MODE/);
   });
 
   it('initBleMode 関数が定義済', () => {
@@ -36,10 +39,10 @@ describe('brief 32: viewer 起動分岐 5-way 化', () => {
     expect(viewer).toMatch(/isWebBluetoothSupported/);
   });
 
-  it('既存 3 mode (MAP/TEST/default) の分岐は壊れていない', () => {
+  it('既存 mode (MAP/TEST/BRIDGE) の分岐は壊れていない、 default は BLE に変更 (2026-05-15)', () => {
     expect(viewer).toMatch(/if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
     expect(viewer).toMatch(/else\s+if\s*\(\s*TEST_MODE\s*\)\s*initTestMode\(\)/);
-    expect(viewer).toMatch(/else\s+bootCheckSetupStatus\(\)/);
+    expect(viewer).toMatch(/else\s+if\s*\(\s*BRIDGE_MODE\s*\)\s*bootCheckSetupStatus\(\)/);
   });
 });
 

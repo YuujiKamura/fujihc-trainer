@@ -545,6 +545,9 @@ const MAP_MODE = new URLSearchParams(location.search).has('map');
 // bridge.py 無し、 viewer から Web BT API (= ble_client.js 内に閉じる) で
 // trainer / 心拍計と話す. iOS Safari / Firefox は非対応で fallback UI を出す.
 const BLE_MODE = new URLSearchParams(location.search).has('ble');
+// 2026-05-15 fix: default は Web Bluetooth、 ?bridge=1 のときだけ旧 bridge mode (= python BLE 経由)
+// に倒す。 公開時の訪問者は browser 完結、 yuuji 自宅の bridge.py 実テストは URL 引数で明示。
+const BRIDGE_MODE = new URLSearchParams(location.search).has('bridge');
 let client = null;
 let lastSlopeSent = null;
 let lastSlopeSendT = 0;
@@ -1087,8 +1090,12 @@ function dispatchAfterIntro() {
   }
   if (MAP_MODE) initMapMode();
   else if (TEST_MODE) initTestMode();
-  else if (BLE_MODE) initBleMode();
-  else bootCheckSetupStatus();
+  // 2026-05-15 fix: default 経路を bootCheckSetupStatus (= bridge mode、 python BLE) から
+  // initBleMode (= Web Bluetooth、 browser 直接 BLE) に変更。 公開設計の核は訪問者が
+  // browser で完結すること、 bridge mode は yuuji 本人の自宅実環境テスト用に縮退。
+  // `?bridge=1` 明示時のみ旧 bridge 経路 (= bootCheckSetupStatus) に復活。
+  else if (BRIDGE_MODE) bootCheckSetupStatus();
+  else initBleMode();
 }
 
 // brief 34 ε-8: 観るモードの起動関数.
