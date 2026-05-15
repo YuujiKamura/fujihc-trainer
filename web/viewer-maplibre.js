@@ -28,6 +28,11 @@ import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_statu
 import { bindPostRideButtons } from './lib/postride_buttons.js';
 import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
+// brief 34 ε: 公開ガードレール (= intro / consent 同意管理).
+import {
+  getIntroConsent, setIntroConsent,
+  getRideConsent, setRideConsent,
+} from './lib/consent.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -705,12 +710,52 @@ function maybeSendSlope(slope_pct) {
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
+// brief 34 ε-2: 公開ガードレール intro-overlay 表示 / ボタン bind.
+// 「閉じる」= 何もしない (= overlay は閉じるが consent は保存しない、 reload 時に再表示)。
+// 「試走デモを見る」= setIntroConsent() を保存 + overlay を隠して dispatchAfterIntro。
+function showIntroOverlay() {
+  const ov = document.getElementById('intro-overlay');
+  if (ov) ov.classList.add('visible');
+}
+function hideIntroOverlay() {
+  const ov = document.getElementById('intro-overlay');
+  if (ov) ov.classList.remove('visible');
+}
+// 起動時に 1 回 bind (= multiple click でも 1 度しか発火しない、 addEventListener 性質).
+// document が無い test 環境 (= 直 import) では skip。
+if (typeof document !== 'undefined') {
+  const btnIntroDemo = document.getElementById('btnIntroDemo');
+  const btnIntroClose = document.getElementById('btnIntroClose');
+  if (btnIntroDemo) btnIntroDemo.addEventListener('click', () => {
+    setIntroConsent();
+    hideIntroOverlay();
+    dispatchAfterIntro();
+  });
+  if (btnIntroClose) btnIntroClose.addEventListener('click', () => {
+    // 「閉じる」は consent を保存しない (= reload 時に再表示).
+    // ride / map fetch は走らせない (= 帯域消費ゼロ).
+    hideIntroOverlay();
+  });
+}
+
 // brief 26b: 起動時の DB 充足度チェック → 不足なら dbinit overlay、 ready なら従来 BLE.
 // TEST_MODE は従来通り checking を skip (= ?test=1 は trainer / DB 不要 demo).
 //
 // brief 31: bridge 不在 (= s.bridgeReachable === false) なら static mode 確定、
 // dbinit-overlay は出さず initMapMode() に直行 (= 視覚デモ完結)。
+//
+// brief 34 ε-2: 公開ガードレール introConsented guard.
+// intro 未通過 (= getIntroConsent() === null) なら static / bridge 経路どちらも
+// 走らせない (= 訪問者が「閉じる」を選んだ時に pmtiles / GSI PNG fetch を完全停止)。
+// 開発者 bypass (= ?consent=dev) は module top の CONSENT_DEV_BYPASS で吸収済、
+// この関数は dispatchAfterIntro 経由でのみ呼ばれるため、 ここでの guard は冗長 defense。
 function bootCheckSetupStatus() {
+  // brief 34 ε-2: intro 未通過なら何もしない (= 二重 gate、 dispatchAfterIntro 経由で
+  // 通常呼ばれないが、 外部から直呼びされても fetch を発生させない物理 gate).
+  if (!introConsented()) {
+    showIntroOverlay();
+    return;
+  }
   // brief 31 commit β: bootEnv() で ENV (= freeze 済 immutable env) を確定してから分岐。
   // 旧 `bootMap(false)` / `bootMap(true)` の bool 直渡しを廃止、 全部 env 経由で統一。
   bootEnv().then((env) => {
@@ -745,10 +790,29 @@ function bootCheckSetupStatus() {
 // brief 31: MAP_MODE / TEST_MODE でも tile origin 確定のために checkSetupStatus は必須、
 // その結果から bootMap(bridgeReachable) を 1 回だけ呼ぶ。 map 生成は initMapMode /
 // initTestMode の入口で `if (!map) ...` 経由 (= 既存 dispatch 行のリテラルを保持)。
-if (MAP_MODE) initMapMode();
-else if (TEST_MODE) initTestMode();
-else if (BLE_MODE) initBleMode();
-else bootCheckSetupStatus();
+//
+// brief 34 ε-2: 公開ガードレール introConsented guard.
+// `?consent=dev` のみ intro を物理 skip (= 開発者本人 bypass)、 単純な
+// `?map=1` / `?test=1` / `?ble=1` も intro 必須。 default 経路も同じ guard.
+// guard 未通過なら initMapMode / initTestMode / initBleMode / bootCheckSetupStatus を
+// 呼ばず、 intro-overlay を表示して user の click を待つ (= 「閉じる」/「試走デモ」).
+const CONSENT_DEV_BYPASS = new URLSearchParams(location.search).get('consent') === 'dev';
+function introConsented() {
+  if (CONSENT_DEV_BYPASS) return true;
+  return getIntroConsent() !== null;
+}
+// dispatch を関数化: introConsented なら mode 別に init、 未通過なら showIntroOverlay。
+function dispatchAfterIntro() {
+  if (MAP_MODE) initMapMode();
+  else if (TEST_MODE) initTestMode();
+  else if (BLE_MODE) initBleMode();
+  else bootCheckSetupStatus();
+}
+if (introConsented()) {
+  dispatchAfterIntro();
+} else {
+  showIntroOverlay();
+}
 
 function initMapMode() {
   if (!map) { ensureMapBooted().then(() => initMapMode()); return; }  // brief 31

@@ -103,6 +103,41 @@ describe('brief 31 commit β: bootCheckSetupStatus が env.mode で static / bri
   });
 });
 
+describe('brief 34 ε-2: introConsented guard で起動分岐 2 箇所を制御', () => {
+  it('module top dispatch は introConsented() guard 内でのみ initMapMode / initTestMode / initBleMode / bootCheckSetupStatus を呼ぶ', () => {
+    // 旧 `if (MAP_MODE) initMapMode(); else if (TEST_MODE) ...` の literal は
+    // `dispatchAfterIntro` 関数内に格納、 module top では introConsented() で gate.
+    expect(viewer).toMatch(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]*?if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
+    expect(viewer).toMatch(/if\s*\(\s*introConsented\(\)\s*\)\s*\{\s*\n\s*dispatchAfterIntro\(\)/);
+  });
+
+  it('introConsented 未通過なら showIntroOverlay を呼んで init 群を物理 skip', () => {
+    // module top dispatch の else 節で showIntroOverlay を呼ぶ
+    const m = viewer.match(/if\s*\(\s*introConsented\(\)\s*\)\s*\{[\s\S]*?\}\s*else\s*\{[\s\S]*?\}/);
+    expect(m).not.toBeNull();
+    const ifElse = m[0];
+    expect(ifElse).toMatch(/showIntroOverlay\(\)/);
+  });
+
+  it('bootCheckSetupStatus も内部で introConsented() を check (= 二重 gate)', () => {
+    const m = viewer.match(/function\s+bootCheckSetupStatus\s*\(\s*\)[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    expect(body).toMatch(/introConsented\(\)/);
+    expect(body).toMatch(/showIntroOverlay\(/);
+  });
+
+  it('CONSENT_DEV_BYPASS は ?consent=dev のみ true、 ?map=1 単独では bypass しない', () => {
+    expect(viewer).toMatch(/CONSENT_DEV_BYPASS\s*=\s*new\s+URLSearchParams\(location\.search\)\.get\(['"]consent['"]\)\s*===\s*['"]dev['"]/);
+  });
+
+  it('consent.js を import (= getIntroConsent / setIntroConsent / getRideConsent / setRideConsent)', () => {
+    expect(viewer).toMatch(/from\s+['"]\.\/lib\/consent\.js['"]/);
+    expect(viewer).toMatch(/getIntroConsent/);
+    expect(viewer).toMatch(/setIntroConsent/);
+  });
+});
+
 describe('brief 31 commit β: ENV (= immutable env object) と bootEnv が race door を構造消去', () => {
   it('module-scope に `let ENV = null` (= bootEnv が freeze 済 instance を代入する hook)', () => {
     expect(viewer).toMatch(/^let\s+ENV\s*=\s*null/m);

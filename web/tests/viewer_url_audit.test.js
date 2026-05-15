@@ -247,8 +247,10 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
     expect(viewer).toMatch(/function\s+initMapMode/);
   });
 
-  it('MAP_MODE 時は initMapMode を最初に呼ぶ', () => {
-    expect(viewer).toMatch(/if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
+  it('MAP_MODE 時は initMapMode を呼ぶ (= brief 34 ε-2 で dispatchAfterIntro 関数内に格納)', () => {
+    // brief 34 ε-2: 旧 module-top `if (MAP_MODE) initMapMode()` は dispatchAfterIntro
+    // 関数内に移動、 module top は introConsented() guard 経由でのみ呼ぶ。
+    expect(viewer).toMatch(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]{0,300}if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
   });
 
   it('initMapMode は createTestModeClient を使う (= bridge 不要)', () => {
