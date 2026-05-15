@@ -46,6 +46,55 @@ describe('brief 34 ε-8: splitCourseIntoSections (= 観るモード core lib)', 
     }
   });
 
+  it('各区間に max_slope_pct がある + avg <= max (= 区間内の最大勾配は平均以上)', () => {
+    const course = buildSimpleCourse();
+    const sections = splitCourseIntoSections(course, 10);
+    for (const s of sections) {
+      expect(typeof s.max_slope_pct).toBe('number');
+      expect(Number.isFinite(s.max_slope_pct)).toBe(true);
+      expect(s.max_slope_pct).toBeGreaterThanOrEqual(s.avg_slope_pct);
+    }
+  });
+
+  it('単純 course (= 全 point slope_pct=5) → max_slope_pct も 5 (= avg と同値)', () => {
+    const course = buildSimpleCourse();
+    const sections = splitCourseIntoSections(course, 10);
+    for (const s of sections) {
+      expect(s.max_slope_pct).toBeCloseTo(5.0, 5);
+    }
+  });
+
+  it('区間内に急勾配 point が混ざる → max_slope_pct がそれを拾う (= avg より大きい)', () => {
+    // 11 点 / 1km、 idx=3 だけ slope_pct=18% (= 急 spike)、 他は 5%
+    const course = [];
+    for (let i = 0; i <= 10; i++) {
+      course.push({
+        distance_m: i * 1000,
+        elevation_m: 100 + i * 50,
+        slope_pct: i === 3 ? 18 : 5,
+      });
+    }
+    const sections = splitCourseIntoSections(course, 10);
+    // 区間 2 (= idx 2..3、 start_idx=2 end_idx=3 を含む想定) に max=18 が立つ
+    const hit = sections.find(s => s.start_idx <= 3 && s.end_idx >= 3);
+    expect(hit).toBeDefined();
+    expect(hit.max_slope_pct).toBeCloseTo(18.0, 5);
+    expect(hit.max_slope_pct).toBeGreaterThan(hit.avg_slope_pct);
+  });
+
+  it('全 point に slope_pct が無い → max_slope_pct は avg_slope_pct を fallback (= NaN 不在)', () => {
+    const course = [
+      { distance_m: 0, elevation_m: 0 },
+      { distance_m: 1000, elevation_m: 100 },
+      { distance_m: 2000, elevation_m: 150 },
+    ];
+    const sections = splitCourseIntoSections(course, 2);
+    for (const s of sections) {
+      expect(Number.isFinite(s.max_slope_pct)).toBe(true);
+      expect(s.max_slope_pct).toBeCloseTo(s.avg_slope_pct, 5);
+    }
+  });
+
   it('単純 course で区間 0 は distance 0-1000m を覆う (= 等分 1 区間 1km)', () => {
     const course = buildSimpleCourse();
     const sections = splitCourseIntoSections(course, 10);

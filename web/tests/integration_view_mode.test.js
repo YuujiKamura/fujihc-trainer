@@ -294,6 +294,32 @@ describe('brief 34 ε-8 integration: viewer-maplibre.js の source 構造', () =
     // renderSectionList 内で onSelect callback で startFrom が呼ばれる (= initViewMode から渡す).
     expect(viewer).toMatch(/rideState\.startFrom\(/);
   });
+
+  it('renderSectionList が sec-grade に「平均 X.X%」「最大 X.X%」両方を出力 (= 2026-05-15 user 指示)', () => {
+    // renderSectionList 内で avg_slope_pct と max_slope_pct を「平均」「最大」prefix 付きで textContent に入れる。
+    const m = viewer.match(/function\s+renderSectionList\s*\([\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    // 「平均 ...avg_slope_pct...%」と「最大 ...max_slope_pct...%」の両方が renderSectionList 内に出る。
+    expect(body).toMatch(/平均\s*\$\{[^}]*avg_slope_pct[^}]*\}%/);
+    expect(body).toMatch(/最大\s*\$\{[^}]*max_slope_pct[^}]*\}%/);
+    // sec-grade-avg / sec-grade-max の 2 span に分けて配置 (= flex-column 2 行 layout).
+    expect(body).toMatch(/sec-grade-avg/);
+    expect(body).toMatch(/sec-grade-max/);
+  });
+});
+
+describe('brief 34 ε-8 integration: section list の「平均 / 最大」勾配表示 (= 2026-05-15)', () => {
+  it('index.html の sec-grade CSS が flex-direction:column + flex-end 右寄せ (= 2 行右寄せ layout)', () => {
+    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*display:\s*flex/);
+    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*flex-direction:\s*column/);
+    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*align-items:\s*flex-end/);
+  });
+
+  it('sec-grade-avg / sec-grade-max の CSS rule が定義されている (= 2 行表示の各 row)', () => {
+    expect(html).toMatch(/#section-list\s+\.sec-grade-avg\s*\{/);
+    expect(html).toMatch(/#section-list\s+\.sec-grade-max\s*\{/);
+  });
 });
 
 describe('brief 34 ε-8 integration: consent.js mode 拡張', () => {

@@ -27,6 +27,7 @@ import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_statu
 // (= NG-R1-7 同型予防、 4 module 分離).
 import { bindPostRideButtons } from './lib/postride_buttons.js';
 import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
+import { appendHistoryRow } from './lib/history_row.js';
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
 // brief 34 ε: 公開ガードレール (= intro / consent 同意管理).
 import {
@@ -883,13 +884,31 @@ function hideIntroOverlay() {
 // 「同意して ride 開始」= setRideConsent({history, strava, asked: true}) を保存 +
 //                       overlay を hide + ride 開始 (= btnRideStart 相当の処理を再実行)。
 // 「キャンセル」= 何も保存しない、 overlay のみ hide (= ride 開始しない)。
+//
+// 2026-05-15 fix: 「ライド開始押してもライド画面に遷移しない」 bug 修正。
+// consent-overlay (z=1460) は setup-overlay (z=1500) より下に置く設計だが、
+// setup-overlay が visible のまま consent-overlay を表示すると後者は完全に setup の
+// 背後に隠れて user に見えない (= 旧 ε-1 で同型 bug、 intro vs setup の上下逆転を visible class で
+// 解決した経緯と同じ)。 showConsentOverlay 時に setup-overlay を一旦隠し、 cancel 時に
+// 復元する。 accept 時は ride_status:started → hidePairing で setup を二重 hide するが冪等。
 function showConsentOverlay() {
   const ov = document.getElementById('consent-overlay');
   if (ov) ov.classList.add('visible');
+  // setup-overlay (z=1500) を一旦 hide して consent-overlay (z=1460) を露出させる.
+  const setup = document.getElementById('setup-overlay');
+  if (setup) setup.classList.remove('visible');
 }
 function hideConsentOverlay() {
   const ov = document.getElementById('consent-overlay');
   if (ov) ov.classList.remove('visible');
+  // cancel 経路で setup に戻れるよう setup-overlay を復元.
+  // accept → startRideConfirmed → ride_status:started → hidePairing が後段で setup を
+  // 再度 hide するため、 accept 経路でも一瞬 setup が見えてから ride 画面に遷移する.
+  // ride state (= state-riding 系) でない時のみ復元 (= 既に ride 中なら setup を出さない).
+  if (!document.body.classList.contains('state-riding')) {
+    const setup = document.getElementById('setup-overlay');
+    if (setup) setup.classList.add('visible');
+  }
 }
 // brief 34 ε-8: 「観る」モード section-overlay 表示 / hide / list render.
 // section-overlay は 10 区間のリストを表示、 行クリックで該当 section.start_idx を rideState に
@@ -923,9 +942,18 @@ function renderSectionList(courseArr, onSelect) {
     const label = document.createElement('span');
     label.className = 'sec-label';
     label.textContent = `区間 ${sec.index + 1}: ${startKm}-${endKm} km`;
+    // 2026-05-15 fix: 区間勾配は「平均」と「最大」を 2 行で表示 (= max は登坂時の体感差を伝える).
+    // sec-grade を flex-column 化、 中身を 2 span に分け右寄せで縦並べる。
     const grade = document.createElement('span');
     grade.className = 'sec-grade';
-    grade.textContent = `${sec.avg_slope_pct.toFixed(1)}%`;
+    const gradeAvg = document.createElement('span');
+    gradeAvg.className = 'sec-grade-avg';
+    gradeAvg.textContent = `平均 ${sec.avg_slope_pct.toFixed(1)}%`;
+    const gradeMax = document.createElement('span');
+    gradeMax.className = 'sec-grade-max';
+    gradeMax.textContent = `最大 ${sec.max_slope_pct.toFixed(1)}%`;
+    grade.appendChild(gradeAvg);
+    grade.appendChild(gradeMax);
     const delta = sec.end_ele - sec.start_ele;
     const deltaSign = delta >= 0 ? '+' : '';
     const meta = document.createElement('span');

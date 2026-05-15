@@ -241,8 +241,10 @@
   }
   #section-list li:hover, #section-list li:focus { background: #2a2a36; border-color: #7fff00; outline: none; }
   #section-list .sec-label { color: #ffd54a; font-weight: bold; font-size: 13px; grid-column: 1; grid-row: 1; }
-  /* 勾配を右側に大きく出す (= 一番大事な情報). */
-  #section-list .sec-grade { color: #ff8866; font-weight: bold; font-size: 16px; text-align: right; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  /* 勾配を右側に大きく出す (= 一番大事な情報). 平均 / 最大 を 2 行で右寄せ縦並び。 */
+  #section-list .sec-grade { display: flex; flex-direction: column; align-items: flex-end; gap: 0.05rem; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  #section-list .sec-grade-avg { color: #ff8866; font-weight: bold; font-size: 15px; line-height: 1.1; }
+  #section-list .sec-grade-max { color: #ff5544; font-weight: bold; font-size: 13px; line-height: 1.1; }
   /* 標高情報は副、 小さく gray で下段に. */
   #section-list .sec-meta { color: #888; font-size: 11px; grid-column: 1; grid-row: 2; }
   #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }

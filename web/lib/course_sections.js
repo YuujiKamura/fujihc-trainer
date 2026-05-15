@@ -14,6 +14,9 @@
 // - end_idx は次区間 start_idx の 1 つ手前、 最終区間 end_idx は course.length - 1.
 // - avg_slope_pct = (end_ele - start_ele) / (end_dist - start_dist) * 100.
 //   区間長 (= end_dist - start_dist) が 0 の場合は 0 を返す (= div-by-zero guard).
+// - max_slope_pct = 区間内の course point の slope_pct の最大値 (= 既存 avg と同じ粒度、
+//   GPX 由来 slope_pct をそのまま max してて、 短 segment 由来の noise smoothing はしない).
+//   slope_pct が無い point は無視、 全 point に slope_pct が無ければ avg_slope_pct を fallback.
 // - course が空 / 1 点なら空配列を返す (= 区間切れない).
 // - n < 1 なら空配列、 n が course point 数を超えても区間は n 個作る (= ただし point 数 < n の場合は
 //   一部区間が同 idx を持つ degenerate ケース、 通常 24km / 1968 点なら n=10 で十分余裕).
@@ -32,6 +35,7 @@
  *   start_dist: number, end_dist: number,
  *   start_ele: number, end_ele: number,
  *   avg_slope_pct: number,
+ *   max_slope_pct: number,
  * }>}
  */
 export function splitCourseIntoSections(course, n = 10) {
@@ -79,6 +83,14 @@ export function splitCourseIntoSections(course, n = 10) {
     // div-by-zero guard: 同 idx に縮退 (= course 点数が n より少ない degenerate) なら勾配 0.
     const avgSlope = (dx > 0) ? ((endEle - startEle) / dx * 100) : 0;
 
+    // 区間内 course point の slope_pct の max。 finite な値のみ集計、 1 つも無ければ avg を fallback。
+    let maxSlope = -Infinity;
+    for (let k = startIdx; k <= endIdx; k++) {
+      const s = course[k].slope_pct;
+      if (Number.isFinite(s) && s > maxSlope) maxSlope = s;
+    }
+    if (!Number.isFinite(maxSlope)) maxSlope = avgSlope;
+
     sections.push({
       index: i,
       start_idx: startIdx,
@@ -88,6 +100,7 @@ export function splitCourseIntoSections(course, n = 10) {
       start_ele: startEle,
       end_ele: endEle,
       avg_slope_pct: avgSlope,
+      max_slope_pct: maxSlope,
     });
 
     // 次区間の start 探索 cursor を末尾 idx 直後に進める (= O(n+m) で全区間分割完了)
