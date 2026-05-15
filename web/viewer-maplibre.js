@@ -1418,6 +1418,19 @@ function startTerrainProbe() {
     if (snap.phase === 'done') {
       terrainReady = true;
       updateActionButtonsForTerrain();
+      // 2026-05-16 fix: 一部環境 (= GPU 制限 / tile fetch 部分失敗) で map.on('idle') が
+      // 発火せず mapFullyLoaded が永遠 false になる事故 (= user 報告「閉じるしか押せない」).
+      // terrain probe done (= course / pmtiles / GSI tile 全部確認済) + 5 秒待っても
+      // idle 未発火なら、 描画 sentinel を諦めて button 解禁する。 過去訂正
+      // (= 中途半端な地図で走り出す) 防止は terrain probe 側で担保済、 idle gate は
+      // 二重保険にすぎない。
+      setTimeout(() => {
+        if (!mapFullyLoaded) {
+          console.warn('[fujihill] map idle 5 秒未発火、 fallback で mapFullyLoaded=true');
+          mapFullyLoaded = true;
+          updateActionButtonsForTerrain();
+        }
+      }, 5000);
     } else {
       // failed / loading / pending 中は強制 disable を維持
       terrainReady = false;
