@@ -1795,11 +1795,7 @@ function tick(t) {
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
   // 「描画準備中」インジケータの解除トリガに干渉しない).
   if (course.length > 0 && rideState && rideState.snapshot().active) {
-    // 2026-05-15 fix: jumpTo (= 瞬間移動) を easeTo に変更で frame skip の jump を吸収。
-    // duration 100ms (= 6 frame 分) + linear で、 frame が 1〜2 抜けても見た目は滑らか。
-    // easeTo 中に次 tick が呼ばれても MapLibre は新 target に即時切替 (= キューしない) で、
-    // 累積遅延は無し。
-    map.easeTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing, duration: 100, essential: true });
+    map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
   if (rideStartedAt !== null) {
