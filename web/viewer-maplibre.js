@@ -2004,9 +2004,22 @@ function tick(t) {
       lastTrkptT = nowT;
     }
   }
-  if (!rider.atGoal) requestAnimationFrame(tick);
-  else status('完走');
+  if (!rider.atGoal) {
+    requestAnimationFrame(tick);
+  } else {
+    // 2026-05-15 fix: 完走時に手動で「ライド終了」 button を押さないと postride に
+    // 行けない bug を解消。 atGoal 到達で 1 度だけ自動的に rideState.end + sendRideEnd
+    // (= btnRideEnd の click と同経路) を発火、 ride_status('ended') → showPostride。
+    // _autoEnded flag で再発火を防止 (= ride 再開しない限り 2 回目は呼ばない).
+    status('完走');
+    if (!_autoEnded) {
+      _autoEnded = true;
+      if (rideState) rideState.end();
+      if (client && client.isOpen()) client.sendRideEnd();
+    }
+  }
 }
+let _autoEnded = false;
 
 // ボタン bind
 document.getElementById('btnPause').addEventListener('click', () => { if (rideState) rideState.togglePause(); });
@@ -2021,6 +2034,7 @@ function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.start();
   lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
+  _autoEnded = false;  // 2026-05-15: 完走自動終了 flag を ride 開始毎にリセット
   client.sendRideStart();
 }
 document.getElementById('btnRideStart').addEventListener('click', () => {

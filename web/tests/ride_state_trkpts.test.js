@@ -32,8 +32,11 @@ describe('ride_state trkpts (brief 33)', () => {
     const pts = rs.getTrkpts();
     expect(pts.length).toBe(1);
     expect(pts[0].t).toBe('2026-05-15T07:30:00Z');
-    expect(pts[0].lat).toBeCloseTo(35.4, 5);
-    expect(pts[0].lon).toBeCloseTo(138.7, 5);
+    // 2026-05-15 fix (commit de57ce1): shim の trkpt lat/lon source を _idx の raw 値から
+    // rider.position の interpolated 値に変更。 advance(1s, 5m/s) で 5m 進む間 lat は
+    // 起点から微小 (= 4 桁精度内) ずれる、 5 桁精度の旧 assertion は緩める。
+    expect(pts[0].lat).toBeCloseTo(35.4, 3);
+    expect(pts[0].lon).toBeCloseTo(138.7, 3);
     expect(pts[0].power).toBe(210);
     expect(pts[0].cad).toBe(85);
     expect(pts[0].hr).toBe(142);
