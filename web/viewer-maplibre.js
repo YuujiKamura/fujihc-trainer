@@ -8,6 +8,8 @@ import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
 import { smoothCourse } from './lib/gpx_smooth.js';
 // brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
 import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
+// brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist、 2 回目以降 skip.
+import { getMeshCache, setMeshCache, computeCourseHash } from './lib/mesh_cache.js';
 // brief 19b: WebSocket / ride state / camera を lib に集約
 import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
 import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
@@ -1731,8 +1733,33 @@ async function loadCourse() {
 
   // brief 24 + 25: 各 segment を 5m 幅の polygon に展開、 勾配グレード別色分け.
   // Zwift Climb Portal 風: flat=緑 / gentle=黄緑 / moderate=黄 / hard=橙 / very_hard=赤 / extreme=紫.
+  // brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist。 2 回目以降の
+  // 起動では既存 cache を読み戻し、 buildGradeColoredRoadPolygons (= 全 segment の expansion +
+  // 勾配 grade 計算) を完全 skip。 cache miss / IDB 不在は既存経路に fallback (= no-op fail-open).
   if (!map.getSource('route')) {
-    map.addSource('route', { type: 'geojson', data: buildGradeColoredRoadPolygons(course, 5) });
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const courseHash = computeCourseHash(course);
+    let polygonData = null;
+    let cacheHit = false;
+    if (courseHash) {
+      try {
+        const rec = await getMeshCache(courseHash, 'polygon');
+        if (rec && rec.arrays && rec.arrays.geojson) {
+          polygonData = rec.arrays.geojson;
+          cacheHit = true;
+        }
+      } catch { /* fail-open: 既存経路に倒す */ }
+    }
+    if (!polygonData) {
+      polygonData = buildGradeColoredRoadPolygons(course, 5);
+      if (courseHash) {
+        // fire-and-forget: 書き込み失敗で起動を block しない (= 次回 reload で再 attempt)
+        setMeshCache(courseHash, 'polygon', { geojson: polygonData }).catch(() => {});
+      }
+    }
+    const dt = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0;
+    console.log(`[mesh_cache] polygon ${cacheHit ? 'HIT' : 'MISS'} ${dt.toFixed(1)}ms hash=${courseHash}`);
+    map.addSource('route', { type: 'geojson', data: polygonData });
     // 2026-05-16 user 「zoom out 時は今の 2 倍に広く、 zoom in 時は最大で今の 70% に狭く」.
     // zoom 13 (= 最遠) で 2.0x、 zoom 21 (= default) で 1.0x、 zoom 24 (= 最近) で 0.7x.
     // 折れ線で連動、 zoom 0.25 単位で throttle して再生成負荷を抑える.
