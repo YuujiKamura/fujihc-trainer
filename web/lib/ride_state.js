@@ -1,72 +1,82 @@
-// brief 19: ride 進行 state を pure state machine に集約 (= NG-R1-7 解消).
-// viewer-maplibre.js 内に散在していた curIdx / curDist / paused / active を
-// 1 module に閉じ込め、 tick 関数の更新ロジックを advance() に集約する.
+// brief 35: ride_state は Terrain + Rider 2 層モデルの **後方互換 shim** に格下げ.
 //
-// brief 33: trkpts (= ride 中の {t,lat,lon,ele,power,cad,hr} 時系列) 蓄積を追加.
-// advance(dt, speedMps, extras?) で extras={power,cad,hr} を渡せば trkpt 1 件追加.
-// pure module、 DOM / browser global 依存ゼロ.
+// 経緯:
+// - brief 19 で viewer-maplibre.js から curIdx/curDist/paused/active を吸い出して
+//   pure state machine 化 (= createRideState({course})) した. brief 33 で trkpts も移送.
+// - brief 35 で「Terrain (= 客観地形/経路) ⊃ Rider (= 主体)」 という上位モデル分離を実装、
+//   ride_state.js が持っていた責務 (= 進行カウンタ + position 算出 + trkpts) は
+//   Terrain と Rider に正しく振り分けられた.
+// - 既存 caller (= viewer-maplibre.js, ride_state*.test.js x3 ファイル 29 件) を破壊しないため、
+//   旧 createRideState は内部で Terrain + Rider を生成して旧 API surface を維持する shim 化.
+//
+// 旧 vs 新の差分メモ (= shim が吸収する責務):
+//   1. 旧 curIdx は「course[curIdx+1].distance_m < curDist (= 厳密 <)」 で前進、 末尾到達時に
+//      curIdx = lastIdx - 1 で留まる. 新 Terrain.idxAtDistance は <= で計算、 境界で +1 ずれる.
+//      shim は _legacyIdx で旧 logic を再現.
+//   2. 旧 appendTrkpt は course[curIdx] の raw 値 (= 補間なし) を使う. 新 Rider.appendTrkpt は
+//      補間後 position を使う. shim は内部に独自 trkpts buffer を持って旧挙動を再現.
+//
+// 新規 caller は本 module ではなく Terrain + Rider を直接使え:
+//   import { createTerrain } from './terrain.js';
+//   import { createRider } from './rider.js';
+//   const terrain = createTerrain({ course });
+//   const rider = createRider({ terrain });
 
+import { createTerrain } from './terrain.js';
+import { createRider } from './rider.js';
 import { computeTravelHeading } from './heading.js';
 
 /**
- * ride 進行 state machine を生成する.
+ * 後方互換 shim. 内部で Terrain + Rider を生成、 旧 API を表面に出す.
  *
  * @param {Array<{lat:number, lon:number, distance_m:number, elevation_m:number, slope_pct:number}>} course
- * @returns {{
- *   advance: (dt:number, speedMps:number, extras?:object) => void,
- *   getCurrentSlope: () => number,
- *   getHeading: (lookAhead?:number) => number,
- *   start: () => void,
- *   end: () => void,
- *   togglePause: () => void,
- *   reset: () => void,
- *   snapshot: () => {idx:number, distance:number, paused:boolean, active:boolean, slope:number, trkptCount:number},
- *   isAtEnd: () => boolean,
- *   appendTrkpt: (extras:object) => void,
- *   getTrkpts: () => Array<object>,
- * }}
  */
 export function createRideState(course) {
   if (!Array.isArray(course)) {
     throw new TypeError('createRideState: course must be an array');
   }
 
-  let curIdx = 0;
-  let curDist = 0;
-  let paused = true;
-  let active = false;
-  let trkpts = [];
+  const terrain = createTerrain({ course });
+  const rider = createRider({ terrain });
+  // 旧 trkpts buffer (= shim 専用). Rider 内部の trkpts と並存させる代わりに、
+  // 旧 API caller には「shim 自身が保持する legacy trkpts」 だけを露出する.
+  let legacyTrkpts = [];
 
-  const totalDist = course.length > 0
-    ? course[course.length - 1].distance_m
-    : 0;
+  // 旧 ride_state は curIdx を「advance では <、 seekToward では <=」 で更新する内部不整合があった.
+  // shim はその挙動を byte-同等に再現するため、 curIdx を独立 field で持つ. Rider の position
+  // 算出には使わない、 旧 snapshot().idx の値だけのため.
   const lastIdx = Math.max(0, course.length - 1);
+  let _idx = 0;
 
-  function clampDist(d) {
-    if (d < 0) return 0;
-    if (d > totalDist) return totalDist;
-    return d;
+  function _idxAdvance() {
+    // 旧 advanceIdx (= 厳密 <) と同 logic.
+    while (_idx < lastIdx && course[_idx + 1].distance_m < rider.distanceTraveled) _idx++;
   }
 
-  function advanceIdx() {
-    // curDist に追従して curIdx を前進させる (= viewer の tick と同 logic).
-    while (curIdx < lastIdx && course[curIdx + 1].distance_m < curDist) {
-      curIdx++;
-    }
+  function _idxRefreshLooseLE() {
+    // 旧 seekToward 内の idx 再計算 (= <=) と同 logic.
+    let i = 0;
+    while (i < lastIdx && course[i + 1].distance_m <= rider.distanceTraveled) i++;
+    _idx = i;
   }
 
-  function appendTrkptInternal(extras) {
-    // 現在位置 (= course[curIdx] の lat/lon/ele) を trkpt として記録する.
-    // extras は {power, cad, hr} の任意 subset、 ISO8601 の t は呼び出し側か Date.now() で埋める.
+  function _legacyIdx() {
+    // snapshot 経路の idx (= advance 経由で更新されている前提). seekToward が呼ばれた直後は
+    // _idxRefreshLooseLE で <= ベースに更新済.
+    return _idx;
+  }
+
+  function _legacyAppendTrkpt(extras) {
     if (course.length === 0) return;
-    const p = course[curIdx];
+    const idx = _legacyIdx();
+    const p = course[idx];
     if (!p) return;
     const lat = Number.isFinite(p.lat) ? p.lat : null;
     const lon = Number.isFinite(p.lon) ? p.lon : null;
     if (lat === null || lon === null) return;
     const ele = Number.isFinite(p.elevation_m) ? p.elevation_m : null;
     const ex = extras || {};
-    trkpts.push({
+    legacyTrkpts.push({
       t: typeof ex.t === 'string' && ex.t ? ex.t : new Date().toISOString(),
       lat, lon, ele,
       power: (ex.power === null || ex.power === undefined || !Number.isFinite(Number(ex.power))) ? null : Number(ex.power),
@@ -76,137 +86,112 @@ export function createRideState(course) {
   }
 
   return {
+    /**
+     * 旧 advance(dt, speedMps[, extras]):
+     *   - speedMps を内部 speed としてセット
+     *   - tick(dt) で 1 step 進める (= paused なら no-op)
+     *   - extras 引数があれば trkpt 1 件追加 (= brief 33 既存挙動、 raw point ベース)
+     */
     advance(dt, speedMps, extras) {
-      if (paused) return;
-      if (course.length === 0) return;
       if (!(dt > 0) || !(speedMps >= 0)) return;
-      if (curDist >= totalDist) return;
-      curDist = clampDist(curDist + speedMps * dt);
-      advanceIdx();
-      // brief 33: extras が渡されたとき trkpt を 1 件 push (= ride 中の時系列蓄積).
-      // 既存 caller (= advance(dt, speedMps) の 2 引数) は extras=undefined で副作用ゼロ、
-      // 12 件の ride_state.test.js を壊さない後方互換.
-      if (extras !== undefined) {
-        appendTrkptInternal(extras);
+      rider.setSpeed(speedMps);
+      if (extras) {
+        rider.setSensors({ power: extras.power, cad: extras.cad, hr: extras.hr });
+      }
+      const wasPaused = rider.paused;
+      rider.tick(dt, {});
+      if (!wasPaused) {
+        _idxAdvance();  // 旧 advance 経路の idx 更新 (= 厳密 <).
+        if (extras !== undefined) {
+          _legacyAppendTrkpt(extras);
+        }
       }
     },
 
     appendTrkpt(extras) {
-      // 明示 push API (= viewer 側の tick から advance とは別 cadence で呼べる).
-      appendTrkptInternal(extras);
+      _legacyAppendTrkpt(extras);
     },
 
     getTrkpts() {
-      // immutable shallow copy. 各要素も新規 object で返す (= caller が mutate しても内部に影響しない).
-      return trkpts.map((p) => ({ ...p }));
+      // immutable shallow copy (= 旧仕様、 caller が mutate しても内部影響なし).
+      return legacyTrkpts.map((p) => ({ ...p }));
     },
 
     getCurrentSlope() {
-      if (course.length === 0) return 0;
-      const p = course[curIdx];
+      if (terrain.length === 0) return 0;
+      const idx = _legacyIdx();
+      const p = course[idx];
       return (p && Number.isFinite(p.slope_pct)) ? p.slope_pct : 0;
     },
 
     getHeading(lookAhead = 5) {
-      return computeTravelHeading(course, curIdx, lookAhead);
+      const idx = _legacyIdx();
+      return computeTravelHeading(course, idx, lookAhead);
     },
 
     start() {
-      curIdx = 0;
-      curDist = 0;
-      paused = false;
-      active = true;
-      trkpts = [];  // brief 33: ride 開始ごとに trkpt 蓄積を初期化
+      rider.start();
+      _idx = 0;
+      legacyTrkpts = [];
     },
 
-    /**
-     * brief 34 ε-8: 「観るモード」用の区間始点 inject 経路.
-     * 指定 idx の course point から ride を開始する (= 通常 start は idx=0 リセット).
-     * 観るモード以外で呼ばれる場合は無いが、 汎用 API として有効. trkpts は通常 start 同様クリア.
-     *
-     * idx の正規化: 0..course.length-1 にクランプ、 course が空なら no-op.
-     * curDist は course[idx].distance_m を採用 (= advance ロジックが distance ベースのため整合).
-     *
-     * @param {number} idx
-     */
     startFrom(idx) {
-      if (course.length === 0) return;
+      rider.startFromIdx(idx);
+      // 旧 startFrom は curIdx = safeIdx でセットしていた、 seekToward と違って <= 再計算不要.
       let safeIdx = Math.floor(Number(idx));
       if (!Number.isFinite(safeIdx)) safeIdx = 0;
       if (safeIdx < 0) safeIdx = 0;
       if (safeIdx > lastIdx) safeIdx = lastIdx;
-      curIdx = safeIdx;
-      curDist = course[safeIdx].distance_m;
-      paused = false;
-      active = true;
-      trkpts = [];
-    },
-
-    /**
-     * 2026-05-15: 区間ジャンプ用のスムーズ移動 API. targetDist に向かって
-     * dt * speedMps 分だけ curDist を動かす (= 前後どちらにも対応). 残差が
-     * 1 step を超えなければ targetDist にスナップして true を返す。 観るモードで
-     * 別区間を選んだ時に「ワープではなく時速 100km 等で道沿いに移動」 する用途。
-     * paused / inactive / 不正引数は no-op で false を返す (= 既存 advance と同 ガード).
-     *
-     * @param {number} targetDist
-     * @param {number} dt
-     * @param {number} speedMps
-     * @returns {boolean} target に到達したら true、 未到達なら false
-     */
-    seekToward(targetDist, dt, speedMps) {
-      if (paused) return false;
-      if (course.length === 0) return false;
-      if (!(dt > 0) || !(speedMps > 0)) return false;
-      const clampedTarget = clampDist(Number(targetDist));
-      const diff = clampedTarget - curDist;
-      const step = speedMps * dt;
-      if (Math.abs(diff) <= step) {
-        curDist = clampedTarget;
-      } else {
-        curDist = clampDist(curDist + Math.sign(diff) * step);
-      }
-      // curIdx を curDist 直下の course point に再計算 (= 前進 / 後退どちらにも対応).
-      let i = 0;
-      while (i < lastIdx && course[i + 1].distance_m <= curDist) i++;
-      curIdx = i;
-      return curDist === clampedTarget;
+      _idx = safeIdx;
+      legacyTrkpts = [];
     },
 
     end() {
-      paused = true;
-      active = false;
+      rider.end();
     },
 
     togglePause() {
-      paused = !paused;
+      rider.togglePause();
     },
 
     reset() {
-      curIdx = 0;
-      curDist = 0;
-      trkpts = [];  // brief 33: reset でも trkpt クリア
+      rider.reset();
+      _idx = 0;
+      legacyTrkpts = [];
     },
 
     snapshot() {
-      // immutable copy (= 呼び出し側が mutate しても内部 state に影響しない)
+      // 旧 snapshot: { idx, distance, paused, active, slope, trkptCount } の 6 fields.
+      // idx は legacy 厳密 < semantics、 slope は course[legacyIdx].slope_pct.
+      const idx = _legacyIdx();
+      const p = course[idx];
+      const slope = (p && Number.isFinite(p.slope_pct)) ? p.slope_pct : 0;
       return {
-        idx: curIdx,
-        distance: curDist,
-        paused,
-        active,
-        slope: this.getCurrentSlope(),
-        trkptCount: trkpts.length,  // brief 33
+        idx,
+        distance: rider.distanceTraveled,
+        paused: rider.paused,
+        active: rider.active,
+        slope,
+        trkptCount: legacyTrkpts.length,
       };
     },
 
     isAtEnd() {
-      // distance ベースで判定 (= viewer の `curDist < totalDist` 終端条件と整合).
-      // curIdx は `course[curIdx+1].distance_m < curDist` を満たすときだけ前進するため、
-      // ちょうど末尾 distance に到達したときは curIdx = lastIdx - 1 で止まる.
-      // 「進めるか」ではなく「進む先が残ってないか」を distance で見るのが意味的に正しい.
-      if (course.length === 0) return true;
-      return curDist >= totalDist;
+      return rider.atGoal;
     },
+
+    seekToward(targetDist, dt, speedMps) {
+      const reached = rider.seekToward(targetDist, dt, speedMps);
+      // 旧 seekToward は paused / 不正引数で false return + idx 不変、 そうでなければ <= で idx 再計算.
+      if (!rider.paused && course.length > 0 && dt > 0 && speedMps > 0) {
+        _idxRefreshLooseLE();
+      }
+      return reached;
+    },
+
+    // 内部 Rider / Terrain への参照 (= brief 35 過渡期の viewer 等 新 path 用).
+    // 既存 caller は使わない、 viewer-maplibre.js の rewire 後に追加 export.
+    _rider: rider,
+    _terrain: terrain,
   };
 }
