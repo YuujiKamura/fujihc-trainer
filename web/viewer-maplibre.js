@@ -512,13 +512,14 @@ function setTerrainStatusUI(snap) {
   const el = document.getElementById('terrain-status');
   if (!el) return;
   if (snap.phase === 'done') {
-    el.textContent = `地形データ準備 完了 (${snap.label})`;
+    el.textContent = `地形データ準備 完了 — 「走る / 観る / デモ走行」を選べるようになりました (${snap.label})`;
     el.style.color = '#7fff00';
   } else if (snap.phase === 'failed') {
-    el.textContent = `地形データ準備 失敗: ${snap.error || ''} ── reload してください`;
+    el.textContent = `地形データ準備 失敗: ${snap.error || ''} ── ページを reload してください`;
     el.style.color = '#ff5050';
   } else {
-    el.textContent = `地形データ読み込み中... ${snap.label} (${snap.percent}%)`;
+    // 2026-05-15 fix: load 中の案内文を「何をしてる / なぜ操作できない」明示に強化.
+    el.textContent = `地形データを準備しています... コースの起伏を描く地図タイルを読み込み中です。 完了するまで「走る / 観る / デモ走行」ボタンは押せません。  ${snap.label} (${snap.percent}%)`;
     el.style.color = '#ffd54a';
   }
   // brief 34 ε-10: rangeWarning が立ったら status text に追記。 done 後でも user が

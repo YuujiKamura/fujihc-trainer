@@ -418,7 +418,7 @@
       <div id="setup-buttons">
         <button id="btnScan">trainer スキャン</button>
         <button id="btnScanHrm">心拍計スキャン</button>
-        <button id="btnSkip">trainer なしでデモ走行</button>
+        <button id="btnSkip" disabled>trainer なしでデモ走行</button>
         <button id="btnClosePairing" hidden>ライドに戻る</button>
       </div>
     </section>
@@ -436,7 +436,7 @@
     <!-- 2026-05-15 fix: 「コースを観る」を setup-overlay からも起動可能に (= intro 通過後でも
          走る ↔ 観る を切り替えたい時の出口、 user 指摘「コースを観るボタンが消えた」反映). -->
     <div style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333; text-align:center;">
-      <button id="btnSetupGoView" style="background:#1a3322; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">▷ コースを観る (= trainer 不要、 区間勾配を眺める)</button>
+      <button id="btnSetupGoView" disabled style="background:#1a3322; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">▷ コースを観る (= trainer 不要、 区間勾配を眺める)</button>
     </div>
 
     <!-- brief 33: Strava 連携 / 履歴セクション (= ride 前から open できる導線). -->
@@ -551,8 +551,8 @@
     <p style="margin-left:1rem;"><strong style="color:#7fff00;">観る</strong> ── trainer なしでも、 コース全 24km を 10 区間に分け、 各区間の平均勾配を表示、 選んだ区間を rider が一定速度で走る様子を任意視点で眺められます (Zwift Climb Portal と同じ発想、 ただし trainer 不要、 ログ保存なし)。</p>
     <div class="actions">
       <button id="btnIntroClose" type="button">閉じる</button>
-      <button id="btnIntroView" type="button">コースを観る</button>
-      <button id="btnIntroStart" type="button">自分の trainer で走る</button>
+      <button id="btnIntroView" type="button" disabled>コースを観る</button>
+      <button id="btnIntroStart" type="button" disabled>自分の trainer で走る</button>
     </div>
   </div>
 </div>
