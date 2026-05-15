@@ -30,9 +30,11 @@ import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide a
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
 // brief 34 ε: 公開ガードレール (= intro / consent 同意管理).
 import {
-  getIntroConsent, setIntroConsent,
-  getRideConsent, setRideConsent,
+  getIntroConsent, setIntroConsent, clearIntroConsent,
+  getRideConsent, setRideConsent, clearRideConsent,
 } from './lib/consent.js';
+// brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
+import { clearAllLocalData } from './lib/clear_local_data.js';
 
 // upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
 // 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
@@ -1717,6 +1719,63 @@ const btnStravaDisconnect = document.getElementById('btnStravaDisconnect');
 if (btnStravaDisconnect) btnStravaDisconnect.addEventListener('click', () => {
   revokeLocalToken();
   updateStravaStatusUI();
+});
+
+// brief 34 ε-5: 「このサイトの全データを削除」フロー.
+// btnClearAllData click → clear-confirm-overlay 表示 → 確認 → clearAllLocalData 実行 →
+// clear-done-overlay 表示 → OK で intro overlay からやり直し.
+function showClearConfirm() {
+  const ov = document.getElementById('clear-confirm-overlay');
+  if (ov) ov.style.display = 'flex';
+}
+function hideClearConfirm() {
+  const ov = document.getElementById('clear-confirm-overlay');
+  if (ov) ov.style.display = 'none';
+}
+function showClearDone(statusText) {
+  const ov = document.getElementById('clear-done-overlay');
+  const st = document.getElementById('clear-done-status');
+  if (st && statusText) st.textContent = statusText;
+  if (ov) ov.style.display = 'flex';
+}
+function hideClearDone() {
+  const ov = document.getElementById('clear-done-overlay');
+  if (ov) ov.style.display = 'none';
+}
+
+const btnClearAllData = document.getElementById('btnClearAllData');
+if (btnClearAllData) btnClearAllData.addEventListener('click', () => { showClearConfirm(); });
+
+const btnClearCancel = document.getElementById('btnClearCancel');
+if (btnClearCancel) btnClearCancel.addEventListener('click', () => { hideClearConfirm(); });
+
+const btnClearConfirm = document.getElementById('btnClearConfirm');
+if (btnClearConfirm) btnClearConfirm.addEventListener('click', async () => {
+  hideClearConfirm();
+  let msg = 'IndexedDB と localStorage が空になりました。';
+  try {
+    const res = await clearAllLocalData();
+    const parts = [];
+    parts.push(res.indexedDb.deleted ? 'IndexedDB: OK' : `IndexedDB: ${res.indexedDb.error || 'failed'}`);
+    parts.push(res.localStorage.cleared ? 'localStorage: OK' : `localStorage: ${res.localStorage.error || 'failed'}`);
+    msg = parts.join(' / ');
+  } catch (err) {
+    msg = `削除失敗: ${err && err.message ? err.message : String(err)}`;
+  }
+  showClearDone(msg);
+});
+
+const btnClearDoneOk = document.getElementById('btnClearDoneOk');
+if (btnClearDoneOk) btnClearDoneOk.addEventListener('click', () => {
+  hideClearDone();
+  // intro overlay からやり直し (= consent が削除済なので introConsented() === false).
+  // 全 overlay を hide + setAppState('checking') + showIntroOverlay.
+  document.getElementById('setup-overlay')?.classList.remove('visible');
+  document.getElementById('postride-overlay')?.classList.remove('visible');
+  document.getElementById('consent-overlay')?.classList.remove('visible');
+  hideConsentOverlay();
+  setAppState('checking');
+  showIntroOverlay();
 });
 
 // oauth-callback.html から postMessage で完了通知が来る (= 別 tab 経路).

@@ -373,6 +373,18 @@
         から fujihc-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
       </div>
     </section>
+
+    <!-- brief 34 ε-5: 「このサイトの全データを削除」UI. setup-overlay の末尾 section.
+         click → 確認 dialog (= #clear-confirm-overlay) → 実行 → 完了 dialog で
+         Strava 設定ページ link 再提示 + intro overlay からやり直し. -->
+    <section id="clear-data-section" style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333;">
+      <h3 style="color:#ff8866; font-size:14px; margin:0 0 0.4rem;">このサイトの全データを削除</h3>
+      <div style="color:#aaa; font-size:11px; margin-bottom:0.4rem;">
+        IndexedDB (= ride 履歴) と localStorage (= consent / Strava token / 設定値) を全削除し、
+        intro overlay からやり直します。 確認 dialog 必須 (= 共用 PC 誤動作防止)。
+      </div>
+      <button id="btnClearAllData" style="background:#221a08; color:#ff8866; border:1px solid #ff8866;">全データを削除...</button>
+    </section>
   </div>
 </div>
 
@@ -465,6 +477,46 @@
     <div class="actions">
       <button id="btnConfirmDemo">はい、 デモ走行</button>
       <button id="btnCancelDemo">いいえ、 戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-5: 「全データ削除」確認 dialog. confirm-overlay (z=1700) と同じ z 階層、
+     ただし別 ID で衝突回避。 共用 PC で誤動作しないよう「全データを削除...」click 後に
+     必ずこの dialog を経由させる (= 1 click flush 禁止)。 -->
+<div id="clear-confirm-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #ff8866; border-radius:8px; padding:1.2rem 1.4rem; max-width:480px;">
+    <h3 style="margin:0 0 0.6rem; color:#ff8866;">本当に全データを削除しますか?</h3>
+    <div style="color:#ddd; font-size:14px;">
+      以下が全て削除されます:
+      <ul style="margin:0.4rem 0; padding-left:1.4rem; color:#aaa; font-size:13px;">
+        <li>IndexedDB の ride 履歴 (= 「履歴に保存」した全 ride)</li>
+        <li>localStorage の consent 記録 / Strava token / client_id / 設定スライダ値 / 前回 trainer アドレス</li>
+      </ul>
+      <strong style="color:#ff8;">この操作は取り消せません。</strong> Strava 側の連携 (= app 認可) は別途
+      <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">Strava 設定ページ</a>
+      で revoke してください。
+    </div>
+    <div style="margin-top:0.8rem; display:flex; gap:0.4rem;">
+      <button id="btnClearConfirm" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#ff8866; color:#000; border:none; border-radius:4px;">はい、 削除する</button>
+      <button id="btnClearCancel" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#14141a; color:#aaa; border:1px solid #444; border-radius:4px;">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-5: 全データ削除完了 dialog. Strava 設定ページへの link を再提示し、
+     OK で intro overlay からやり直しに遷移する。 -->
+<div id="clear-done-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1710; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #7fff00; border-radius:8px; padding:1.2rem 1.4rem; max-width:480px;">
+    <h3 style="margin:0 0 0.6rem; color:#7fff00;">✓ 全データを削除しました</h3>
+    <div id="clear-done-status" style="color:#ddd; font-size:14px; margin-bottom:0.4rem;">IndexedDB と localStorage が空になりました。</div>
+    <div style="color:#ddd; font-size:13px;">
+      Strava 連携 (= app 認可) は client side では取り消せません。 完全に断つには
+      <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">Strava 設定 → 連携アプリ</a>
+      で fujihc-trainer を revoke してください。
+    </div>
+    <div style="margin-top:0.8rem; display:flex; gap:0.4rem;">
+      <button id="btnClearDoneOk" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#7fff00; color:#000; border:none; border-radius:4px;">OK (intro からやり直し)</button>
     </div>
   </div>
 </div>
