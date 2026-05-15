@@ -1193,6 +1193,10 @@ function updateActionButtonsForTerrain() {
   const introView = typeof document !== 'undefined' ? document.getElementById('btnIntroView') : null;
   if (introStart) introStart.disabled = !isActionableNow();
   if (introView) introView.disabled = !isActionableNow();
+  // 2026-05-15 fix: setup-overlay の「コースを観る」ボタンも intro view と同じ
+  // 地形 gate に乗せる (= user 指摘「観るボタンを地形 Data が揃うまで押せないようにしろ」反映).
+  const setupGoView = typeof document !== 'undefined' ? document.getElementById('btnSetupGoView') : null;
+  if (setupGoView) setupGoView.disabled = !isActionableNow();
   // setup
   const btnScan = typeof document !== 'undefined' ? document.getElementById('btnScan') : null;
   const btnScanHrm = typeof document !== 'undefined' ? document.getElementById('btnScanHrm') : null;
