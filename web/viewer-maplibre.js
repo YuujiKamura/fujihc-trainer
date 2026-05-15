@@ -1733,6 +1733,25 @@ async function loadCourse() {
   // Zwift Climb Portal 風: flat=緑 / gentle=黄緑 / moderate=黄 / hard=橙 / very_hard=赤 / extreme=紫.
   if (!map.getSource('route')) {
     map.addSource('route', { type: 'geojson', data: buildGradeColoredRoadPolygons(course, 5) });
+    // 2026-05-16 user 「zoom out 時は今の 2 倍に広く、 zoom in 時は最大で今の 70% に狭く」.
+    // zoom 13 (= 最遠) で 2.0x、 zoom 21 (= default) で 1.0x、 zoom 24 (= 最近) で 0.7x.
+    // 折れ線で連動、 zoom 0.25 単位で throttle して再生成負荷を抑える.
+    const _routeMul = (zoom) => {
+      if (zoom <= 21) return Math.min(2.0, 1.0 + (21 - zoom) * 0.125);  // 21→1.0、 13→2.0
+      return Math.max(0.7, 1.0 - (zoom - 21) * 0.1);                    // 21→1.0、 24→0.7
+    };
+    let _lastZoomKey = null;
+    const _rebuildRoute = () => {
+      const z = map.getZoom();
+      const key = Math.round(z * 4) / 4;  // 0.25 step throttle
+      if (key === _lastZoomKey) return;
+      _lastZoomKey = key;
+      const widthM = 5 * _routeMul(z);
+      const src = map.getSource('route');
+      if (src) src.setData(buildGradeColoredRoadPolygons(course, widthM));
+    };
+    map.on('zoom', _rebuildRoute);
+    _rebuildRoute();  // 初回適用
     // Fix2: 道路 polygon を **最前面** に挿入 (= beforeId 削除).
     // 旧仕様で beforeId='roads' にしていたが、 OSM roads-major (= 橙線) が
     // polygon を貫いて表示されてしまうため、 polygon を上に置いて道幅を露出させる.
