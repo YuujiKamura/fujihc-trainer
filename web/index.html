@@ -2,9 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<!-- brief 33: CSP `script-src 'self'` (= XSS 経由 token exfiltration の物理 gate). connect-src は Strava endpoint 経由を許可。
-     img-src に https://*.strava.com を含めるのは将来の activity サムネ表示用 (= 本 brief では使わないが将来余白)。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
+<!-- brief 33: CSP script-src self (= XSS 経由 token exfiltration の物理 gate). connect-src は Strava endpoint 経由を許可。
+     img-src に https://*.strava.com を含めるのは将来の activity サムネ表示用 (= 本 brief では使わないが将来余白)。
+     brief 34 ε-10: worker-src self blob: を追加 (= vendored maplibre-gl.js が setWorkerUrl(URL.createObjectURL(new Blob([...]))) で
+     自前 worker bundle を起動するため、 script-src の fallback だけだと blob: worker が block されて map が描画されない).
+     surface 拡大の評価: (a) script-src self 維持で外部 script 注入は物理 block 済 (= brief33_grep_gate で別 pin)、
+     (b) connect-src を Strava 限定で attacker domain への exfil 経路を絞り済、
+     (c) worker からの fetch は親 document の connect-src を継承するため worker 経由 surface も同制約下、
+     (d) brief 33 §11.5 の 4 重 gate (script-src self / inline script ゼロ / vendoring / revokeLocalToken) は維持。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
 <title>fujihc viewer (MapLibre 試験版)</title>
 <!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
      license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->

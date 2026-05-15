@@ -62,7 +62,11 @@ export function buildGsiProbeUrls(tileBaseUrl, opts = {}) {
 
 // status snapshot を組み立てる純 helper. UI 側 (subscribe callback 内) で都度参照しても
 // 整合した値が返るよう、 mutable な内部 state を毎回 freeze 済 object として export する。
-function freezeStatus(label, done, total, error) {
+//
+// brief 34 ε-10: rangeWarning を追加. pmtiles 配信 server が HTTP Range request 非対応
+// (= status 200 or 416) の場合に warn 文字列 (= UI に「⚠ サーバが Range request 非対応…」
+// として表示)。 terrainReady には影響しない (= warn 専用、 fatal ではない)。
+function freezeStatus(label, done, total, error, rangeWarning) {
   const percent = total > 0 ? Math.min(100, Math.round((100 * done) / total)) : 0;
   const phase = error
     ? 'failed'
@@ -71,7 +75,7 @@ function freezeStatus(label, done, total, error) {
       : done > 0
         ? 'loading'
         : 'pending';
-  return Object.freeze({ phase, label, percent, done, total, error });
+  return Object.freeze({ phase, label, percent, done, total, error, rangeWarning: rangeWarning || null });
 }
 
 /**
@@ -96,6 +100,9 @@ export function createTerrainLoader(cfg) {
   let pmtilesDone = false;
   let gsiDone = 0;
   let error = null;
+  // brief 34 ε-10: pmtiles 配信 server が Range request 非対応の場合の warn (= null / string).
+  // terrainReady には影響しないため error とは別管理 (= warn 専用、 UI 表示のみ).
+  let rangeWarning = null;
   let started = false;
 
   // step 数の決め方:
@@ -121,7 +128,7 @@ export function createTerrainLoader(cfg) {
     return parts.join(' | ');
   }
   function snapshot() {
-    return freezeStatus(buildLabel(), doneSteps(), totalSteps(), error);
+    return freezeStatus(buildLabel(), doneSteps(), totalSteps(), error, rangeWarning);
   }
   function notify() {
     const snap = snapshot();
@@ -155,6 +162,44 @@ export function createTerrainLoader(cfg) {
       error = `pmtiles 取得失敗: ${e.message || e}`;
     }
   }
+  // brief 34 ε-10: pmtiles は Range request (HTTP Byte Serving) 前提で読まれる (= pmtiles.js
+  // 内部の getBytes が `Range: bytes=X-Y` を発火、 server が 206 Partial Content を返すこと
+  // が必要)。 server が Range 非対応 (= python -m http.server) の場合、 HEAD probe は ok でも
+  // 実 map 描画時に「Server returned no content-length header」 error で失敗する。
+  // この経路を ε-9 ready gate の手前で検出するために、 pmtiles HEAD probe 成功後に短い
+  // Range probe を 1 度試して、 結果を warn として UI に表示する (= terrainReady は変えない、
+  // user に「地図描画が機能しない可能性」を伝える)。
+  async function probePmtilesRange() {
+    if (!usePmtiles || !pmtilesDone) return;
+    try {
+      const resp = await fetchImpl(cfg.pmtilesUrl, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-127' },
+      });
+      if (!resp) return;  // 何も返らない場合は warn せず silent (= 環境固有 mock の安全側)
+      if (resp.status === 206) {
+        // Partial Content: server が Range を尊重 → ok、 warn 不要.
+        return;
+      }
+      if (resp.status === 200) {
+        // 200: server が Range header を無視して全 body 返却 → Range 非対応.
+        rangeWarning = '⚠ サーバが Range request 非対応 (= 200 で全 body 返却)、 地図描画が機能しない可能性';
+        return;
+      }
+      if (resp.status === 416) {
+        // 416 Range Not Satisfiable: server は Range 知ってるが要求 range が範囲外 →
+        // file size が 128 byte 未満等の異常、 ただし server 自体は Range 対応している可能性あり。
+        // pmtiles ファイルが正常なら 1MB+ で 416 にはならない、 file 異常の警告.
+        rangeWarning = '⚠ pmtiles file への Range request が 416 (= file 異常 or 範囲外)、 地図描画が機能しない可能性';
+        return;
+      }
+      // それ以外 (= 4xx/5xx with non-416): 通常 fetch でも失敗するはず、 warn のみ.
+      rangeWarning = `⚠ pmtiles Range probe HTTP ${resp.status} (= 地図描画が機能しない可能性)`;
+    } catch (e) {
+      // network error 等: silent (= 既存 HEAD probe success の延長で出る軽量 probe、
+      // ここで warn を出すと false-positive 多発するため敢えて silent).
+    }
+  }
   async function probeGsi() {
     // 3 枚を並列 fetch、 1 枚成功で 1 increment.
     const results = await Promise.allSettled(
@@ -179,9 +224,13 @@ export function createTerrainLoader(cfg) {
       if (started) return snapshot();
       started = true;
       notify();  // pending 状態を最初に通知
-      // 各 probe を並列で実行、 各々 notify を 1 回ずつ呼ぶ
+      // 各 probe を並列で実行、 各々 notify を 1 回ずつ呼ぶ.
+      // brief 34 ε-10: pmtiles の Range probe は HEAD probe 成功後 (= sequence) に走らせる.
+      // 失敗時の rangeWarning は warn 専用で terrainReady を切らないため、 done 推移とは別 lane.
       const courseTask = probeCourse().then(() => notify());
-      const pmtilesTask = usePmtiles ? probePmtiles().then(() => notify()) : Promise.resolve();
+      const pmtilesTask = usePmtiles
+        ? probePmtiles().then(() => probePmtilesRange()).then(() => notify())
+        : Promise.resolve();
       const gsiTask = probeGsi().then(() => notify());
       await Promise.all([courseTask, pmtilesTask, gsiTask]);
       // 最終 notify (= 全 step 終了で done に推移、 subscriber に最終 snapshot を保証).

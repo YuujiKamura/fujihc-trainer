@@ -130,6 +130,30 @@ describe('brief 34 ε-6 integration: 全 overlay の HTML 初期 state (= defaul
   it('CSP script-src self (= ε-6 で attribution 監視と同列に重要、 既存 brief 33 から維持)', () => {
     expect(HTML).toMatch(/Content-Security-Policy[^>]*script-src 'self'/);
   });
+
+  it('brief 34 ε-10: CSP worker-src self blob (= vendored maplibre-gl.js の `setWorkerUrl(URL.createObjectURL(new Blob(...)))` 起動を許可、 観るモード遷移後の地図描画 fix)', () => {
+    // script-src の fallback だけでは blob worker が block されて map 描画が空白になる症状を fix.
+    // 撤回時の CI 検知用 grep pin (= directive を消したら本 test で fail).
+    expect(HTML).toMatch(/Content-Security-Policy[^>]*worker-src 'self' blob:/);
+  });
+
+  it('brief 34 ε-10: CSP に script-src 維持と worker-src 追加が共存 (= 4 重 gate 維持)', () => {
+    // script-src 'self' / worker-src 'self' blob: の両方が同 meta 内に存在することを直接 assert.
+    // ToS-bearing な 4 重 gate (a) script-src 'self' (b) no unsafe-inline (c) vendoring (d) revokeLocalToken の
+    // (a) は維持、 (b) は brief33_grep_gate で別 pin、 (c) は §11.6 で別 pin。 worker-src は (a) と独立 directive.
+    const cspMatch = HTML.match(/Content-Security-Policy"\s+content="([^"]+)"/);
+    expect(cspMatch).not.toBeNull();
+    const csp = cspMatch[1];
+    expect(csp).toMatch(/script-src 'self'/);
+    expect(csp).toMatch(/worker-src 'self' blob:/);
+    // unsafe-inline が script-src / worker-src に紛れていないこと.
+    const scriptSrcMatch = csp.match(/script-src[^;]*/);
+    const workerSrcMatch = csp.match(/worker-src[^;]*/);
+    expect(scriptSrcMatch).not.toBeNull();
+    expect(workerSrcMatch).not.toBeNull();
+    expect(scriptSrcMatch[0]).not.toMatch(/unsafe-inline/);
+    expect(workerSrcMatch[0]).not.toMatch(/unsafe-inline/);
+  });
 });
 
 describe('brief 34 ε-6 integration: intro / footer の帰属メッセージ整合 (= 公開可否の最終 gate)', () => {

@@ -484,6 +484,8 @@ function updateTerrainStep(phase) {
 
 // brief 34 ε-9: 地形データ準備のステータステキスト更新 (= #terrain-status).
 //   phase で色を変える: pending/loading=黄 / done=緑 / failed=赤.
+//   brief 34 ε-10: rangeWarning (= pmtiles Range request 非対応の警告) を末尾に追記、
+//   warn は console.warn にも 1 度出す (= 開発時に DevTools で気付くため).
 function setTerrainStatusUI(snap) {
   const el = document.getElementById('terrain-status');
   if (!el) return;
@@ -496,6 +498,15 @@ function setTerrainStatusUI(snap) {
   } else {
     el.textContent = `地形データ読み込み中... ${snap.label} (${snap.percent}%)`;
     el.style.color = '#ffd54a';
+  }
+  // brief 34 ε-10: rangeWarning が立ったら status text に追記。 done 後でも user が
+  // 「準備完了なのに地図が出ない」を疑える文言を残す (= warn を見える化)。
+  if (snap.rangeWarning) {
+    el.textContent += ` ${snap.rangeWarning}`;
+    if (!setTerrainStatusUI._loggedRangeWarn) {
+      console.warn('[fujihc] terrain_loader range probe:', snap.rangeWarning);
+      setTerrainStatusUI._loggedRangeWarn = true;
+    }
   }
 }
 

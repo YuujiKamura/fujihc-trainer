@@ -38,15 +38,29 @@ python scripts/fetch_osm_pmtiles.py # OSM 地名抽出 (= 数秒)
 
 viewer の操作系 (= camera / wheel zoom / pitch drag / ride 進行 button) を
 trainer や bridge.py を起動せずに確認できる. fake state が 1Hz で流れて
-ride_start ボタンで pairing → riding 遷移、 button 全部押せる:
+ride_start ボタンで pairing → riding 遷移、 button 全部押せる。
+
+**dev server 選択 (brief 34 ε-10)**: pmtiles を経由した地図描画 (= 観るモード /
+走るモードの map 表示) は **HTTP Range request (Byte Serving)** が必須。
+`python -m http.server` は Range 非対応のため、 `?test=1` の純粋な UI 操作確認以外
+(= 観るモード / 地図描画を含む動作) では使えない (= pmtiles が「Server returned no
+content-length header」error で読めず、 地図が灰色のまま)。
 
 ```sh
+# (A) 観るモード / 走るモード を含む fully functional な local 確認 (= 推奨)
+#     aiohttp 経由で Range request 対応、 地図描画 (pmtiles) が動く。
+python -m fujihc.bridge --dummy
+# その後 browser で http://localhost:8000/?test=1 (= ?test=1 で fake state、 trainer 不要)
+
+# (B) UI 操作のみの軽量確認 (= 地図描画は機能しない、 limited)
+#     Range request 非対応、 tile が 404 で灰色背景になり pmtiles map も読めない。
+#     `index.html` / script の 200 配信を見るだけの用途に限定。
 python -m http.server -d web/ 8000
-# その後 browser で http://localhost:8000/?test=1
 ```
 
-- tile は 404 で灰色背景 (= ローカル DB 無しでも画面操作だけ確認可)
-- ride 中の GPU 負荷 / FPS / 温度を実測したいなら通常モード (`python -m fujihc.bridge --dummy`) を使う、 こちらは tile + WebSocket + dummy ride loop が全部走る
+- (A) は tile + WebSocket + dummy ride loop が全部走る、 GPU 負荷 / FPS / 温度 実測も可
+- (B) は `python -m http.server` 由来の Range 非対応で pmtiles map が描画できない、 観るモード遷移しても地図が空白
+- GitHub Pages 本番は Cloudflare 経由で `Accept-Ranges: bytes` 対応済、 prod では (A)/(B) の差異は問題にならない
 
 ## テスト
 

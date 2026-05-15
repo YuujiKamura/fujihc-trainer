@@ -224,3 +224,128 @@ describe('createTerrainLoader: snapshot は frozen', () => {
     expect(Object.isFrozen(loader.getStatus())).toBe(true);
   });
 });
+
+// brief 34 ε-10: pmtiles Range request probe の動作 pin.
+// HEAD で pmtiles 存在を確認した直後に Range request 1 回試して、 server が
+// 206 を返さない場合 (= 200 / 416) は rangeWarning を立てる。 terrainReady には影響しない。
+describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
+  // fetch impl が Request init に応じて分岐する mock を作る helper.
+  // method, headers.Range の組合せ毎に response を返す。
+  function makeRangeFetch({ headStatus = 200, rangeStatus = 206 } = {}) {
+    return async (url, init) => {
+      const method = (init && init.method) || 'GET';
+      const hasRange = !!(init && init.headers && init.headers.Range);
+      if (url.endsWith('.pmtiles')) {
+        if (method === 'HEAD') {
+          return { ok: headStatus < 400, status: headStatus };
+        }
+        if (hasRange) {
+          // Range request: 指定 status を返す (= 206/200/416 等).
+          return { ok: rangeStatus < 400, status: rangeStatus };
+        }
+        // Range header 無しの GET は HEAD と同等扱い (= test では起きないはず).
+        return { ok: headStatus < 400, status: headStatus };
+      }
+      return ok();
+    };
+  }
+
+  it('206 Partial Content → rangeWarning is null、 isReady true', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 206 }),
+    });
+    await loader.start();
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().rangeWarning).toBeNull();
+  });
+
+  it('200 OK (= Range header 無視) → rangeWarning 立つ、 isReady は true (= warn 専用)', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 200 }),
+    });
+    await loader.start();
+    // warn 立つが terrainReady は維持 (= 致命でない、 user 通知のみ).
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().rangeWarning).toMatch(/Range request 非対応/);
+  });
+
+  it('416 Range Not Satisfiable → rangeWarning 立つ、 isReady true', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 416 }),
+    });
+    await loader.start();
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().rangeWarning).toMatch(/416/);
+  });
+
+  it('network error (= fetch reject) on Range probe → rangeWarning null (= silent fallback)', async () => {
+    // HEAD は ok だが Range request は reject する fetch impl.
+    const fetchImpl = async (url, init) => {
+      const method = (init && init.method) || 'GET';
+      const hasRange = !!(init && init.headers && init.headers.Range);
+      if (url.endsWith('.pmtiles')) {
+        if (method === 'HEAD') return { ok: true, status: 200 };
+        if (hasRange) throw new Error('NetworkError on Range');
+        return { ok: true, status: 200 };
+      }
+      return ok();
+    };
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl,
+    });
+    await loader.start();
+    // HEAD probe ok なので isReady は true、 Range probe は silent fail で warn 立たない.
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().rangeWarning).toBeNull();
+  });
+
+  it('pmtilesUrl 省略 (= bridge mode) → Range probe 走らない、 rangeWarning null', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: async () => ok(),
+    });
+    await loader.start();
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().rangeWarning).toBeNull();
+  });
+
+  it('pmtiles HEAD probe 失敗 → Range probe skip、 rangeWarning null (= 既存 pmtiles 取得失敗 error が出る)', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: makeRangeFetch({ headStatus: 404, rangeStatus: 206 }),
+    });
+    await loader.start();
+    expect(loader.isReady()).toBe(false);
+    expect(loader.getStatus().error).toMatch(/pmtiles/);
+    // HEAD で落ちた段階で Range probe は走らないため warn は立たない (= 既存 error 表示が優先).
+    expect(loader.getStatus().rangeWarning).toBeNull();
+  });
+
+  it('rangeWarning は snapshot 内に含まれて frozen', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/c',
+      pmtilesUrl: '/p.pmtiles',
+      gsiTileBaseUrl: '/g',
+      fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 200 }),
+    });
+    await loader.start();
+    const s = loader.getStatus();
+    expect(Object.isFrozen(s)).toBe(true);
+    expect('rangeWarning' in s).toBe(true);
+  });
+});
