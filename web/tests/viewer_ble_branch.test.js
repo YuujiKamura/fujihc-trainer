@@ -62,10 +62,12 @@ describe('brief 32: index.html の ble-section', () => {
     expect(html).toMatch(/class="ble-support-msg"[^>]*hidden/);
   });
 
-  it('既存 #setup-buttons の bridge mode 4 button は不変', () => {
+  it('#setup-buttons の bridge mode button (= scan / scanHrm / closePairing、 2026-05-15 で btnSkip 撤去)', () => {
+    // btnSkip (= 「trainer なしでデモ走行」) は user 訂正「走ると観るの 2 択、 3 つ目を増やすな」反映で撤去。
+    // デモ走行は「コースを観る」モードに統合済み、 重複ボタンを削除。
     expect(html).toMatch(/id="btnScan"/);
     expect(html).toMatch(/id="btnScanHrm"/);
-    expect(html).toMatch(/id="btnSkip"/);
     expect(html).toMatch(/id="btnClosePairing"/);
+    expect(html).not.toMatch(/id="btnSkip"/);
   });
 });
