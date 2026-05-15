@@ -1465,19 +1465,41 @@ async function checkRestoreThenDispatch() {
     defaultDispatch();
     return;
   }
+  // 2026-05-16 fix: F5 reload で真っ黒で詰む user 報告。 IndexedDB hang / 壊れた record /
+  // showRestoreDialog の例外いずれでも defaultDispatch (= intro へ) に escape して
+  // 「真っ黒で詰む」 状態を絶対作らない。 3 秒 timeout も被せる。
   let pending = false;
   let rec = null;
   try {
-    pending = await hasPendingAutosave();
-    if (pending) rec = await loadAutosave();
+    const ioPromise = (async () => {
+      const p = await hasPendingAutosave();
+      const r = p ? await loadAutosave() : null;
+      return { p, r };
+    })();
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('__timeout__'), 3000));
+    const result = await Promise.race([ioPromise, timeoutPromise]);
+    if (result === '__timeout__') {
+      console.warn('[fujihill] autosave check timeout, fallback to defaultDispatch');
+      defaultDispatch();
+      return;
+    }
+    pending = result.p;
+    rec = result.r;
   } catch (err) {
     console.warn('autosave check failed:', err);
+    defaultDispatch();
+    return;
   }
   if (!pending || !rec) {
     defaultDispatch();
     return;
   }
-  showRestoreDialog(rec);
+  try {
+    showRestoreDialog(rec);
+  } catch (err) {
+    console.warn('showRestoreDialog failed, fallback to intro:', err);
+    defaultDispatch();
+  }
 }
 
 function showRestoreDialog(rec) {
