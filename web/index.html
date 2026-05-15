@@ -183,6 +183,23 @@
   #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
   #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
   #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  /* 2026-05-15 fix: 走行系 button (= 地形 load 完了まで disabled) のグレーアウト表現を強制.
+     btnSetupGoView は inline style で色 hardcode してたので :disabled 擬似クラスが効かなかった、
+     ここで `button:disabled` を high-specificity で上書きして disabled 時は灰色 + not-allowed cursor. */
+  button#btnIntroStart:disabled,
+  button#btnIntroView:disabled,
+  button#btnSetupGoView:disabled,
+  button#btnScan:disabled,
+  button#btnScanHrm:disabled,
+  button#btn-ble-trainer:disabled,
+  button#btn-ble-hrm:disabled,
+  button#btnRideStart:disabled {
+    background: #333 !important;
+    color: #666 !important;
+    border-color: #555 !important;
+    cursor: not-allowed !important;
+    opacity: 0.55;
+  }
   #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
 
   /* 2026-05-15 fix: 観るモード ride 中に右上常時表示する区間リスト panel.
