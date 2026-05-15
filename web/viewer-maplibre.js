@@ -252,6 +252,10 @@ function bootMap(env) {
     setupWheelZoom();
     setupPitchDrag();
     loadCourse();
+    // brief 34 ε-6: 帰属表示 (= attribution control) の display を 1 度 assert。
+    // CSS で `display:none` にされたら OSM ODbL / 国土地理院 規約違反、 warning を出す
+    // (= block はせず flag のみ、 harm 主体は inject した訪問者本人).
+    requestAnimationFrame(() => verifyAttributionVisible());
   });
   map.on('error', (e) => {
     console.warn('maplibre error:', e && e.error);
@@ -710,6 +714,37 @@ function maybeSendSlope(slope_pct) {
   if (lastSlopeSent !== null && Math.abs(scaled - lastSlopeSent) < 0.1) return;
   client.sendSetSlope(scaled);
   lastSlopeSent = scaled; lastSlopeSendT = now;
+}
+
+// brief 34 ε-6: attribution control の display 監視.
+// MapLibre の標準 attribution (= 国土地理院 / OSM / MapLibre 出典) が DevTools 経由で
+// `display:none` を inject されると ODbL / 国土地理院 規約違反、 ただし harm 主体は inject
+// した訪問者本人 (= 第三者には影響しない、 LOAD-BEARING 上限) なので block ではなく
+// warning banner を出すだけ。 起動 1 回限定。
+function verifyAttributionVisible() {
+  try {
+    const attribEl = document.querySelector('.maplibregl-ctrl-attrib');
+    if (!attribEl) {
+      // attribution control が DOM に居ない (= disable された) → これも違反
+      showAttributionWarning('attribution control が DOM に存在しません');
+      return;
+    }
+    const cs = getComputedStyle(attribEl);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) {
+      showAttributionWarning(`attribution が表示されていません (display=${cs.display}, visibility=${cs.visibility}, opacity=${cs.opacity})`);
+    }
+  } catch (err) {
+    // querySelector / getComputedStyle が失敗するのは jsdom 等の test 環境、 silent。
+  }
+}
+function showAttributionWarning(detail) {
+  console.warn('[fujihc] 帰属表示が表示されていません:', detail);
+  // warning banner を画面上端に表示 (= 既存 #status を借りる、 別 DOM 追加せず軽量).
+  const st = document.getElementById('status');
+  if (st) {
+    st.style.color = '#ff8866';
+    st.textContent = '[警告] 帰属表示 (国土地理院 / OSM / MapLibre) が消えています';
+  }
 }
 
 // brief 34 ε-2 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay 表示 / ボタン bind.
