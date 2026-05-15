@@ -1215,21 +1215,18 @@ function initViewMode() {
   const waitForCourse = setInterval(() => {
     if (course && course.length > 0) {
       clearInterval(waitForCourse);
+      // 2026-05-15 fix: 観るモードでは course 準備完了時に rideState を start 状態にして
+      // おく (= active=true, paused=false, curDist=0). 初回 click も viewTransition で
+      // 100km/h 移動できるようにするため (= 旧 logic は初回だけ startFrom で瞬間ジャンプ).
+      if (rideState) rideState.start();
+      rideStartedAt = performance.now();
+      setAppState('riding');
       renderSectionList(course, (sec) => {
-        // section 行クリック → rideState を section 始点から開始 (= ride 中でも再選択可).
+        // section 行クリック → 常に viewTransition (= 100km/h スムーズ移動) で targetDist へ.
+        // 既に近ければ seekToward が 1 frame で到達して silently 終了する.
         if (!rideState) return;
         const targetDist = course[sec.start_idx].distance_m;
-        const snap = rideState.snapshot();
-        if (snap.active && Math.abs(snap.distance - targetDist) > 1) {
-          // 2026-05-15 user 指示「区間移動を時速100km移動にしよう」: 既に ride 中で
-          // 距離が違う区間 click なら、 startFrom (= 瞬間ジャンプ) ではなく viewTransition
-          // を立てて tick で seekToward を回す (= 100km/h 相当で道沿いにスムーズ移動).
-          viewTransition = { active: true, targetDist };
-        } else {
-          rideState.startFrom(sec.start_idx);
-        }
-        rideStartedAt = performance.now();
-        setAppState('riding');
+        viewTransition = { active: true, targetDist };
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
         const list = document.getElementById('section-list');
         if (list) {
@@ -1923,14 +1920,16 @@ function tick(t) {
   const courseBearing = cam.bearing + bearingDiff * frac;
   // 2026-05-15: user の横ドラッグ分を進行方向に加算 (= 旋回オフセットを維持).
   const smoothBearing = (courseBearing + userBearingOffset + 360) % 360;
-  const headingRad = smoothBearing * Math.PI / 180;
+  // 2026-05-15 fix (user 指示「自機の豆腐は進行方向を向くように固定」): 豆腐の向きは
+  // 旋回 offset を含めない courseBearing で決める。 camera だけが旋回 offset を反映。
+  const riderHeadingRad = (courseBearing + 360) % 360 * Math.PI / 180;
 
   // スピナー累積角を cadence rpm に応じて進める (rpm → rad/s = rpm * 2π / 60)
   spinAngle += currentCadence * (2 * Math.PI / 60) * dt;
   // rider 立体を rider 位置 + 進行方向 + スピン角で更新
   const ridSrc = map.getSource && map.getSource('rider');
   if (ridSrc) {
-    ridSrc.setData(buildRiderFeatures(rLat, rLon, headingRad, spinAngle));
+    ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, spinAngle));
   }
 
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
