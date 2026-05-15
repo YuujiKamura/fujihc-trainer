@@ -1608,14 +1608,11 @@ function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
       resolve();
     };
     img.onerror = () => {
-      // brief 30: 一次経路 (= DB cache) が 404/503 で空振ったら、 fallback で OSM 直叩き
-      // (= 起動直後 / bridge 未起動 / cache 構築前)。 二度目の error は silent resolve.
-      // ※ ここに来るのは bridge mode のみ (= 上の early return で static は除外済)。
-      if (!tried) {
-        tried = true;
-        img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
-        return;
-      }
+      // 2026-05-15 fix: OSM 公式 (tile.openstreetmap.org) への直叩き fallback を撤去。
+      // CSP の img-src は 'self' + Strava のみ、 OSM 直叩きは block されて Console に
+      // 「CSP violation」 が並んでいた。 2026-05-14 user 訂正「ローカル DB にタイルを
+      // 整備したらダメなんか」と整合 (= 第三者 OSM サーバへの heavy use 回避 + CSP
+      // error 消滅)。 cache miss は silent resolve、 minimap の該当タイルは透明で OK。
       resolve();
     };
     // brief 30 一次経路: bridge 経由で DB tiles table から hit (= source='osm_raster')。
