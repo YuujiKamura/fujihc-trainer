@@ -142,6 +142,37 @@ export function createRideState(course) {
       trkpts = [];
     },
 
+    /**
+     * 2026-05-15: 区間ジャンプ用のスムーズ移動 API. targetDist に向かって
+     * dt * speedMps 分だけ curDist を動かす (= 前後どちらにも対応). 残差が
+     * 1 step を超えなければ targetDist にスナップして true を返す。 観るモードで
+     * 別区間を選んだ時に「ワープではなく時速 100km 等で道沿いに移動」 する用途。
+     * paused / inactive / 不正引数は no-op で false を返す (= 既存 advance と同 ガード).
+     *
+     * @param {number} targetDist
+     * @param {number} dt
+     * @param {number} speedMps
+     * @returns {boolean} target に到達したら true、 未到達なら false
+     */
+    seekToward(targetDist, dt, speedMps) {
+      if (paused) return false;
+      if (course.length === 0) return false;
+      if (!(dt > 0) || !(speedMps > 0)) return false;
+      const clampedTarget = clampDist(Number(targetDist));
+      const diff = clampedTarget - curDist;
+      const step = speedMps * dt;
+      if (Math.abs(diff) <= step) {
+        curDist = clampedTarget;
+      } else {
+        curDist = clampDist(curDist + Math.sign(diff) * step);
+      }
+      // curIdx を curDist 直下の course point に再計算 (= 前進 / 後退どちらにも対応).
+      let i = 0;
+      while (i < lastIdx && course[i + 1].distance_m <= curDist) i++;
+      curIdx = i;
+      return curDist === clampedTarget;
+    },
+
     end() {
       paused = true;
       active = false;

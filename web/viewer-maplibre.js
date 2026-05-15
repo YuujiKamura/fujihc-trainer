@@ -1209,7 +1209,16 @@ function initViewMode() {
       renderSectionList(course, (sec) => {
         // section 行クリック → rideState を section 始点から開始 (= ride 中でも再選択可).
         if (!rideState) return;
-        rideState.startFrom(sec.start_idx);
+        const targetDist = course[sec.start_idx].distance_m;
+        const snap = rideState.snapshot();
+        if (snap.active && Math.abs(snap.distance - targetDist) > 1) {
+          // 2026-05-15 user 指示「区間移動を時速100km移動にしよう」: 既に ride 中で
+          // 距離が違う区間 click なら、 startFrom (= 瞬間ジャンプ) ではなく viewTransition
+          // を立てて tick で seekToward を回す (= 100km/h 相当で道沿いにスムーズ移動).
+          viewTransition = { active: true, targetDist };
+        } else {
+          rideState.startFrom(sec.start_idx);
+        }
         rideStartedAt = performance.now();
         setAppState('riding');
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
@@ -1867,10 +1876,20 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
 }
 
+// 2026-05-15: 観るモードで別区間 click 時の「ワープではなく時速 100km で道沿い移動」 用 state.
+// active=true の間 tick が rideState.seekToward を回し、 targetDist に到達したら off.
+let viewTransition = { active: false, targetDist: 0 };
+const VIEW_TRANSITION_SPEED_MPS = 100 / 3.6;  // 100 km/h
+
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
   if (!rideState) { requestAnimationFrame(tick); return; }
-  rideState.advance(dt, playSpeed * speedMult);
+  if (viewTransition.active) {
+    const reached = rideState.seekToward(viewTransition.targetDist, dt, VIEW_TRANSITION_SPEED_MPS);
+    if (reached) viewTransition.active = false;
+  } else {
+    rideState.advance(dt, playSpeed * speedMult);
+  }
   const snap = rideState.snapshot();
   const curIdx = snap.idx;
   const curDist = snap.distance;
