@@ -379,17 +379,20 @@
         <dt>hr</dt><dd><span id="p-hr">--</span> bpm</dd>
       </dl></section>
     </div>
-    <h3>機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></h3>
-    <ul id="setup-list"></ul>
-    <div id="setup-error"></div>
-    <div id="setup-buttons">
-      <button id="btnScan">trainer スキャン</button>
-      <button id="btnScanHrm">心拍計スキャン</button>
-      <button id="btnSkip">trainer なしでデモ走行</button>
-      <button id="btnClosePairing" hidden>ライドに戻る</button>
-    </div>
-    <!-- brief 32: ?ble=1 (BLE_MODE) のときのみ unhide される直接 Web Bluetooth 接続 button 群.
-         bridge mode の #setup-buttons / #setup-list とは独立 (= 排他、 NG-R1-3 / NG-R1-7 再演回避). -->
+    <!-- 2026-05-15 fix: bridge mode 用 UI (= python BLE 経由の scan list) を section で囲み、
+         default 経路 (= Web Bluetooth) では 1 個 hide で全部消えるように。 -->
+    <section id="bridge-scan-section">
+      <h3>機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></h3>
+      <ul id="setup-list"></ul>
+      <div id="setup-error"></div>
+      <div id="setup-buttons">
+        <button id="btnScan">trainer スキャン</button>
+        <button id="btnScanHrm">心拍計スキャン</button>
+        <button id="btnSkip">trainer なしでデモ走行</button>
+        <button id="btnClosePairing" hidden>ライドに戻る</button>
+      </div>
+    </section>
+    <!-- brief 32: default 経路 (= initBleMode) で unhide、 訪問者は browser から直接 BLE 接続. -->
     <section id="ble-section" hidden>
       <h3>Web Bluetooth 直接接続</h3>
       <p style="color:#aaa; font-size:11px; margin:0 0 0.4rem;">bridge.py 無し、 ブラウザから直接 FTMS trainer と心拍計に接続します。</p>

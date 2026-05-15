@@ -745,11 +745,13 @@ async function initBleMode() {
   setText('setup-status', 'BLE モード: お使いの trainer / 心拍計を直接選んでください');
   setText('p-device', '(未接続)');
   setText('p-state', 'BLE 待機中');
-  // 既存 setup-overlay の scan list (= bridge mode 専用) は隠し、 #ble-section を unhide.
+  // 既存 setup-overlay の scan list (= bridge mode 専用) は section ごと隠し、 #ble-section を unhide.
+  // 2026-05-15 fix: 個別の #setup-buttons だけ hide すると h3「機器選択」+ #setup-list が残る、
+  // 親 #bridge-scan-section で 1 個 hide に統一して bridge UI 完全消去 + BLE UI のみ表示。
   const bleSection = document.getElementById('ble-section');
-  const scanBtnArea = document.getElementById('setup-buttons');
+  const bridgeSection = document.getElementById('bridge-scan-section');
   if (bleSection) bleSection.hidden = false;
-  if (scanBtnArea) scanBtnArea.hidden = true;
+  if (bridgeSection) bridgeSection.hidden = true;
 
   const supported = isWebBluetoothSupported();
   const supportMsg = document.querySelector('#ble-section .ble-support-msg');
