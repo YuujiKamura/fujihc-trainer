@@ -907,6 +907,19 @@ function initTestMode() {
       };
     },
   });
+  // 2026-05-16 fix: user 報告 「F5 すると HUD もなにもない画面で詰む」.
+  // ?test=1 は元々「自動 ride start」 設計だったが、 担当 C の preflight 統合で
+  // state 遷移経路 (= setAppState('riding')) が切断され body.state-checking のまま
+  // 残って HUD / controls / minimap 全部 hide。 client 起動後に startRideConfirmed を
+  // 呼んで state-riding に遷移、 走行画面を表示する。 setTimeout は terrainReady と
+  // map idle の完了を待つ (= 5 秒 fallback と整合).
+  setTimeout(() => {
+    try {
+      if (typeof startRideConfirmed === 'function') startRideConfirmed();
+    } catch (e) {
+      console.warn('[fujihill] initTestMode auto-start failed:', e);
+    }
+  }, 500);
 }
 
 function maybeSendSlope(slope_pct) {
