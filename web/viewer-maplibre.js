@@ -1215,18 +1215,20 @@ function initViewMode() {
   const waitForCourse = setInterval(() => {
     if (course && course.length > 0) {
       clearInterval(waitForCourse);
-      // 2026-05-15 fix: 観るモードでは course 準備完了時に rideState を start 状態にして
-      // おく (= active=true, paused=false, curDist=0). 初回 click も viewTransition で
-      // 100km/h 移動できるようにするため (= 旧 logic は初回だけ startFrom で瞬間ジャンプ).
+      // 2026-05-15 fix: 観るモードでは course 準備完了時点で rideState を start 状態にして
+      // おく (= active=true, paused=false, curDist=0). これで初回 click も viewTransition
+      // で 100km/h 移動できる (= 旧 logic は初回だけ startFrom で瞬間ジャンプだった).
+      // setAppState('riding') は click 時まで遅らせる (= minimap のタイル fetch が
+      // まだ進行中の状態で state-riding に入ると minimap が空のまま表示されてしまう).
       if (rideState) rideState.start();
-      rideStartedAt = performance.now();
-      setAppState('riding');
       renderSectionList(course, (sec) => {
         // section 行クリック → 常に viewTransition (= 100km/h スムーズ移動) で targetDist へ.
         // 既に近ければ seekToward が 1 frame で到達して silently 終了する.
         if (!rideState) return;
         const targetDist = course[sec.start_idx].distance_m;
         viewTransition = { active: true, targetDist };
+        rideStartedAt = performance.now();
+        setAppState('riding');
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
         const list = document.getElementById('section-list');
         if (list) {
