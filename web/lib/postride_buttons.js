@@ -57,7 +57,7 @@ export function bindPostRideButtons(cfg) {
   addClick(btnGpx, () => {
     const trkpts = cfg.getTrkpts();
     const summary = cfg.getSummary() || {};
-    const courseName = (cfg.getCourseName && cfg.getCourseName()) || 'fujihc ride';
+    const courseName = (cfg.getCourseName && cfg.getCourseName()) || 'fujihill ride';
     const xml = buildGpxXml(trkpts, { name: courseName, activity_type: 'Virtual Ride' });
     const blob = new Blob([xml], { type: 'application/gpx+xml' });
     const url = URL.createObjectURL(blob);
@@ -98,7 +98,7 @@ export function bindPostRideButtons(cfg) {
     // upload 実行
     const trkpts = cfg.getTrkpts();
     const summary = cfg.getSummary() || {};
-    const courseName = (cfg.getCourseName && cfg.getCourseName()) || 'fujihc ride';
+    const courseName = (cfg.getCourseName && cfg.getCourseName()) || 'fujihill ride';
     const xml = buildGpxXml(trkpts, { name: courseName, activity_type: 'Virtual Ride' });
     setStatus(`Strava へ送信中... (${trkpts.length} 点)`);
     // brief 34 ε-4: 商標混同対策の 2 重 gate 外側. caller (= ここ) でも先行 append/prepend、
@@ -140,7 +140,7 @@ export function bindPostRideButtons(cfg) {
         duration_s: Number(summary.duration_s || 0),
         elevation_gain_m: Number(summary.elevation_gain_m || 0),
         avg_power_w: summary.avg_power_w == null ? null : Number(summary.avg_power_w),
-        course_name: String(summary.course_name || 'fujihc'),
+        course_name: String(summary.course_name || 'fujihill'),
       },
       trkpts,
     });

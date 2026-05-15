@@ -13,7 +13,7 @@ beforeEach(async () => {
   // 全 DB を削除しておく (= fake-indexeddb は global state を持つ).
   try {
     await new Promise((resolve) => {
-      const req = globalThis.indexedDB.deleteDatabase('fujihc-trainer');
+      const req = globalThis.indexedDB.deleteDatabase('fujihill-trainer');
       req.onsuccess = resolve;
       req.onerror = resolve;
       req.onblocked = resolve;
@@ -64,10 +64,10 @@ describe('brief 34 ε-5: deleteIndexedDb', () => {
 describe('brief 34 ε-5: clearAllLocalStorage', () => {
   it('clear() を持つ storage は丸ごと clear する', () => {
     const ls = memStorage();
-    ls.setItem('fujihc.consent.intro.v1', '{"hash":"v1","accepted_at":"x"}');
-    ls.setItem('fujihc.consent.ride.v1', '{"hash":"v1","history":true}');
-    ls.setItem('fujihc.strava.token', '{"access_token":"a"}');
-    ls.setItem('fujihc.diff', '1.5');
+    ls.setItem('fujihill.consent.intro.v1', '{"hash":"v1","accepted_at":"x"}');
+    ls.setItem('fujihill.consent.ride.v1', '{"hash":"v1","history":true}');
+    ls.setItem('fujihill.strava.token', '{"access_token":"a"}');
+    ls.setItem('fujihill.diff', '1.5');
     expect(ls._size()).toBe(4);
     const res = clearAllLocalStorage({ storage: ls });
     expect(res.cleared).toBe(true);
@@ -76,13 +76,13 @@ describe('brief 34 ε-5: clearAllLocalStorage', () => {
 
   it('clear() を持たない storage は既知 key を removeItem で削除 (= fallback path)', () => {
     const m = new Map();
-    m.set('fujihc.consent.intro.v1', 'v1');
-    m.set('fujihc.consent.ride.v1', 'v1');
-    m.set('fujihc.strava.token', 'tok');
-    m.set('fujihc.strava.client_id', 'cid');
-    m.set('fujihc.trainer.address', 'addr');
-    m.set('fujihc.diff', '1');
-    m.set('fujihc.spd', '1');
+    m.set('fujihill.consent.intro.v1', 'v1');
+    m.set('fujihill.consent.ride.v1', 'v1');
+    m.set('fujihill.strava.token', 'tok');
+    m.set('fujihill.strava.client_id', 'cid');
+    m.set('fujihill.trainer.address', 'addr');
+    m.set('fujihill.diff', '1');
+    m.set('fujihill.spd', '1');
     // 「other-app.foo」など未知 key は触らない
     m.set('other-app.foo', 'kept');
     const fakeLs = {
@@ -93,8 +93,8 @@ describe('brief 34 ε-5: clearAllLocalStorage', () => {
     };
     const res = clearAllLocalStorage({ storage: fakeLs });
     expect(res.cleared).toBe(true);
-    expect(m.has('fujihc.consent.intro.v1')).toBe(false);
-    expect(m.has('fujihc.strava.token')).toBe(false);
+    expect(m.has('fujihill.consent.intro.v1')).toBe(false);
+    expect(m.has('fujihill.strava.token')).toBe(false);
     expect(m.has('other-app.foo')).toBe(true);  // 既知 key 限定 fallback の挙動
   });
 
@@ -108,8 +108,8 @@ describe('brief 34 ε-5: clearAllLocalStorage', () => {
 describe('brief 34 ε-5: clearAllLocalData (= IndexedDB + localStorage 一括)', () => {
   it('両 source が削除済 (= round-trip integration)', async () => {
     const ls = memStorage();
-    ls.setItem('fujihc.consent.intro.v1', 'v1');
-    ls.setItem('fujihc.strava.token', 'tok');
+    ls.setItem('fujihill.consent.intro.v1', 'v1');
+    ls.setItem('fujihill.strava.token', 'tok');
     // DB に何か入れる
     const db1 = await openRideDb();
     await addRide(db1, { id: 'r-clear-all-1', date: '2026-05-15T00:00:00Z', summary: {}, trkpts: [] });
@@ -182,17 +182,17 @@ describe('brief 34 ε-5 viewer source: 確認 dialog 必須 + 完了 dialog + in
 describe('brief 34 ε-5 integration: 削除完了後の intro やり直し state', () => {
   it('cancel パスで data 保持 (= behavioral test、 B 軸 7 (c) 対策)', async () => {
     const ls = memStorage();
-    ls.setItem('fujihc.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
+    ls.setItem('fujihill.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
     // cancel 経路は viewer の btnClearCancel handler 内で clearAllLocalData を呼ばない設計.
     // → ls はそのまま、 IndexedDB も touch されない.
     // (実装は別 fixture なので、 ここは「呼ばれない」を viewer source 上で pin 済 = 上記 grep test)
     expect(ls._size()).toBe(1);
-    expect(ls._has('fujihc.consent.intro.v1')).toBe(true);
+    expect(ls._has('fujihill.consent.intro.v1')).toBe(true);
   });
 
   it('削除実行後、 getIntroConsent は null を返す (= intro やり直しの前提条件)', async () => {
     const ls = memStorage();
-    ls.setItem('fujihc.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
+    ls.setItem('fujihill.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
     const { getIntroConsent } = await import('../lib/consent.js');
     expect(getIntroConsent({ storage: ls })).toBe(null);  // hash 'v1' は CURRENT INTRO_CONSENT_HASH と不一致
     // 一致 hash で再保存しても、 clear 後は消えてる前提

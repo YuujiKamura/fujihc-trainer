@@ -15,7 +15,7 @@ import pytest
 SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
-from fujihc.bridge import (  # noqa: E402
+from fujihill.bridge import (  # noqa: E402
     Bridge,
     FITNESS_MACHINE_CONTROL_POINT_UUID,
     INDOOR_BIKE_DATA_UUID,
@@ -45,7 +45,7 @@ async def test_ftms_loop_handshake_order(monkeypatch, tmp_path):
     mock_client.stop_notify = AsyncMock()
     mock_client.write_gatt_char = AsyncMock()
 
-    monkeypatch.setattr("fujihc.bridge.BleakClient", lambda addr, timeout: mock_client)
+    monkeypatch.setattr("fujihill.bridge.BleakClient", lambda addr, timeout: mock_client)
 
     bridge = Bridge(
         device="AA:BB:CC:DD:EE:FF",

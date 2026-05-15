@@ -11,7 +11,7 @@
      (c) worker からの fetch は親 document の connect-src を継承するため worker 経由 surface も同制約下、
      (d) brief 33 §11.5 の 4 重 gate (script-src self / inline script ゼロ / vendoring / revokeLocalToken) は維持。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
-<title>fujihc viewer (MapLibre 試験版)</title>
+<title>fujihill viewer (MapLibre 試験版)</title>
 <!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
      license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->
 <script src="./lib/vendor/maplibre-gl.js"></script>
@@ -400,7 +400,7 @@
 
 <div id="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="pairing-title">
   <div id="setup-panel">
-    <h2 id="pairing-title">fujihc trainer ライド準備 (MapLibre 試験版)</h2>
+    <h2 id="pairing-title">fujihill trainer ライド準備 (MapLibre 試験版)</h2>
     <div class="status-line" id="setup-status">起動中...</div>
     <!-- brief 34 ε-9: 既存 4 step indicator の頭に「0. 地形データ準備」を追加して 5 step 化.
          terrain ready === false の間は他 step は到達不能 (= 全アクションボタン disabled). -->
@@ -473,7 +473,7 @@
           <div style="color:#888; font-size:11px; margin-top:0.4rem;">
             連携解除後、 完全に断つには Strava 側で
             <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer">設定 → 連携アプリ</a>
-            から fujihc-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
+            から fujihill-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
           </div>
         </div>
       </details>
@@ -571,7 +571,7 @@
      default は何もしない。 開発者本人の動作確認用 bypass は URL 引数 (?consent=dev) 経由のみ。 -->
 <div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title">
   <div id="intro-panel">
-    <h2 id="intro-title">fujihc-trainer (= 富士ヒルクライム シミュレータ)</h2>
+    <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
     <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。</p>
     <p>コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。</p>
     <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
@@ -671,7 +671,7 @@
     <div style="color:#ddd; font-size:13px;">
       Strava 連携 (= app 認可) は client side では取り消せません。 完全に断つには
       <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">Strava 設定 → 連携アプリ</a>
-      で fujihc-trainer を revoke してください。
+      で fujihill-trainer を revoke してください。
     </div>
     <div style="margin-top:0.8rem; display:flex; gap:0.4rem;">
       <button id="btnClearDoneOk" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#7fff00; color:#000; border:none; border-radius:4px;">OK (intro からやり直し)</button>

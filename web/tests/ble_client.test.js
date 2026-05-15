@@ -107,7 +107,7 @@ describe('createBleClient — sendConnect (FTMS)', () => {
     const { client, storage } = makeClient();
     client.sendConnect();
     for (let i = 0; i < 10; i++) await Promise.resolve();
-    expect(storage.getItem('fujihc.lastBleDeviceId')).toBe('ftms-1');
+    expect(storage.getItem('fujihill.lastBleDeviceId')).toBe('ftms-1');
   });
 });
 

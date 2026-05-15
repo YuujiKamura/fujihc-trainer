@@ -51,11 +51,11 @@ describe('brief 31: BASE_PATH 計算 (= location.pathname から末尾 file 名�
   }
   it('/ → /', () => { expect(basePath('/')).toBe('/'); });
   it('/index.html → /', () => { expect(basePath('/index.html')).toBe('/'); });
-  it('/fujihc-trainer/ → /fujihc-trainer/', () => {
-    expect(basePath('/fujihc-trainer/')).toBe('/fujihc-trainer/');
+  it('/fujihill-trainer/ → /fujihill-trainer/', () => {
+    expect(basePath('/fujihill-trainer/')).toBe('/fujihill-trainer/');
   });
-  it('/fujihc-trainer/index.html → /fujihc-trainer/', () => {
-    expect(basePath('/fujihc-trainer/index.html')).toBe('/fujihc-trainer/');
+  it('/fujihill-trainer/index.html → /fujihill-trainer/', () => {
+    expect(basePath('/fujihill-trainer/index.html')).toBe('/fujihill-trainer/');
   });
   it('/foo/bar/index.html → /foo/bar/', () => {
     expect(basePath('/foo/bar/index.html')).toBe('/foo/bar/');

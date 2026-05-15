@@ -24,7 +24,7 @@ const HEART_RATE_MEASUREMENT_CHAR = 0x2A37;
 const FTMS_OP_REQUEST_CONTROL = 0x00;
 const FTMS_OP_RESET = 0x01;
 
-const LS_KEY_LAST_DEVICE = 'fujihc.lastBleDeviceId';
+const LS_KEY_LAST_DEVICE = 'fujihill.lastBleDeviceId';
 
 /**
  * navigator.bluetooth が利用可能か (= Chrome/Edge/Android Chrome で true).

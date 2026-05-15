@@ -1,4 +1,4 @@
-// fujihc viewer - Mt.Fuji ヒルクライム シミュレータ
+// fujihill viewer - Mt.Fuji ヒルクライム シミュレータ
 // 起動フロー: pairing (= 起動画面で trainer 接続 + ハンドシェイク + ライド開始) → riding (= 地図画面で走行) → postride (= GPX 保存通知)
 // Cesium / minimap は pairing 表示中もバックで初期化されてる。
 
@@ -100,8 +100,8 @@ let curIdx = 0;
 let playSpeed = 0;
 let paused = true;
 let lastT = performance.now();
-let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihc.diff')) || 1.0; } catch { return 1.0; } })();
-let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihc.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
+let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihill.diff')) || 1.0; } catch { return 1.0; } })();
+let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
 let rideActive = false;
 let lastPositionSendT = 0;
 let rideStartedAt = null;     // performance.now() at ride_status:started、 elapsed 計算用
@@ -221,7 +221,7 @@ const wsHandlers = {
       setText('setup-status', `走行準備完了: ${msg.address}`);
       setText('p-state', '✓ 準備完了');
       updateStepIndicator(-1, 3);
-      try { localStorage.setItem('fujihc.trainer.address', msg.address); } catch {}
+      try { localStorage.setItem('fujihill.trainer.address', msg.address); } catch {}
       const startBtn = document.getElementById('btnRideStart');
       if (startBtn) {
         startBtn.disabled = false;
@@ -388,7 +388,7 @@ function connectBridge() {
     wsConnected = true;
     status('bridge 接続済');
     updateStepIndicator(0, -1);
-    const remembered = (() => { try { return localStorage.getItem('fujihc.trainer.address'); } catch { return null; } })();
+    const remembered = (() => { try { return localStorage.getItem('fujihill.trainer.address'); } catch { return null; } })();
     if (remembered) {
       setText('setup-status', `前回の機器に再接続中: ${remembered}`);
       setText('p-device', remembered);
@@ -818,12 +818,12 @@ const rDiff = document.getElementById('rngDiff');
 const rSpd = document.getElementById('rngSpd');
 if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
-bindSlider('rngDiff', 'diffVal', 'fujihc.diff', (pct) => {
+bindSlider('rngDiff', 'diffVal', 'fujihill.diff', (pct) => {
   diffMult = pct / 100;
   setText('diffVal', String(Math.round(pct)));
   lastSlopeSent = null;
 });
-bindSlider('rngSpd', 'spdVal', 'fujihc.spd', (pct) => {
+bindSlider('rngSpd', 'spdVal', 'fujihill.spd', (pct) => {
   speedMult = pct / 100;
   setText('spdVal', (pct / 100).toFixed(2));
 });

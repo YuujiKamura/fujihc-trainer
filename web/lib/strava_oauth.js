@@ -10,9 +10,9 @@
 export const STRAVA_AUTHORIZE_URL = 'https://www.strava.com/oauth/authorize';
 export const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
 export const STRAVA_SCOPE = 'activity:write';
-export const STRAVA_TOKEN_LS_KEY = 'fujihc.strava.token';
-export const STRAVA_PKCE_VERIFIER_SS_KEY = 'fujihc.pkce.verifier';
-export const STRAVA_PKCE_CLIENT_ID_SS_KEY = 'fujihc.pkce.client_id';
+export const STRAVA_TOKEN_LS_KEY = 'fujihill.strava.token';
+export const STRAVA_PKCE_VERIFIER_SS_KEY = 'fujihill.pkce.verifier';
+export const STRAVA_PKCE_CLIENT_ID_SS_KEY = 'fujihill.pkce.client_id';
 export const STRAVA_TOKEN_REFRESH_MARGIN_SEC = 300;  // 5 分前に refresh
 
 /** base64url (= '+'→'-', '/'→'_', padding 削除) */

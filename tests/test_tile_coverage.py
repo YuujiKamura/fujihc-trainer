@@ -15,8 +15,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from fujihc.tile_constants import DEFAULT_BUFFER_M, DEFAULT_CORRIDOR_TILES  # noqa: E402
-from fujihc.tile_coverage import (  # noqa: E402
+from fujihill.tile_constants import DEFAULT_BUFFER_M, DEFAULT_CORRIDOR_TILES  # noqa: E402
+from fujihill.tile_coverage import (  # noqa: E402
     compute_bounds,
     enumerate_coverage_tiles,
     estimate_tile_count,
@@ -39,7 +39,7 @@ def fuji_course():
 # ---------------------------------------------------------------------------
 
 
-def test_enumerate_coverage_tiles_fujihc_z17_corridor3_300(fuji_course):
+def test_enumerate_coverage_tiles_fujihill_z17_corridor3_300(fuji_course):
     """富士ヒル course を corridor=3 で z=17 → 300 タイル (brief 14 確定値)."""
     tiles = enumerate_coverage_tiles(fuji_course, [17], corridor_tiles=3)
     assert len(tiles) == 300
@@ -93,7 +93,7 @@ def test_enumerate_coverage_tiles_single_point_corridor_3():
 # ---------------------------------------------------------------------------
 
 
-def test_compute_bounds_fujihc_with_1km_buffer(fuji_course):
+def test_compute_bounds_fujihill_with_1km_buffer(fuji_course):
     """富士ヒル course, buffer=1km の bounds が brief 14 期待値 (±誤差) を満たす.
 
     brief 14: W=138.681 S=35.364 E=138.768 N=35.461 (buffer 1km 込み).

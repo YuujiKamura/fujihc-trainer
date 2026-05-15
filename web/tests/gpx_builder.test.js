@@ -21,7 +21,7 @@ describe('escXml', () => {
 
 describe('buildGpxXml', () => {
   it('empty trkpts → 有効 GPX with empty <trkseg>', () => {
-    const xml = buildGpxXml([], { name: 'fujihc ride' });
+    const xml = buildGpxXml([], { name: 'fujihill ride' });
     expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>');
     expect(xml).toContain('<gpx version="1.1"');
     expect(xml).toContain('<trkseg>');

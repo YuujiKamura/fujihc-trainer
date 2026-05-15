@@ -1,5 +1,5 @@
 // brief 32: FTMS / HRM binary parser を JS へ port.
-// src/fujihc/bridge.py L89-151 (_parse_heart_rate / _parse_indoor_bike_data)、
+// src/fujihill/bridge.py L89-151 (_parse_heart_rate / _parse_indoor_bike_data)、
 // L231-248 (_parse_control_response)、 L251-270 (_encode_set_indoor_bike_simulation)
 // と完全一致の挙動を持つ pure function 群。 DataView ベース、 little-endian。
 //

@@ -56,7 +56,7 @@ describe('ble_client tryAutoReconnect', () => {
   });
 
   it('lastDeviceId 保存済 + getDevices に一致なし → false', async () => {
-    const storage = memStorage({ 'fujihc.lastBleDeviceId': 'xxx' });
+    const storage = memStorage({ 'fujihill.lastBleDeviceId': 'xxx' });
     const bt = { getDevices: vi.fn().mockResolvedValue([makeDevice('yyy')]) };
     const client = createBleClient({}, { bluetooth: bt, storage });
     const ok = await client.tryAutoReconnect();
@@ -65,7 +65,7 @@ describe('ble_client tryAutoReconnect', () => {
 
   it('lastDeviceId が getDevices の戻り値に一致 → device.gatt.connect 発火 + true', async () => {
     const target = makeDevice('match-id');
-    const storage = memStorage({ 'fujihc.lastBleDeviceId': 'match-id' });
+    const storage = memStorage({ 'fujihill.lastBleDeviceId': 'match-id' });
     const bt = { getDevices: vi.fn().mockResolvedValue([target]) };
     const dispatched = [];
     const handlers = {
@@ -80,7 +80,7 @@ describe('ble_client tryAutoReconnect', () => {
   });
 
   it('getDevices が throw → 例外を握りつぶして false (= silent fallback)', async () => {
-    const storage = memStorage({ 'fujihc.lastBleDeviceId': 'anything' });
+    const storage = memStorage({ 'fujihill.lastBleDeviceId': 'anything' });
     const bt = { getDevices: vi.fn().mockRejectedValue(new Error('permission denied')) };
     const client = createBleClient({}, { bluetooth: bt, storage });
     const ok = await client.tryAutoReconnect();
@@ -88,7 +88,7 @@ describe('ble_client tryAutoReconnect', () => {
   });
 
   it('bt.getDevices 未対応 (= 古い browser) → false', async () => {
-    const storage = memStorage({ 'fujihc.lastBleDeviceId': 'x' });
+    const storage = memStorage({ 'fujihill.lastBleDeviceId': 'x' });
     const bt = { /* getDevices なし */ };
     const client = createBleClient({}, { bluetooth: bt, storage });
     const ok = await client.tryAutoReconnect();

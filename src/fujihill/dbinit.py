@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from fujihc.tile_constants import (
+from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
     GSI_RATE_LIMIT_SEC,
@@ -29,12 +29,12 @@ from fujihc.tile_constants import (
     MINIMAP_OSM_ZOOM,
     OSM_VECTOR_ZOOMS,
 )
-from fujihc.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
+from fujihill.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'
 OSM_RASTER_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 DEFAULT_USER_AGENT = (
-    'fujihc-trainer/0.1 (https://github.com/YuujiKamura/fujihc-trainer)'
+    'fujihill-trainer/0.1 (https://github.com/YuujiKamura/fujihc-trainer)'
 )
 
 # progress_cb は同期でも async でも受け付ける (= bridge 側から coroutine を渡せる).
@@ -179,7 +179,7 @@ async def fetch_gsi_async(
         ('minzoom', str(zoom)),
         ('maxzoom', str(zoom)),
         ('user_agent_used', user_agent),
-        ('fetched_by', 'fujihc.dbinit.fetch_gsi_async'),
+        ('fetched_by', 'fujihill.dbinit.fetch_gsi_async'),
     ])
 
     await _emit(progress_cb, {
@@ -267,7 +267,7 @@ async def fetch_minimap_raster_async(
         ('minzoom', str(zoom)),
         ('maxzoom', str(zoom)),
         ('user_agent_used', user_agent),
-        ('fetched_by', 'fujihc.dbinit.fetch_minimap_raster_async'),
+        ('fetched_by', 'fujihill.dbinit.fetch_minimap_raster_async'),
     ])
 
     await _emit(progress_cb, {
@@ -373,7 +373,7 @@ async def extract_osm_async(
         ('minzoom', str(min(zooms))),
         ('maxzoom', str(max(zooms))),
         ('source_pmtiles_basename', pmtiles_p.name),
-        ('fetched_by', 'fujihc.dbinit.extract_osm_async'),
+        ('fetched_by', 'fujihill.dbinit.extract_osm_async'),
     ])
 
     await _emit(progress_cb, {

@@ -22,7 +22,7 @@ describe('postUpload', () => {
     const tok = 'a1';
     const xml = '<?xml version="1.0"?><gpx></gpx>';
     const res = await postUpload({
-      accessToken: tok, gpxXml: xml, name: 'fujihc ride', activityType: 'VirtualRide',
+      accessToken: tok, gpxXml: xml, name: 'fujihill ride', activityType: 'VirtualRide',
       externalId: 'ride-001',
     }, { fetch: fakeFetch });
     expect(res.id).toBe(999);
@@ -32,8 +32,8 @@ describe('postUpload', () => {
     expect(captured.fields.data_type).toBe('gpx');
     expect(captured.fields.activity_type).toBe('VirtualRide');
     expect(captured.fields.sport_type).toBe('VirtualRide');
-    // brief 34 ε-4: name に「(fujihc-trainer simulator)」接尾が強制 append される (= 商標混同対策).
-    expect(captured.fields.name).toBe('fujihc ride (fujihc-trainer simulator)');
+    // brief 34 ε-4: name に「(fujihill-trainer simulator)」接尾が強制 append される (= 商標混同対策).
+    expect(captured.fields.name).toBe('fujihill ride (fujihill-trainer simulator)');
     // brief 34 ε-4: description にも商標混同対策 prefix が prepend される (caller 渡し空でも付く).
     expect(captured.fields.description).toMatch(/^This is an indoor trainer simulation/);
     expect(captured.fields.external_id).toBe('ride-001');
@@ -115,23 +115,23 @@ describe('consts', () => {
 });
 
 describe('brief 34 ε-4: withTrademarkSuffix (= name の商標混同対策 hardcode helper)', () => {
-  it('通常 name に接尾 " (fujihc-trainer simulator)" を付ける', () => {
-    expect(withTrademarkSuffix('my ride')).toBe('my ride (fujihc-trainer simulator)');
+  it('通常 name に接尾 " (fujihill-trainer simulator)" を付ける', () => {
+    expect(withTrademarkSuffix('my ride')).toBe('my ride (fujihill-trainer simulator)');
   });
 
   it('既に接尾が付いていれば idempotent (= 二重 append しない)', () => {
-    const already = 'my ride (fujihc-trainer simulator)';
+    const already = 'my ride (fujihill-trainer simulator)';
     expect(withTrademarkSuffix(already)).toBe(already);
   });
 
-  it('空文字 / null / undefined → default name "fujihc ride" + 接尾', () => {
-    expect(withTrademarkSuffix('')).toBe('fujihc ride (fujihc-trainer simulator)');
-    expect(withTrademarkSuffix(null)).toBe('fujihc ride (fujihc-trainer simulator)');
-    expect(withTrademarkSuffix(undefined)).toBe('fujihc ride (fujihc-trainer simulator)');
+  it('空文字 / null / undefined → default name "fujihill ride" + 接尾', () => {
+    expect(withTrademarkSuffix('')).toBe('fujihill ride (fujihill-trainer simulator)');
+    expect(withTrademarkSuffix(null)).toBe('fujihill ride (fujihill-trainer simulator)');
+    expect(withTrademarkSuffix(undefined)).toBe('fujihill ride (fujihill-trainer simulator)');
   });
 
-  it('STRAVA_NAME_SUFFIX const が " (fujihc-trainer simulator)" で固定 (= 改竄 regression block)', () => {
-    expect(STRAVA_NAME_SUFFIX).toBe(' (fujihc-trainer simulator)');
+  it('STRAVA_NAME_SUFFIX const が " (fujihill-trainer simulator)" で固定 (= 改竄 regression block)', () => {
+    expect(STRAVA_NAME_SUFFIX).toBe(' (fujihill-trainer simulator)');
   });
 });
 
@@ -158,7 +158,7 @@ describe('brief 34 ε-4: withTrademarkPrefix (= description の商標混同対�
   it('STRAVA_DESCRIPTION_PREFIX const は「Mt. Fuji Hill Climb」を含む (= 商標明示)', () => {
     expect(STRAVA_DESCRIPTION_PREFIX).toContain('Mt. Fuji Hill Climb');
     expect(STRAVA_DESCRIPTION_PREFIX).toContain('Not an actual outdoor activity');
-    expect(STRAVA_DESCRIPTION_PREFIX).toContain('fujihc-trainer');
+    expect(STRAVA_DESCRIPTION_PREFIX).toContain('fujihill-trainer');
   });
 });
 
@@ -176,7 +176,7 @@ describe('brief 34 ε-4: postUpload が 2 重 gate の内側として name / des
       name: 'attempt to override',
       activityType: 'VirtualRide',
     }, { fetch: fakeFetch });
-    expect(captured.fields.name).toBe('attempt to override (fujihc-trainer simulator)');
+    expect(captured.fields.name).toBe('attempt to override (fujihill-trainer simulator)');
   });
 
   it('caller が name を渡さなくても default + 接尾が付く', async () => {
@@ -189,7 +189,7 @@ describe('brief 34 ε-4: postUpload が 2 重 gate の内側として name / des
     await postUpload({
       accessToken: 'a', gpxXml: 'x', activityType: 'VirtualRide',
     }, { fetch: fakeFetch });
-    expect(captured.fields.name).toBe('fujihc ride (fujihc-trainer simulator)');
+    expect(captured.fields.name).toBe('fujihill ride (fujihill-trainer simulator)');
     expect(captured.fields.description).toMatch(/^This is an indoor trainer simulation/);
   });
 
@@ -223,8 +223,8 @@ describe('brief 34 ε-4: postUpload が 2 重 gate の内側として name / des
       name: decoratedName,
       description: decoratedDescription,
     }, { fetch: fakeFetch });
-    expect(captured.fields.name).toBe('my ride (fujihc-trainer simulator)');  // 接尾は 1 つ
-    expect(captured.fields.name).not.toMatch(/simulator\)\s*\(fujihc-trainer simulator\)/);
+    expect(captured.fields.name).toBe('my ride (fujihill-trainer simulator)');  // 接尾は 1 つ
+    expect(captured.fields.name).not.toMatch(/simulator\)\s*\(fujihill-trainer simulator\)/);
     const descMatches = captured.fields.description.match(/This is an indoor trainer simulation/g) || [];
     expect(descMatches.length).toBe(1);  // prefix は 1 つ
   });

@@ -1,4 +1,4 @@
-// brief 33: Strava 互換 GPX 1.1 builder (= `src/fujihc/gpx_export.py` の JS 移植).
+// brief 33: Strava 互換 GPX 1.1 builder (= `src/fujihill/gpx_export.py` の JS 移植).
 // pure function、 DOM / browser global 依存ゼロ。
 // 入力 trkpts は ride_state.getTrkpts() の戻り値形式 (= {t, lat, lon, ele, power, cad, hr})。
 // 出力は GPX 1.1 文字列、 Python 版と byte-level 同一を保つこと (= 完了条件 §11)。
@@ -36,12 +36,12 @@ function intRound(v) {
  * @returns {string} GPX 1.1 XML (= 末尾改行付き、 Python 版 `"\n".join(lines)` 互換)
  */
 export function buildGpxXml(trkpts, opts = {}) {
-  const name = opts.name || 'fujihc ride';
+  const name = opts.name || 'fujihill ride';
   const activityType = opts.activity_type || 'Virtual Ride';
 
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<gpx version="1.1" creator="fujihc-trainer" '
+    '<gpx version="1.1" creator="fujihill-trainer" '
       + 'xmlns="http://www.topografix.com/GPX/1/1" '
       + 'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" '
       + 'xmlns:gpxpx="http://www.garmin.com/xmlschemas/PowerExtension/v1">',

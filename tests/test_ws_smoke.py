@@ -1,11 +1,11 @@
 """End-to-end smoke test against a running bridge on localhost:8765.
 
 実 BLE / trainer 無しで、WebSocket protocol 契約だけを verify する。
-bridge は事前に `python -m fujihc.bridge --dummy` で立ち上げておくこと
+bridge は事前に `python -m fujihill.bridge --dummy` で立ち上げておくこと
 (supervisor は自動起動しない、本テストは「動いてる bridge を叩く」)。
 
 実行:
-    cd ~/fujihc-trainer
+    cd ~/fujihill-trainer
     pytest tests/test_ws_smoke.py -v -s
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _bridge_running() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not _bridge_running(),
-    reason="bridge not running on localhost:8765 - start it first: python -m fujihc.bridge --dummy",
+    reason="bridge not running on localhost:8765 - start it first: python -m fujihill.bridge --dummy",
 )
 
 

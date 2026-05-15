@@ -48,13 +48,13 @@ describe('buildAuthorizeUrl', () => {
   it('全 query param を含む (= client_id / redirect_uri / scope / code_challenge / response_type / S256)', () => {
     const url = buildAuthorizeUrl({
       clientId: '12345',
-      redirectUri: 'https://example.github.io/fujihc-trainer/oauth-callback.html',
+      redirectUri: 'https://example.github.io/fujihill-trainer/oauth-callback.html',
       codeChallenge: 'XYZ',
     });
     expect(url.startsWith(STRAVA_AUTHORIZE_URL + '?')).toBe(true);
     const u = new URL(url);
     expect(u.searchParams.get('client_id')).toBe('12345');
-    expect(u.searchParams.get('redirect_uri')).toBe('https://example.github.io/fujihc-trainer/oauth-callback.html');
+    expect(u.searchParams.get('redirect_uri')).toBe('https://example.github.io/fujihill-trainer/oauth-callback.html');
     expect(u.searchParams.get('response_type')).toBe('code');
     expect(u.searchParams.get('scope')).toBe(STRAVA_SCOPE);
     expect(u.searchParams.get('code_challenge')).toBe('XYZ');

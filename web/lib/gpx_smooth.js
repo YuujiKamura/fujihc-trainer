@@ -10,7 +10,7 @@
 //   - 終端境界は window が縮む (fade): course 先頭 / 末尾は近傍が少ない分、
 //     原データに近い結果になる ── 端点が変な方向に飛ぶのを防ぐ.
 //
-// Python 版 (src/fujihc/gpx_smooth.py) と同 logic / 同 signature.
+// Python 版 (src/fujihill/gpx_smooth.py) と同 logic / 同 signature.
 // cross-language fixture (tests/test_dump_for_gpx_smooth_js.py) で同値性 pin.
 
 /**

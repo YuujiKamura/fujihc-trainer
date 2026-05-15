@@ -77,7 +77,7 @@ describe('appendHistoryRow', () => {
     const listEl = doc.createElement('ul');
     const ride = {
       id: 'r1', date: '2026-05-15T07:30:00Z',
-      summary: { distance_m: 12300, duration_s: 1820, course_name: 'fujihc' },
+      summary: { distance_m: 12300, duration_s: 1820, course_name: 'fujihill' },
       trkpts: [
         { t: '2026-05-15T07:30:00Z', lat: 35.4, lon: 138.7, ele: 1000, power: 200, cad: 80, hr: 140 },
       ],
@@ -124,7 +124,7 @@ describe('appendHistoryRow', () => {
     }
     const ride = {
       id: 'r1', date: '2026-05-15T07:30:00Z',
-      summary: { distance_m: 1000, duration_s: 60, course_name: 'fujihc' },
+      summary: { distance_m: 1000, duration_s: 60, course_name: 'fujihill' },
       trkpts: [
         { t: '2026-05-15T07:30:00Z', lat: 35.4, lon: 138.7, ele: 1000, power: 200, cad: 80, hr: 140 },
         { t: '2026-05-15T07:30:01Z', lat: 35.401, lon: 138.701, ele: 1001, power: 205, cad: 81, hr: 141 },
@@ -150,7 +150,7 @@ describe('appendHistoryRow', () => {
     expect(xml).toContain('<trkpt lat="35.4000000" lon="138.7000000">');
     expect(xml).toContain('<trkpt lat="35.4010000" lon="138.7010000">');
     expect(xml).toContain('<gpxpx:PowerInWatts>200</gpxpx:PowerInWatts>');
-    expect(xml).toContain('<name>fujihc</name>');
+    expect(xml).toContain('<name>fujihill</name>');
     expect(xml).toContain('<type>Virtual Ride</type>');
     // onGpxDownloaded callback が呼ばれた、 filename が ride.date から派生
     expect(downloaded).toEqual({ filename: 'ride-2026-05-15T07-30-00Z.gpx', points: 2 });

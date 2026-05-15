@@ -1,4 +1,4 @@
-"""brief 30: fujihc.dbinit.fetch_minimap_raster_async の unit test.
+"""brief 30: fujihill.dbinit.fetch_minimap_raster_async の unit test.
 
 実 OSM タイルサーバには絶対叩かない (= urlopen を mock 駆動). 起動時 1-shot
 fetch + DB cache + dedup + 404 残し + metadata 書き込みを pin する.
@@ -20,9 +20,9 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import init_tile_db  # noqa: E402
-from fujihc import dbinit  # noqa: E402
-from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM  # noqa: E402
-from fujihc.tile_coverage import enumerate_bbox_tiles  # noqa: E402
+from fujihill import dbinit  # noqa: E402
+from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM  # noqa: E402
+from fujihill.tile_coverage import enumerate_bbox_tiles  # noqa: E402
 
 
 # 小さい bbox (= 1-2 タイルに収まる) で test を高速化. 実 default は MINIMAP_BBOX.
@@ -53,7 +53,7 @@ def _png_cm():
 
 def test_fetch_minimap_raster_async_happy_inserts_rows(empty_db):
     """mock urlopen で bbox 内全タイルが source='osm_raster' fetch_status=200 で入る."""
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_png_cm()):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_png_cm()):
         result = _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0,
@@ -77,7 +77,7 @@ def test_fetch_minimap_raster_async_progress_cb(empty_db):
     def cb(payload):
         calls.append(dict(payload))
 
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_png_cm()):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_png_cm()):
         _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0, progress_cb=cb,
@@ -101,7 +101,7 @@ def test_fetch_minimap_raster_async_dedup_existing(empty_db):
             ('osm_raster', z, x, y, 'png', b'preexisting', 200),
         )
         db.commit()
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_png_cm()):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_png_cm()):
         result = _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0,
@@ -115,7 +115,7 @@ def test_fetch_minimap_raster_async_404_keeps_row(empty_db):
     err = urllib.error.HTTPError(
         url='http://x', code=404, msg='Not Found', hdrs=None, fp=None,
     )
-    with patch('fujihc.dbinit.urllib.request.urlopen', side_effect=err):
+    with patch('fujihill.dbinit.urllib.request.urlopen', side_effect=err):
         result = _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0,
@@ -131,7 +131,7 @@ def test_fetch_minimap_raster_async_404_keeps_row(empty_db):
 
 def test_fetch_minimap_raster_async_writes_metadata(empty_db):
     """metadata に attribution / license=ODbL-1.0 / format=png / minzoom=11 / maxzoom=11 が入る."""
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_png_cm()):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_png_cm()):
         _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0,
@@ -156,7 +156,7 @@ def test_fetch_minimap_raster_async_accepts_async_cb(empty_db):
     async def acb(payload):
         calls.append(dict(payload))
 
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_png_cm()):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_png_cm()):
         _run(dbinit.fetch_minimap_raster_async(
             empty_db, bbox=SMALL_BBOX, zoom=SMALL_ZOOM,
             rate_limit_sec=0.0, progress_cb=acb,
@@ -181,8 +181,8 @@ def test_minimap_bbox_covers_viewer_request_set():
     import json
     import math
 
-    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
-    from fujihc.tile_coverage import enumerate_bbox_tiles
+    from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihill.tile_coverage import enumerate_bbox_tiles
 
     course_p = REPO_ROOT / 'web' / 'course.json'
     course = json.loads(course_p.read_text(encoding='utf-8'))

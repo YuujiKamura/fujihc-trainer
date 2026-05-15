@@ -1,5 +1,5 @@
 // course 沿いのタイル列挙 + 外接矩形 (pure functions).
-// Python `src/fujihc/tile_coverage.py` と同 logic.
+// Python `src/fujihill/tile_coverage.py` と同 logic.
 // JS では (z, x, y) tuple の代わりに `"z/x/y"` 文字列 set を返す.
 
 import { lonToTileX, latToTileY } from './tile_math.js';
@@ -71,7 +71,7 @@ export function computeBounds(course, bufferM = 1000) {
  * enumerateCoverageTiles の結果を zoom 別 count に集約.
  * DL 前見積もり用. brief 14 の総量見積もり表との一致を test で担保する.
  *
- * Python 側 `src/fujihc/tile_coverage.py` の `estimate_tile_count` と同 signature /
+ * Python 側 `src/fujihill/tile_coverage.py` の `estimate_tile_count` と同 signature /
  * 同 logic. 戻り型は Python の list of (zoom, count) tuple と等価な
  * Array<[zoom, count]>.
  *

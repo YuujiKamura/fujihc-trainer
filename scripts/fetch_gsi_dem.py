@@ -1,6 +1,6 @@
 """GSI 標高タイル (dem_png) をレート制限 DL してローカル DB に格納 (brief 15).
 
-brief 26b で中核 logic は src/fujihc/dbinit.py に移動。 本 script は CLI wrapper.
+brief 26b で中核 logic は src/fujihill/dbinit.py に移動。 本 script は CLI wrapper.
 
 usage:
     python scripts/fetch_gsi_dem.py
@@ -18,14 +18,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from fujihc import dbinit
-from fujihc.tile_constants import (
+from fujihill import dbinit
+from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
     GSI_RATE_LIMIT_SEC,
     TILE_FETCH_WARN_THRESHOLD,
 )
-from fujihc.tile_coverage import enumerate_coverage_tiles
+from fujihill.tile_coverage import enumerate_coverage_tiles
 
 # 後方互換: 既存 test (= test_fetch_gsi_dem.py) が参照する公開 API.
 # 中核 fetch / insert は dbinit に移動済だが、 旧 import path を維持する.

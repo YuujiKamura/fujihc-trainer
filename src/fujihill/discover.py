@@ -1,7 +1,7 @@
 """BLE scan for smart trainers (FTMS 0x1826) - the first runnable bit.
 
 usage:
-    python -m fujihc.discover
+    python -m fujihill.discover
 
 Prints all BLE devices visible during a 10s scan, flags those advertising the
 Fitness Machine Service. Goal: identify yuuji's trainer's BLE address before

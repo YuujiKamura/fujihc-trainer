@@ -14,14 +14,14 @@ import json
 import sqlite3
 from pathlib import Path
 
-from fujihc.tile_constants import (
+from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
     MINIMAP_BBOX,
     MINIMAP_OSM_ZOOM,
     OSM_VECTOR_ZOOMS,
 )
-from fujihc.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
+from fujihill.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 CONTENT_TYPES = {
     'png': 'image/png',

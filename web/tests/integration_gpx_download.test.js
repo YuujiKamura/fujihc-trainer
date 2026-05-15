@@ -113,7 +113,7 @@ describe('integration: postride-overlay GPX download は Strava 連携 OFF で�
           { t: '2026-05-15T07:30:00Z', lat: 35.4, lon: 138.7, ele: 1000, power: 200, cad: 80, hr: 140 },
         ],
         getSummary: () => ({ date: '2026-05-15T07:30:00Z' }),
-        getCourseName: () => 'fujihc',
+        getCourseName: () => 'fujihill',
         addRide: async () => {},
         // strava consent OFF の挙動を再現 (= viewer-maplibre.js の getClientId と同等)
         getClientId: () => {
@@ -189,7 +189,7 @@ describe('integration: history-overlay 行内 GPX button は Strava 連携 OFF �
     }
     const ride = {
       id: 'r-past-1', date: '2026-05-10T08:00:00Z',
-      summary: { distance_m: 24000, duration_s: 5400, course_name: 'fujihc' },
+      summary: { distance_m: 24000, duration_s: 5400, course_name: 'fujihill' },
       trkpts: [
         { t: '2026-05-10T08:00:00Z', lat: 35.4, lon: 138.7, ele: 1000, power: 220, cad: 88, hr: 150 },
         { t: '2026-05-10T08:00:01Z', lat: 35.401, lon: 138.701, ele: 1003, power: 222, cad: 89, hr: 151 },
@@ -213,7 +213,7 @@ describe('integration: history-overlay 行内 GPX button は Strava 連携 OFF �
     const xml = blobs[0].parts[0];
     expect(xml).toContain('<trkpt lat="35.4000000" lon="138.7000000">');
     expect(xml).toContain('<trkpt lat="35.4010000" lon="138.7010000">');
-    expect(xml).toContain('<name>fujihc</name>');
+    expect(xml).toContain('<name>fujihill</name>');
   });
 
   it('strava=false / history=false の状況で row を描画した場合でも GPX button は機能する (= module 単独で完結、 consent 非参照)', () => {

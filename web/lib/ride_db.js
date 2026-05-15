@@ -9,7 +9,7 @@
 // - load-bearing 数字 / 文字列は module top 1 箇所のみ export (= NG-R3-3 同型予防)
 // - pure module、 caller 側で `globalThis.indexedDB` を inject 可能にして node test を許容
 
-export const RIDE_DB_NAME = 'fujihc-trainer';
+export const RIDE_DB_NAME = 'fujihill-trainer';
 export const RIDE_DB_VERSION = 1;
 export const RIDE_STORE = 'rides';
 export const RIDE_INDEX_DATE = 'by_date';

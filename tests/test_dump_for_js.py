@@ -19,7 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from fujihc.tile_coverage import compute_bounds, enumerate_coverage_tiles  # noqa: E402
+from fujihill.tile_coverage import compute_bounds, enumerate_coverage_tiles  # noqa: E402
 
 COURSE_JSON = REPO_ROOT / "web" / "course.json"
 FIXTURE_DIR = REPO_ROOT / "web" / "tests" / "fixtures"

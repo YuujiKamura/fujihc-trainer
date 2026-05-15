@@ -14,7 +14,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from fujihc.gpx_export import csv_to_gpx
+from fujihill.gpx_export import csv_to_gpx
 
 
 def main() -> None:
@@ -70,12 +70,12 @@ def main() -> None:
             w.writeheader()
             for r in rows:
                 w.writerow(r)
-        count = csv_to_gpx(csv_path, gpx_path, name="fujihc ride", activity_type="Virtual Ride")
+        count = csv_to_gpx(csv_path, gpx_path, name="fujihill ride", activity_type="Virtual Ride")
         gpx_text = gpx_path.read_text(encoding="utf-8")
 
     out = {
         "input_trkpts": trkpts_for_js,
-        "opts": {"name": "fujihc ride", "activity_type": "Virtual Ride"},
+        "opts": {"name": "fujihill ride", "activity_type": "Virtual Ride"},
         "expected_gpx": gpx_text,
         "count": count,
     }

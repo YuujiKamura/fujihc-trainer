@@ -82,7 +82,7 @@ export function appendHistoryRow(cfg) {
     if (ev && ev.preventDefault) ev.preventDefault();
     try {
       const trkpts = ride.trkpts || [];
-      const name = (ride.summary && ride.summary.course_name) || cfg.courseName || 'fujihc ride';
+      const name = (ride.summary && ride.summary.course_name) || cfg.courseName || 'fujihill ride';
       const xml = buildGpxXml(trkpts, { name, activity_type: 'Virtual Ride' });
       if (!Blob_ || !URL_) return;  // 環境上不可、 silent skip (= node test 等)
       const blob = new Blob_([xml], { type: 'application/gpx+xml' });

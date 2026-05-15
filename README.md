@@ -1,4 +1,4 @@
-# fujihc-trainer
+# fujihill-trainer
 
 富士ヒルクライム (= Mt. Fuji HC) コースを室内 trainer (FTMS) で再現する練習補助 app。
 
@@ -6,10 +6,10 @@
 
 ### コースデータ (= web/course.json)
 
-GPX (例えば公式 [fujihc.jp/course](https://fujihc.jp/course/) で公開されているもの) を `src/fujihc/course.py` で変換した派生 JSON。 距離 / 標高 / 勾配 / lat / lon の列で、 元 GPX とは別物。 自分の GPX を使いたい場合は:
+GPX (例えば公式 [fujihc.jp/course](https://fujihc.jp/course/) で公開されているもの) を `src/fujihill/course.py` で変換した派生 JSON。 距離 / 標高 / 勾配 / lat / lon の列で、 元 GPX とは別物。 自分の GPX を使いたい場合は:
 
 ```sh
-python -m fujihc.course ~/path/to/your.gpx > web/course.json
+python -m fujihill.course ~/path/to/your.gpx > web/course.json
 ```
 
 - 富士ヒル以外のコースでも動作する、 minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
@@ -49,7 +49,7 @@ content-length header」error で読めず、 地図が灰色のまま)。
 ```sh
 # (A) 観るモード / 走るモード を含む fully functional な local 確認 (= 推奨)
 #     aiohttp 経由で Range request 対応、 地図描画 (pmtiles) が動く。
-python -m fujihc.bridge --dummy
+python -m fujihill.bridge --dummy
 # その後 browser で http://localhost:8000/?test=1 (= ?test=1 で fake state、 trainer 不要)
 
 # (B) UI 操作のみの軽量確認 (= 地図描画は機能しない、 limited)
@@ -79,7 +79,7 @@ python -m pytest
 
 `--user-agent` 引数で **自分の連絡先を含む文字列**に書き換えろ:
 ```bash
-python scripts/fetch_gsi_dem.py --user-agent "fujihc-trainer/0.1 (your-email@example.com)"
+python scripts/fetch_gsi_dem.py --user-agent "fujihill-trainer/0.1 (your-email@example.com)"
 ```
 
 地理院側で heavy user 同定に email が使われる、 default の `(https://github.com/YuujiKamura/fujihc-trainer)` のままだと他人 (= リポ作者) の連絡先を僭称することになる。
@@ -102,11 +102,11 @@ repo に固定 client_id は埋め込まない (= 各 user の activity が混�
 
 1. [Strava API Settings](https://www.strava.com/settings/api) で My API Application を作成
 2. Authorization Callback Domain に GitHub Pages の host (例: `<your>.github.io`) を登録
-3. browser dev console で `localStorage.setItem('fujihc.strava.client_id', '<your_client_id>')` を実行
+3. browser dev console で `localStorage.setItem('fujihill.strava.client_id', '<your_client_id>')` を実行
 
 ### 連携解除
 
-setup-overlay 内の「連携を解除」 button で localStorage の token を削除可能。 ただし**これだけでは Strava 側に app 登録が残ったまま**になる、 完全に断つには [Strava 設定 → 連携アプリ](https://www.strava.com/settings/apps) から fujihc-trainer を revoke すること。
+setup-overlay 内の「連携を解除」 button で localStorage の token を削除可能。 ただし**これだけでは Strava 側に app 登録が残ったまま**になる、 完全に断つには [Strava 設定 → 連携アプリ](https://www.strava.com/settings/apps) から fujihill-trainer を revoke すること。
 
 ### ToS 適合性 (= Rule 11 class C2)
 

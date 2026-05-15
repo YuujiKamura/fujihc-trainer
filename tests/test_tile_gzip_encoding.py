@@ -10,7 +10,7 @@ import sqlite3
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from fujihc.http_app import make_http_app
+from fujihill.http_app import make_http_app
 
 
 def _init_db(path):

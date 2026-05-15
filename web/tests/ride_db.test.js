@@ -17,7 +17,7 @@ function makeRec(id, date, trkptCount = 10) {
   return {
     id,
     date,
-    summary: { distance_m: 5000, duration_s: 1800, elevation_gain_m: 120, avg_power_w: 200, course_name: 'fujihc' },
+    summary: { distance_m: 5000, duration_s: 1800, elevation_gain_m: 120, avg_power_w: 200, course_name: 'fujihill' },
     trkpts,
   };
 }
@@ -34,7 +34,7 @@ beforeEach(async () => {
 
 describe('ride_db consts', () => {
   it('schema 名前 / version が固定値 (= NG-R3-3 同型予防、 ローカル再定義禁止)', () => {
-    expect(RIDE_DB_NAME).toBe('fujihc-trainer');
+    expect(RIDE_DB_NAME).toBe('fujihill-trainer');
     expect(RIDE_DB_VERSION).toBe(1);
     expect(RIDE_STORE).toBe('rides');
     expect(RIDE_INDEX_DATE).toBe('by_date');

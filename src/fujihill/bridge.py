@@ -6,7 +6,7 @@ to the viewer at 1 Hz, accepts slope commands from the viewer and writes
 them back to the trainer, and appends every state tick to a CSV log.
 
 usage:
-    python -m fujihc.bridge [--device <addr>] [--dummy] [--port 8765]
+    python -m fujihill.bridge [--device <addr>] [--dummy] [--port 8765]
 """
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ from websockets.exceptions import ConnectionClosed
 
 from aiohttp import web
 
-from fujihc.gpx_export import csv_to_gpx
-from fujihc.http_app import make_http_app
+from fujihill.gpx_export import csv_to_gpx
+from fujihill.http_app import make_http_app
 
-log = logging.getLogger("fujihc.bridge")
+log = logging.getLogger("fujihill.bridge")
 
 FTMS_SERVICE_UUID = "00001826-0000-1000-8000-00805f9b34fb"
 INDOOR_BIKE_DATA_UUID = "00002ad2-0000-1000-8000-00805f9b34fb"
@@ -681,7 +681,7 @@ class Bridge:
         self._close_csv()
         gpx_path = csv_path.with_suffix(".gpx")
         try:
-            n = csv_to_gpx(csv_path, gpx_path, name=f"fujihc {csv_path.stem}")
+            n = csv_to_gpx(csv_path, gpx_path, name=f"fujihill {csv_path.stem}")
             log.info("ride ended: %d points → %s", n, gpx_path)
             await self._send_to_all({
                 "type": "ride_status", "state": "ended",
@@ -865,7 +865,7 @@ class Bridge:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="fujihc.bridge", description=__doc__)
+    parser = argparse.ArgumentParser(prog="fujihill.bridge", description=__doc__)
     parser.add_argument("--device", help="BLE device address; if absent, scan + pick first FTMS")
     parser.add_argument("--dummy", action="store_true", help="skip BLE, emit constant speed")
     parser.add_argument("--fake-trainer", action="store_true",
@@ -877,7 +877,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="ローカル tile DB の path (brief 14)")
     parser.add_argument("--course-path", default="web/course.json",
                         help="course.json の path (brief 26b setup_status 用)")
-    parser.add_argument("--log-dir", default="~/fujihc-trainer/logs", help="CSV output dir")
+    parser.add_argument("--log-dir", default="~/fujihill-trainer/logs", help="CSV output dir")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args(argv)
 

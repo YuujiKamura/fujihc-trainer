@@ -1,4 +1,4 @@
-// fujihc viewer - MapLibre GL JS 試験版
+// fujihill viewer - MapLibre GL JS 試験版
 // Cesium を廃止、 GSI 標高 + OSM raster で 3D 地形表示。
 // addProtocol で GSI dem_png を terrarium 形式に変換して MapLibre の terrain に食わせる。
 // brief 21: GSI 6m grid を bilinear 4x で 1.5m grid 等価に upsample、 ride 視点を滑らかに.
@@ -56,7 +56,7 @@ const status = (msg) => { document.getElementById('status').textContent = msg; }
 // - BRIDGE_TILE_BASE_URL: 従来 (= localhost で bridge.py 起動済) の /tiles/...
 // - STATIC_TILE_BASE_URL: GitHub Pages 等 bridge 不在で、 ${BASE_PATH}static/ から
 //   PNG / PMTiles / course.json を直接 fetch する path
-// - BASE_PATH: GitHub Pages の project page prefix (= /fujihc-trainer/) 追従、
+// - BASE_PATH: GitHub Pages の project page prefix (= /fujihill-trainer/) 追従、
 //   localhost (= /) でも動く。 `location.pathname.replace(/\/[^/]*$/, '/')` で
 //   末尾 file 名を除いて parent path を取る。
 const BASE_PATH = location.pathname.replace(/\/[^/]*$/, '/');
@@ -152,10 +152,10 @@ const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-co
 // 主 map (z=13+ の vector + raster-dem) の source bounds、 MINIMAP_BBOX は
 // 別 canvas (上半分 minimap) の z=11 raster pre-fetch 範囲。 minimap は
 // course bbox + 20% margin + buffer=1 で 16 タイル要求するため MINIMAP_BBOX
-// の方が広い (= MINIMAP_BBOX ⊃ FUJIHC_DB_BOUNDS)。
-export const FUJIHC_DB_BOUNDS = [138.65, 35.30, 138.85, 35.50];
+// の方が広い (= MINIMAP_BBOX ⊃ FUJIHILL_DB_BOUNDS)。
+export const FUJIHILL_DB_BOUNDS = [138.65, 35.30, 138.85, 35.50];
 // center は bbox 中央 (= 138.75, 35.40)、 default view が DB 内に確実に収まる位置。
-export const FUJIHC_DB_CENTER = [138.75, 35.40];
+export const FUJIHILL_DB_CENTER = [138.75, 35.40];
 
 export function buildMapStyle(env) {
   // brief 31 commit β: env (= immutable ENV object) 受け、 bridgeReachable は env.mode で判定。
@@ -172,7 +172,7 @@ export function buildMapStyle(env) {
           tiles: [`${BRIDGE_TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
           minzoom: 13,
           maxzoom: 15,
-          bounds: FUJIHC_DB_BOUNDS,
+          bounds: FUJIHILL_DB_BOUNDS,
           attribution: '© OpenStreetMap contributors',
         },
         'gsi-terrain': {
@@ -182,7 +182,7 @@ export function buildMapStyle(env) {
           encoding: 'terrarium',
           minzoom: 8,
           maxzoom: 14,
-          bounds: FUJIHC_DB_BOUNDS,
+          bounds: FUJIHILL_DB_BOUNDS,
           attribution: '国土地理院 標高タイル',
           volatile: false,
         },
@@ -191,7 +191,7 @@ export function buildMapStyle(env) {
         'osm': {
           type: 'vector',
           url: `pmtiles://${STATIC_TILE_BASE_URL}/map.pmtiles`,
-          bounds: FUJIHC_DB_BOUNDS,
+          bounds: FUJIHILL_DB_BOUNDS,
           attribution: '© OpenStreetMap contributors',
         },
         'gsi-terrain': {
@@ -201,7 +201,7 @@ export function buildMapStyle(env) {
           encoding: 'terrarium',
           minzoom: 8,
           maxzoom: 14,
-          bounds: FUJIHC_DB_BOUNDS,
+          bounds: FUJIHILL_DB_BOUNDS,
           attribution: '国土地理院 標高タイル',
           volatile: false,
         },
@@ -249,7 +249,7 @@ function bootMap(env) {
     // 起動直後の view が確実に DB 範囲内に収まるようにする (= 404 量産抑制).
     // 旧 [138.7587, 35.4521] (= 富士スバルライン Start 付近) は bbox 内ではあるが端寄り、
     // 中央寄せの方が default view から見える範囲が広い。
-    center: FUJIHC_DB_CENTER,
+    center: FUJIHILL_DB_CENTER,
     zoom: 13,
     pitch: 60,
     bearing: 0,
@@ -311,8 +311,8 @@ let totalDist = 0;
 let rideState = null;
 let playSpeed = 0;
 let lastT = performance.now();
-let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihc.diff')) || 1.0; } catch { return 1.0; } })();
-let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihc.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
+let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihill.diff')) || 1.0; } catch { return 1.0; } })();
+let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 const POSITION_SEND_INTERVAL_MS = 1000;
@@ -533,7 +533,7 @@ function setTerrainStatusUI(snap) {
   if (snap.rangeWarning) {
     el.textContent += ` ${snap.rangeWarning}`;
     if (!setTerrainStatusUI._loggedRangeWarn) {
-      console.warn('[fujihc] terrain_loader range probe:', snap.rangeWarning);
+      console.warn('[fujihill] terrain_loader range probe:', snap.rangeWarning);
       setTerrainStatusUI._loggedRangeWarn = true;
     }
   }
@@ -620,7 +620,7 @@ const wsHandlers = {
       setText('setup-status', `走行準備完了: ${msg.address}`);
       setText('p-state', '✓ 準備完了');
       updateStepIndicator(-1, 3);
-      try { localStorage.setItem('fujihc.trainer.address', msg.address); } catch {}
+      try { localStorage.setItem('fujihill.trainer.address', msg.address); } catch {}
       // brief 34 ε-9: pair 完了 flag を立て、 terrain gate の状態に応じて btnRideStart 制御.
       _pairConnected = true;
       const startBtn = document.getElementById('btnRideStart');
@@ -723,7 +723,7 @@ function connectBridge() {
       onOpen: () => {
         status('bridge 接続済');
         updateStepIndicator(0, -1);
-        const remembered = (() => { try { return localStorage.getItem('fujihc.trainer.address'); } catch { return null; } })();
+        const remembered = (() => { try { return localStorage.getItem('fujihill.trainer.address'); } catch { return null; } })();
         if (remembered) {
           setText('setup-status', `前回の機器に再接続中: ${remembered}`);
           setText('p-device', remembered);
@@ -866,7 +866,7 @@ function verifyAttributionVisible() {
   }
 }
 function showAttributionWarning(detail) {
-  console.warn('[fujihc] 帰属表示が表示されていません:', detail);
+  console.warn('[fujihill] 帰属表示が表示されていません:', detail);
   // warning banner を画面上端に表示 (= 既存 #status を借りる、 別 DOM 追加せず軽量).
   const st = document.getElementById('status');
   if (st) {
@@ -1345,14 +1345,14 @@ function startTerrainProbe() {
   });
   // start は fire-and-forget (= 完了は subscribe 経由).
   loader.start().catch((e) => {
-    console.warn('[fujihc] terrain probe error:', e);
+    console.warn('[fujihill] terrain probe error:', e);
   });
   return loader;
 }
 // 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
 let _terrainLoader = null;
 if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
-  try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihc] terrain probe init failed:', e); }
+  try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihill] terrain probe init failed:', e); }
 }
 
 if (introConsented()) {
@@ -1586,7 +1586,7 @@ async function loadCourse() {
 // 失敗時は resolve のみ (= reject しない、 旧版踏襲)。
 // crossOrigin='anonymous' は canvas tainted 回避用 (= drawImage 後 getImageData は呼ばないので
 // 必須ではないが旧版踏襲、 OSM 側は CORS 許可ヘッダを返すので無害)。
-// User-Agent は browser が自動で送る (= bridge 側で fetch するときは fujihc-trainer/0.1 UA を明示)。
+// User-Agent は browser が自動で送る (= bridge 側で fetch するときは fujihill-trainer/0.1 UA を明示)。
 function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
   return new Promise((resolve) => {
     // brief 31: static mode (= bridge 未到達) では minimap 用 OSM raster を取得しない。
@@ -2042,8 +2042,8 @@ function bindSlider(rangeId, valId, store, applyFn) {
 const rDiff = document.getElementById('rngDiff'); const rSpd = document.getElementById('rngSpd');
 if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
-bindSlider('rngDiff', 'diffVal', 'fujihc.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
-bindSlider('rngSpd', 'spdVal', 'fujihc.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
+bindSlider('rngDiff', 'diffVal', 'fujihill.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
+bindSlider('rngSpd', 'spdVal', 'fujihill.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
 
 // 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
 // setPaintProperty で live 更新、 デバッグ表示も同時。
@@ -2089,11 +2089,11 @@ async function getRideDb() {
   return _rideDbInstance;
 }
 
-// fujihc-trainer の Strava client_id は user 各自が自分の Strava app を作って setup する運用.
+// fujihill-trainer の Strava client_id は user 各自が自分の Strava app を作って setup する運用.
 // repo に固定 client_id は埋め込まない (= 各 user の activity が混線しない、 brief 33 §ハマる罠).
-// localStorage 'fujihc.strava.client_id' に user が貼る、 未設定なら upload button が status を出す.
+// localStorage 'fujihill.strava.client_id' に user が貼る、 未設定なら upload button が status を出す.
 function getStravaClientId() {
-  try { return localStorage.getItem('fujihc.strava.client_id') || null; } catch { return null; }
+  try { return localStorage.getItem('fujihill.strava.client_id') || null; } catch { return null; }
 }
 function getStravaRedirectUri() {
   // GitHub Pages base + oauth-callback.html (= same-origin、 PKCE redirect 先)
@@ -2115,14 +2115,14 @@ function buildRideSummary(rideState, course) {
     duration_s: rideStartedAt ? Math.round((performance.now() - rideStartedAt) / 1000) : 0,
     elevation_gain_m: 0,  // TODO: course から差分計算 (= 別 brief、 brief 33 範囲外)
     avg_power_w: null,
-    course_name: 'fujihc',
+    course_name: 'fujihill',
   };
 }
 
 bindPostRideButtons({
   getTrkpts: () => (rideState ? rideState.getTrkpts() : []),
   getSummary: () => buildRideSummary(rideState, []),
-  getCourseName: () => 'fujihc',
+  getCourseName: () => 'fujihill',
   // brief 34 ε-3: IndexedDB 書込を consent flag で guard (= history consent off なら no-op).
   // brief 34 ε-8: 「観る」モード (= intro consent mode === 'view') も二重 guard (= 観るは記録対象外).
   // 2026-05-15 fix: 保存できなかった時は false を返して caller (= postride_buttons.js) 側で
@@ -2191,7 +2191,7 @@ async function showHistoryOverlay() {
       document,
       listEl: list,
       ride: r,
-      courseName: 'fujihc',
+      courseName: 'fujihill',
       onDelete: async () => {
         try { const db = await getRideDb(); await rideDbDelete(db, r.id); showHistoryOverlay(); }
         catch (err) { if (status) status.textContent = `削除失敗: ${err.message}`; }
@@ -2269,7 +2269,7 @@ if (btnStravaSetupSave) btnStravaSetupSave.addEventListener('click', async () =>
     if (inp) inp.focus();
     return;
   }
-  try { localStorage.setItem('fujihc.strava.client_id', v); } catch {}
+  try { localStorage.setItem('fujihill.strava.client_id', v); } catch {}
   const ov = document.getElementById('strava-setup-overlay');
   if (ov) ov.style.display = 'none';
   updateStravaStatusUI();

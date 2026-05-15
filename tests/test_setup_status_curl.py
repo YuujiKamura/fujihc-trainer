@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from fujihc.http_app import make_http_app
+from fujihill.http_app import make_http_app
 import init_tile_db
 
 
@@ -76,7 +76,7 @@ async def test_fetch_gsi_returns_202_and_inserts_rows(
             return False
 
     # rate limit を 0 にするため tile_constants 経由で短縮 (= dbinit default 1.0s だと遅すぎる)
-    from fujihc import dbinit
+    from fujihill import dbinit
     orig = dbinit.fetch_gsi_async
 
     async def fast(*args, **kwargs):
@@ -84,8 +84,8 @@ async def test_fetch_gsi_returns_202_and_inserts_rows(
         kwargs['corridor_tiles'] = 1
         return await orig(*args, **kwargs)
 
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()), \
-         patch('fujihc.http_app.dbinit.fetch_gsi_async', side_effect=fast):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()), \
+         patch('fujihill.http_app.dbinit.fetch_gsi_async', side_effect=fast):
         client = await aiohttp_client(make_http_app(empty_db, course_path=course_path))
         resp = await client.post('/tiles/_fetch_gsi', json={})
         assert resp.status == 202
@@ -119,7 +119,7 @@ async def test_extract_osm_valid_call_returns_202(
     fake_reader = MagicMock()
     fake_reader.get.return_value = b'pbf-bytes'
 
-    from fujihc import dbinit
+    from fujihill import dbinit
     orig = dbinit.extract_osm_async
 
     async def patched(*args, **kwargs):
@@ -127,7 +127,7 @@ async def test_extract_osm_valid_call_returns_202(
         kwargs['corridor_tiles'] = 1
         return await orig(*args, **kwargs)
 
-    with patch('fujihc.http_app.dbinit.extract_osm_async', side_effect=patched):
+    with patch('fujihill.http_app.dbinit.extract_osm_async', side_effect=patched):
         client = await aiohttp_client(make_http_app(empty_db, course_path=course_path))
         resp = await client.post('/tiles/_extract_osm',
                                  json={'pmtiles_path': str(pm)})
@@ -152,7 +152,7 @@ async def test_progress_broadcaster_invoked(
     async def broadcaster(payload):
         captured.append(payload)
 
-    from fujihc import dbinit
+    from fujihill import dbinit
     orig = dbinit.fetch_gsi_async
 
     async def fast(*args, **kwargs):
@@ -160,8 +160,8 @@ async def test_progress_broadcaster_invoked(
         kwargs['corridor_tiles'] = 1
         return await orig(*args, **kwargs)
 
-    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()), \
-         patch('fujihc.http_app.dbinit.fetch_gsi_async', side_effect=fast):
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()), \
+         patch('fujihill.http_app.dbinit.fetch_gsi_async', side_effect=fast):
         client = await aiohttp_client(make_http_app(
             empty_db, course_path=course_path, progress_broadcaster=broadcaster))
         resp = await client.post('/tiles/_fetch_gsi', json={})

@@ -50,7 +50,7 @@ function memStorage() {
 }
 
 describe('brief 34 ε-4 integration: Strava upload 2 重 gate (= caller + lib 両方で trademark 強制)', () => {
-  it('Strava upload click → fetch payload の name に「(fujihc-trainer simulator)」が必ず含まれる', async () => {
+  it('Strava upload click → fetch payload の name に「(fujihill-trainer simulator)」が必ず含まれる', async () => {
     const { doc, elements } = makeMockDoc();
     const fetchSpy = vi.fn();
     let capturedPayload = null;
@@ -95,7 +95,7 @@ describe('brief 34 ε-4 integration: Strava upload 2 重 gate (= caller + lib �
         document: doc,
         window: { sessionStorage: memStorage(), location: { assign() {} } },
         getTrkpts: () => [{ t: '2026-05-15T07:30:00Z', lat: 35.4, lon: 138.7, ele: 1000, power: 200, cad: 80, hr: 140 }],
-        getSummary: () => ({ id: 'integration-ride', date: '2026-05-15T07:30:00Z', distance_m: 5000, duration_s: 1800, course_name: 'fujihc' }),
+        getSummary: () => ({ id: 'integration-ride', date: '2026-05-15T07:30:00Z', distance_m: 5000, duration_s: 1800, course_name: 'fujihill' }),
         getCourseName: () => 'My Personal Title',  // caller が override しようとする
         addRide: async () => {},
         getClientId: () => 'fake-client-id',
@@ -109,11 +109,11 @@ describe('brief 34 ε-4 integration: Strava upload 2 重 gate (= caller + lib �
       // 2 重 gate 後の payload を assert.
       expect(capturedPayload).not.toBeNull();
       // name は caller 渡し ("My Personal Title") + 接尾 (caller append) + 接尾 (lib append idempotent)
-      // = 「My Personal Title (fujihc-trainer simulator)」 ── 接尾 1 つだけ (idempotent).
+      // = 「My Personal Title (fujihill-trainer simulator)」 ── 接尾 1 つだけ (idempotent).
       expect(capturedPayload.name).toContain('My Personal Title');
-      expect(capturedPayload.name).toContain('(fujihc-trainer simulator)');
+      expect(capturedPayload.name).toContain('(fujihill-trainer simulator)');
       // 二重接尾は起きない (idempotent)
-      const suffixCount = (capturedPayload.name.match(/\(fujihc-trainer simulator\)/g) || []).length;
+      const suffixCount = (capturedPayload.name.match(/\(fujihill-trainer simulator\)/g) || []).length;
       expect(suffixCount).toBe(1);
       // description にも商標混同対策 prefix
       expect(capturedPayload.description).toMatch(/^This is an indoor trainer simulation/);

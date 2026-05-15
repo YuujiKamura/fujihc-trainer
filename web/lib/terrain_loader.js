@@ -33,7 +33,7 @@ function latToTileY(lat, z) {
   );
 }
 
-// 富士スバルライン DB bbox 中央 (= FUJIHC_DB_CENTER と同値、 viewer-maplibre.js export).
+// 富士スバルライン DB bbox 中央 (= FUJIHILL_DB_CENTER と同値、 viewer-maplibre.js export).
 // 重複定義になるが、 ここは terrain_loader の責務単位として独立、 viewer 起動前に
 // import される module の循環依存を避ける目的で内製する。
 const DB_CENTER_LON = 138.75;

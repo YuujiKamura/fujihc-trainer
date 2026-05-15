@@ -55,8 +55,8 @@ MINIMAP_OSM_ZOOM = 11
 # 将来的に enumerate_bbox_tiles(course, MINIMAP_OSM_ZOOM, margin) で動的算出に
 # 切替予定 (= brief 候補)、 現状は明示性優先で固定値.
 #
-# 注意 2: viewer-maplibre.js の FUJIHC_DB_BOUNDS (= (138.65, 35.30, 138.85, 35.50))
-# とは概念的に分離. FUJIHC_DB_BOUNDS は MapLibre の vector/DEM source の bounds
+# 注意 2: viewer-maplibre.js の FUJIHILL_DB_BOUNDS (= (138.65, 35.30, 138.85, 35.50))
+# とは概念的に分離. FUJIHILL_DB_BOUNDS は MapLibre の vector/DEM source の bounds
 # (z>=13 で課程付近のみ要求させる coarse hint)、 MINIMAP_BBOX は z=11 raster
 # pre-fetch 範囲 (minimap canvas 用の 1-shot 9-16 タイル). 旧版では同値だったが、
 # minimap の viewer 要求が広い (= +margin/+buffer) 分だけ MINIMAP_BBOX が大きく.

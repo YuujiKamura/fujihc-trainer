@@ -1,7 +1,7 @@
 // brief 34 ε-5: 「このサイトの全データを削除」機能の core module.
 //
 // 削除対象:
-// - IndexedDB (= fujihc-trainer DB の全 store)
+// - IndexedDB (= fujihill-trainer DB の全 store)
 // - localStorage (= consent / Strava token / client_id / trainer.address / 設定スライダ値 等、 全 key)
 // - Strava 側 token invalidate は client side では不可 (= CORS、 strava_oauth.js:185 comment 同期)。
 //   削除完了後 dialog で Strava 設定ページへの導線を再提示する (= index.html:343 link 既存)。
@@ -14,7 +14,7 @@
 import { RIDE_DB_NAME } from './ride_db.js';
 
 /**
- * IndexedDB の fujihc-trainer DB を削除する.
+ * IndexedDB の fujihill-trainer DB を削除する.
  * @param {{indexedDB?: IDBFactory|null}} [opts] indexedDB に明示 null を渡せば「不在環境」として扱う、
  *   undefined / 未指定なら globalThis.indexedDB に fallback。
  * @returns {Promise<{deleted: boolean, error?: string}>}
@@ -64,13 +64,13 @@ export function clearAllLocalStorage(opts = {}) {
     } else {
       // 既知 key を網羅的に list (= 将来 key 追加時はここに足す).
       const knownKeys = [
-        'fujihc.consent.intro.v1',
-        'fujihc.consent.ride.v1',
-        'fujihc.diff',
-        'fujihc.spd',
-        'fujihc.trainer.address',
-        'fujihc.strava.client_id',
-        'fujihc.strava.token',
+        'fujihill.consent.intro.v1',
+        'fujihill.consent.ride.v1',
+        'fujihill.diff',
+        'fujihill.spd',
+        'fujihill.trainer.address',
+        'fujihill.strava.client_id',
+        'fujihill.strava.token',
       ];
       for (const k of knownKeys) ls.removeItem(k);
     }
