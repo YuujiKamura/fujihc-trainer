@@ -213,8 +213,11 @@ describe('brief 34 ε-2: viewer source 上の guard 構造を pin (= grep + beha
     expect(body).toMatch(/getIntroConsent\(\)/);
   });
 
-  it('btnIntroDemo click は setIntroConsent + hideIntroOverlay + dispatchAfterIntro の 3 連動', () => {
-    expect(viewer).toMatch(/btnIntroDemo[\s\S]{0,300}setIntroConsent\(\)[\s\S]{0,300}hideIntroOverlay\(\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+  it('btnIntroStart click は setIntroConsent + hideIntroOverlay + dispatchAfterIntro の 3 連動 (= brief 34 ε-1 で btnIntroDemo から rename)', () => {
+    // brief 34 ε-1 (= 2026-05-15 user 方向修正): 旧 btnIntroDemo (= 試走デモを見る) を撤去、
+    // btnIntroStart (= 自分の trainer で走る) に rename。 デモ走行 button は提供しない。
+    expect(viewer).toMatch(/btnIntroStart[\s\S]{0,300}setIntroConsent\(\)[\s\S]{0,300}hideIntroOverlay\(\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+    expect(viewer).not.toMatch(/btnIntroDemo/);
   });
 
   it('btnIntroClose click は consent を保存せず overlay のみ閉じる (= reload で再表示)', () => {

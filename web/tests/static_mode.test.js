@@ -78,28 +78,31 @@ describe('brief 31 commit γ: checkSetupStatus は lib に抽出済、 viewer �
   });
 });
 
-describe('brief 31 commit β: bootCheckSetupStatus が env.mode で static / bridge を分岐', () => {
-  it('bootCheckSetupStatus の body 内に bootEnv 呼出 + env.mode === "static" 分岐 + initMapMode 呼出', () => {
+describe('brief 31 commit β: bootCheckSetupStatus が env.mode で static / bridge を分岐 (brief 34 ε-2 で initBleMode に rewire)', () => {
+  it('bootCheckSetupStatus の body 内に bootEnv 呼出 + env.mode === "static" 分岐 + initBleMode 呼出 (= brief 34 ε-2)', () => {
     const m = viewer.match(/function\s+bootCheckSetupStatus\s*\(\s*\)[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
     expect(body).toMatch(/bootEnv\(\)/);
     expect(body).toMatch(/env\.mode\s*===?\s*['"]static['"]/);
-    expect(body).toMatch(/initMapMode\(\)/);
+    // brief 34 ε-2 (= 2026-05-15 user 方向修正): 旧 initMapMode 撤回、 initBleMode に rewire.
+    expect(body).toMatch(/initBleMode\(\)/);
     // dbinit-overlay は bridge mode 経路でのみ呼ばれる
     expect(body).toMatch(/showDbinit\(/);
   });
 
-  it('static mode 経路は showDbinit を skip + connectBridge skip + bootMap(env) + initMapMode のみ', () => {
+  it('static mode 経路は showDbinit を skip + connectBridge skip + bootMap(env) + initBleMode のみ (= brief 34 ε-2)', () => {
     // env.mode === 'static' の branch 内では showDbinit / connectBridge を呼ばないことを構造的に確認
     const m = viewer.match(/if\s*\(\s*env\.mode\s*===?\s*['"]static['"]\s*\)\s*\{[\s\S]*?return;\s*\n?\s*\}/);
     expect(m).not.toBeNull();
     const branchBody = m[0];
     expect(branchBody).not.toMatch(/showDbinit\(/);
     expect(branchBody).not.toMatch(/connectBridge\(/);
-    // bootMap(env) + initMapMode() が必ず呼ばれる
+    // bootMap(env) + initBleMode() が必ず呼ばれる (= 旧 initMapMode は撤回)
     expect(branchBody).toMatch(/bootMap\(\s*env\s*\)/);
-    expect(branchBody).toMatch(/initMapMode\(/);
+    expect(branchBody).toMatch(/initBleMode\(/);
+    // static branch 内で initMapMode は呼ばれない (= 一般訪問者にデモを提供しない)
+    expect(branchBody).not.toMatch(/initMapMode\(/);
   });
 });
 

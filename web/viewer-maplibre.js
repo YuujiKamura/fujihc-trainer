@@ -710,9 +710,13 @@ function maybeSendSlope(slope_pct) {
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
-// brief 34 ε-2: 公開ガードレール intro-overlay 表示 / ボタン bind.
+// brief 34 ε-2 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay 表示 / ボタン bind.
 // 「閉じる」= 何もしない (= overlay は閉じるが consent は保存しない、 reload 時に再表示)。
-// 「試走デモを見る」= setIntroConsent() を保存 + overlay を隠して dispatchAfterIntro。
+// 「自分の trainer で走る」= setIntroConsent() 保存 + overlay 隠す + dispatchAfterIntro。
+//   default 経路 (= 無 URL 引数) では bootCheckSetupStatus 経由で initBleMode に向かう
+//   (= Web Bluetooth で trainer 直接接続、 brief 32 で landed 済の経路を流用)。
+//   ?map=1 / ?test=1 / ?ble=1 等の URL 引数経由は開発者本人の動作確認用 path、
+//   一般訪問者は intro 通過後の default 経路 (= initBleMode) のみに到達する。
 function showIntroOverlay() {
   const ov = document.getElementById('intro-overlay');
   if (ov) ov.classList.add('visible');
@@ -721,12 +725,27 @@ function hideIntroOverlay() {
   const ov = document.getElementById('intro-overlay');
   if (ov) ov.classList.remove('visible');
 }
+// brief 34 ε-3: 公開ガードレール consent-overlay 表示 / ボタン bind.
+// 「同意して ride 開始」= setRideConsent({history, strava, asked: true}) を保存 +
+//                       overlay を hide + ride 開始 (= btnRideStart 相当の処理を再実行)。
+// 「キャンセル」= 何も保存しない、 overlay のみ hide (= ride 開始しない)。
+function showConsentOverlay() {
+  const ov = document.getElementById('consent-overlay');
+  if (ov) ov.classList.add('visible');
+}
+function hideConsentOverlay() {
+  const ov = document.getElementById('consent-overlay');
+  if (ov) ov.classList.remove('visible');
+}
+
 // 起動時に 1 回 bind (= multiple click でも 1 度しか発火しない、 addEventListener 性質).
 // document が無い test 環境 (= 直 import) では skip。
 if (typeof document !== 'undefined') {
-  const btnIntroDemo = document.getElementById('btnIntroDemo');
+  // brief 34 ε-1 (= 2026-05-15 user 方向修正反映): btnIntroStart = 「自分の trainer で走る」.
+  // デモ走行ボタンは撤去、 trainer 無し試触者は default 想定外。
+  const btnIntroStart = document.getElementById('btnIntroStart');
   const btnIntroClose = document.getElementById('btnIntroClose');
-  if (btnIntroDemo) btnIntroDemo.addEventListener('click', () => {
+  if (btnIntroStart) btnIntroStart.addEventListener('click', () => {
     setIntroConsent();
     hideIntroOverlay();
     dispatchAfterIntro();
@@ -735,6 +754,32 @@ if (typeof document !== 'undefined') {
     // 「閉じる」は consent を保存しない (= reload 時に再表示).
     // ride / map fetch は走らせない (= 帯域消費ゼロ).
     hideIntroOverlay();
+  });
+
+  // brief 34 ε-3: consent-overlay の bind. accept で flag を保存 + ride 再発火、
+  // cancel で何もしない (= ride 開始されないまま overlay 閉じる).
+  const btnConsentAccept = document.getElementById('btnConsentAccept');
+  const btnConsentCancel = document.getElementById('btnConsentCancel');
+  if (btnConsentAccept) btnConsentAccept.addEventListener('click', () => {
+    const chkHist = document.getElementById('chkConsentHistory');
+    const chkStrava = document.getElementById('chkConsentStrava');
+    setRideConsent({
+      history: !!(chkHist && chkHist.checked),
+      strava: !!(chkStrava && chkStrava.checked),
+      asked: true,
+    });
+    hideConsentOverlay();
+    // postride button の visibility を consent flag に追随 (= 視覚的にも feedback).
+    // updatePostrideButtonVisibility は module 後段で定義、 typeof check で safe call.
+    if (typeof updatePostrideButtonVisibility === 'function') {
+      updatePostrideButtonVisibility();
+    }
+    // ride 開始処理を再発火 (= btnRideStart の click が直前に return した処理を再実行)
+    startRideConfirmed();
+  });
+  if (btnConsentCancel) btnConsentCancel.addEventListener('click', () => {
+    hideConsentOverlay();
+    // 何も保存しない、 ride 開始もしない (= setup 画面に戻る).
   });
 }
 
@@ -749,6 +794,10 @@ if (typeof document !== 'undefined') {
 // 走らせない (= 訪問者が「閉じる」を選んだ時に pmtiles / GSI PNG fetch を完全停止)。
 // 開発者 bypass (= ?consent=dev) は module top の CONSENT_DEV_BYPASS で吸収済、
 // この関数は dispatchAfterIntro 経由でのみ呼ばれるため、 ここでの guard は冗長 defense。
+//
+// brief 34 ε-2 (= 2026-05-15 user 方向修正反映): static mode (= GitHub Pages 公開サイト) では
+// 旧 initMapMode (= 自動 ride デモ) ではなく initBleMode に向かう。 一般訪問者は trainer
+// 持参の前提、 Web Bluetooth で自分の trainer を直接 pair する設計。
 function bootCheckSetupStatus() {
   // brief 34 ε-2: intro 未通過なら何もしない (= 二重 gate、 dispatchAfterIntro 経由で
   // 通常呼ばれないが、 外部から直呼びされても fetch を発生させない物理 gate).
@@ -760,11 +809,13 @@ function bootCheckSetupStatus() {
   // 旧 `bootMap(false)` / `bootMap(true)` の bool 直渡しを廃止、 全部 env 経由で統一。
   bootEnv().then((env) => {
     if (env.mode === 'static') {
-      // GitHub Pages 等、 bridge 未到達 = static mode、 MAP_MODE 相当に倒す。
+      // brief 34 ε-2 (= 2026-05-15 user 方向修正): GitHub Pages 等の static mode では
+      // 旧 initMapMode (= 自動 ride デモ) を撤回、 訪問者は自分の trainer 持参前提なので
+      // Web Bluetooth で trainer 直接接続する initBleMode に向かう。
       // dbinit-overlay は bridge mode 専用 (= 「bridge 立ち上げて」と促す UI)、
       // static mode では bridge.py 起動を促しても無意味なため一切表示しない。
       bootMap(env);
-      initMapMode();
+      initBleMode();
       return;
     }
     bootMap(env);
@@ -1392,11 +1443,27 @@ function tick(t) {
 
 // ボタン bind
 document.getElementById('btnPause').addEventListener('click', () => { if (rideState) rideState.togglePause(); });
-document.getElementById('btnRideStart').addEventListener('click', () => {
+// brief 34 ε-3: 公開ガードレール ride consent guard.
+// btnRideStart の click handler に guard を挿入: ride 機能の使用同意を取っていない
+// (= getRideConsent('asked') が false) なら consent-overlay を表示して return、
+// rideState.start を呼ばない。 consent ダイアログで「同意して ride 開始」を押すと
+// asked=true + history/strava flag を保存 + 再度 btnRideStart の click を発火させる。
+// btnConfirmDemo (= デモ走行 button、 viewer-maplibre.js:1353-1359) は consent 不要
+// = 履歴も Strava も使わない declaration として扱う (= v3 設計通り)。
+function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.start();
   lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
   client.sendRideStart();
+}
+document.getElementById('btnRideStart').addEventListener('click', () => {
+  if (!client || !client.isOpen()) return;
+  // brief 34 ε-3: consent 未取得 (= 通過 signal 不在) なら consent-overlay 表示。
+  if (!getRideConsent('asked')) {
+    showConsentOverlay();
+    return;
+  }
+  startRideConfirmed();
 });
 document.getElementById('btnRideEnd').addEventListener('click', () => {
   if (!client || !client.isOpen()) return;
@@ -1522,12 +1589,39 @@ bindPostRideButtons({
   getTrkpts: () => (rideState ? rideState.getTrkpts() : []),
   getSummary: () => buildRideSummary(rideState, []),
   getCourseName: () => 'fujihc',
-  addRide: async (rec) => { const db = await getRideDb(); await rideDbAdd(db, rec); },
-  getClientId: getStravaClientId,
+  // brief 34 ε-3: IndexedDB 書込を consent flag で guard (= history consent off なら no-op).
+  // getRideConsent('history') が false なら status を出して return、 IndexedDB 接続もしない。
+  addRide: async (rec) => {
+    if (!getRideConsent('history')) {
+      setPostrideStatus('履歴保存は同意されていません (= ride 開始前の consent で OFF 選択). 設定画面から再 ride で同意可。');
+      return;
+    }
+    const db = await getRideDb();
+    await rideDbAdd(db, rec);
+  },
+  // brief 34 ε-3: Strava 機能を consent flag で guard (= strava consent off なら client_id を返さない).
+  // getClientId が null を返せば postride_buttons.js 側で「client_id 未設定」の status が出る。
+  getClientId: () => {
+    if (!getRideConsent('strava')) return null;
+    return getStravaClientId();
+  },
   getRedirectUri: getStravaRedirectUri,
   onViewHistory: () => { showHistoryOverlay().catch((err) => setPostrideStatus(`history error: ${err.message}`)); },
   onStatus: setPostrideStatus,
 });
+
+// brief 34 ε-3: Strava upload / save history button を consent flag で表示制御 (= 視覚的にも明示).
+// ride 開始時の consent で OFF を選んだ場合、 postride で混乱しないよう button を hide。
+// consent 未取得 (= setup-overlay 経由で未走) の場合は default で hide (= 安全寄り).
+function updatePostrideButtonVisibility() {
+  const histOk = getRideConsent('history');
+  const stravaOk = getRideConsent('strava');
+  const btnSave = document.getElementById('btnSaveHistory');
+  const btnStrava = document.getElementById('btnStravaUpload');
+  if (btnSave) btnSave.hidden = !histOk;
+  if (btnStrava) btnStrava.hidden = !stravaOk;
+}
+updatePostrideButtonVisibility();
 
 // brief 33 atom H: history-overlay の render + button bind.
 async function showHistoryOverlay() {

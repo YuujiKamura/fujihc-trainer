@@ -152,9 +152,17 @@ describe('brief 34 ε-1: HTML / CSS grep gate (= intro/consent overlay が index
   });
 
   it('intro/consent overlay に accept/cancel 2 button (= 不可視 default deny を構造化)', () => {
+    // brief 34 ε-1 (= 2026-05-15 user 方向修正): btnIntroDemo (= 試走デモ) を撤去、
+    // btnIntroStart (= 自分の trainer で走る) に置換。 デモ走行 button は提供しない。
     expect(html).toMatch(/id="btnIntroClose"/);
-    expect(html).toMatch(/id="btnIntroDemo"/);
+    expect(html).toMatch(/id="btnIntroStart"/);
+    expect(html).not.toMatch(/id="btnIntroDemo"/);
     expect(html).toMatch(/id="btnConsentAccept"/);
     expect(html).toMatch(/id="btnConsentCancel"/);
+  });
+
+  it('intro overlay の文言: 「自分の trainer で走る」/「閉じる」の 2 ボタン (= デモ走行は提供しない)', () => {
+    expect(html).toMatch(/自分の trainer で走る/);
+    expect(html).not.toMatch(/試走デモを見る/);
   });
 });

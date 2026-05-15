@@ -174,7 +174,7 @@
   #intro-panel p.intro-disclaimer { color: #ffd54a; font-weight: bold; background: #221a08; border-left: 3px solid #ffd54a; padding: 0.6rem 0.8rem; }
   #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
   #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
-  #intro-panel .actions button#btnIntroDemo { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
 
   /* brief 34 ε-1: 公開ガードレール consent-overlay (= z-index 1460、 ride 開始前の opt-in).
@@ -410,8 +410,11 @@
   </div>
 </div>
 
-<!-- brief 34 ε-1: 公開ガードレール intro-overlay (= 説明だけ、 4 文).
-     ボタン押下まで他 UI へ進めない (= viewer 側 introConsented guard で物理停止). -->
+<!-- brief 34 ε-1 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay.
+     ボタンは「自分の trainer で走る」/「閉じる」の 2 つ、 default は何もしない。
+     デモ走行 button は提供しない (= 1m 豆腐が地図を動くだけの demo は第三者提示価値ゼロ)、
+     開発者本人の動作確認用 bypass は URL 引数 (?map=1&consent=dev / ?test=1&consent=dev) 経由のみ。
+     ボタン id: btnIntroStart = 「自分の trainer で走る」 / btnIntroClose = 「閉じる」. -->
 <div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title">
   <div id="intro-panel">
     <h2 id="intro-title">fujihc-trainer (= 富士ヒルクライム シミュレータ)</h2>
@@ -420,10 +423,10 @@
     <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
     <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 公道は車両以外通行制限があり、 第三者が検証する手段が事実上ありません。 この不確実性を許容してご利用ください。</p>
     <p>データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし、 browser を消すと履歴も消えます)。</p>
-    <p>動作には FTMS trainer と Chrome / Edge が必要、 trainer なしでも試走デモのみ閲覧可。</p>
+    <p>動作には FTMS 対応 trainer (= 室内ローラー) と Chrome / Edge が必要です。 訪問者の trainer に Web Bluetooth で直接繋ぎ、 富士ヒルコースの起伏を再現して走ります。 trainer 無しでこのサイトに来ても出来ることはありません。</p>
     <div class="actions">
       <button id="btnIntroClose" type="button">閉じる</button>
-      <button id="btnIntroDemo" type="button">試走デモを見る</button>
+      <button id="btnIntroStart" type="button">自分の trainer で走る</button>
     </div>
   </div>
 </div>
