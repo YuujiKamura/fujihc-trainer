@@ -2186,28 +2186,19 @@ async function showHistoryOverlay() {
   if (empty) empty.hidden = true;
   if (status) status.textContent = `${rides.length} 件`;
   for (const r of rides) {
-    const li = document.createElement('li');
-    const meta = document.createElement('div');
-    meta.className = 'ride-meta';
-    const dateEl = document.createElement('div');
-    dateEl.className = 'ride-date';
-    dateEl.textContent = r.date || r.id;
-    const sumEl = document.createElement('div');
-    sumEl.className = 'ride-summary';
-    const s = r.summary || {};
-    sumEl.textContent = `${Math.round((s.distance_m || 0) / 100) / 10} km / ${Math.round(s.duration_s || 0)}s / ${(r.trkpts || []).length}pt`;
-    meta.appendChild(dateEl); meta.appendChild(sumEl);
-    const actions = document.createElement('div');
-    actions.className = 'ride-actions';
-    const bDel = document.createElement('button');
-    bDel.textContent = '削除';
-    bDel.addEventListener('click', async () => {
-      try { const db = await getRideDb(); await rideDbDelete(db, r.id); showHistoryOverlay(); }
-      catch (err) { if (status) status.textContent = `削除失敗: ${err.message}`; }
+    appendHistoryRow({
+      document,
+      listEl: list,
+      ride: r,
+      courseName: 'fujihc',
+      onDelete: async () => {
+        try { const db = await getRideDb(); await rideDbDelete(db, r.id); showHistoryOverlay(); }
+        catch (err) { if (status) status.textContent = `削除失敗: ${err.message}`; }
+      },
+      onGpxDownloaded: ({ filename, points }) => {
+        if (status) status.textContent = `${filename} を保存しました (${points} 点)`;
+      },
     });
-    actions.appendChild(bDel);
-    li.appendChild(meta); li.appendChild(actions);
-    list.appendChild(li);
   }
 }
 
