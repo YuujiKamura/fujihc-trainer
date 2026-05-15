@@ -1,0 +1,15 @@
+{
+  "name": "fujihc-glb-build",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-time only deps for generating fuji_course.glb. Not shipped, not served. Rails runtime uses importmap.",
+  "scripts": {
+    "build": "node build_terrain_glb.mjs",
+    "verify": "node verify_glb.mjs"
+  },
+  "dependencies": {
+    "three": "^0.169.0",
+    "pngjs": "^7.0.0"
+  }
+}
