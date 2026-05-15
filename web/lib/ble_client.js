@@ -91,6 +91,13 @@ export function createBleClient(handlers, options = {}) {
       _dispatch('connect_status', { state: 'failed', message: _errMsg(err) });
       return;
     }
+    await _connectFtmsWithDevice(device);
+  }
+
+  // 2026-05-15: 過去 grant 済 device (= navigator.bluetooth.getDevices() の戻り値) を
+  // 受け取って user gesture なしで gatt 接続する経路。 _connectFtms (= requestDevice
+  // chooser 経由) と共有する handshake / notify subscribe ロジックを分離した。
+  async function _connectFtmsWithDevice(device) {
     state.ftmsDevice = device;
     state.lastDeviceId = device.id || null;
     if (storage && state.lastDeviceId) {
@@ -332,6 +339,28 @@ export function createBleClient(handlers, options = {}) {
     _disconnect();
   }
 
+  // 2026-05-15: 起動時 auto-reconnect (= 過去 grant 済 device があれば user 操作なしで接続).
+  // navigator.bluetooth.getDevices() は Chrome 92+ で利用可、 page reload 後も permission persist.
+  // device 在不明 / 電源 OFF / 範囲外なら silent fallback (= 「Trainer に接続」 button で復活).
+  async function tryAutoReconnect() {
+    if (!bt || typeof bt.getDevices !== 'function') return false;
+    if (!storage) return false;
+    let savedId;
+    try { savedId = storage.getItem(LS_KEY_LAST_DEVICE); } catch { return false; }
+    if (!savedId) return false;
+    let devices;
+    try { devices = await bt.getDevices(); } catch { return false; }
+    const target = (devices || []).find((d) => d && d.id === savedId);
+    if (!target) return false;
+    _dispatch('connect_status', { state: 'connecting', address: target.id || target.name || '(reconnect)' });
+    try {
+      await _connectFtmsWithDevice(target);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   return {
     send() { return true; },  // 任意 payload は BLE 経路で意味なし、 silent ok
     sendRideStart,
@@ -344,6 +373,7 @@ export function createBleClient(handlers, options = {}) {
     sendPosition,
     isOpen,
     close,
+    tryAutoReconnect,
     // test 用 internal 参照 (= ws_client 側の同 role helper と並ぶ位置付け)
     _getState() { return state; },
     getLastDeviceId() { return state.lastDeviceId; },

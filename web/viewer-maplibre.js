@@ -778,6 +778,13 @@ async function initBleMode() {
   // brief 34 ε-9: BLE 直接接続 button にも terrain gate (= 地形未完なら何もしない).
   if (btnTrainer) btnTrainer.addEventListener('click', () => { if (!terrainReady) return; client && client.sendConnect(); });
   if (btnHrm) btnHrm.addEventListener('click', () => { if (!terrainReady) return; client && client.sendHrmConnect(); });
+  // 2026-05-15 user 指示「毎回接続 button 押すのめんどくさい、 登録済 trainer は起動直後に
+  // ハンドシェイクできないか」。 Web Bluetooth の getDevices 経路で過去 grant 済 device を
+  // 取得して silent 接続を試みる (= 実装は ble_client.js 側に閉じる). 失敗時は何もしない
+  // (= 既存 button 経路に fallback).
+  if (typeof client.tryAutoReconnect === 'function') {
+    client.tryAutoReconnect().catch(() => { /* silent fallback */ });
+  }
 }
 
 // brief 22: trainer / bridge 不要の画面操作確認モード.
