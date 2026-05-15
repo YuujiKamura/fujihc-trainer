@@ -385,7 +385,13 @@ function updateStartGoalVisibility() {
   }
 }
 function setAppState(s) {
-  document.body.className = `state-${s}`;
+  // 2026-05-15 fix: 旧 `body.className = 'state-X'` は全クラス上書きで、 mode-view (= 観るモード)
+  // クラスを副作用で消す bug。 classList で state-* だけ置換、 他クラス (= mode-view 等) は維持。
+  const body = document.body;
+  for (const cls of Array.from(body.classList)) {
+    if (cls.startsWith('state-')) body.classList.remove(cls);
+  }
+  body.classList.add(`state-${s}`);
   updateStartGoalVisibility();
 }
 setAppState('checking');
