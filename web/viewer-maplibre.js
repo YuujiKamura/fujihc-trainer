@@ -1973,11 +1973,9 @@ document.getElementById('btnRideStart').addEventListener('click', () => {
   // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 二重 gate).
   if (!terrainReady) return;
   if (!client || !client.isOpen()) return;
-  // brief 34 ε-3: consent 未取得 (= 通過 signal 不在) なら consent-overlay 表示。
-  if (!getRideConsent('asked')) {
-    showConsentOverlay();
-    return;
-  }
+  // 2026-05-15 fix: 同意 dialog / inline checkbox を全廃止。 本 app は自分の trainer
+  // データを自分のローカルに保存するだけ、 同意取る相手がいない。 履歴は無条件で
+  // 保存される、 Strava upload は button 押下自体が意思表示。
   startRideConfirmed();
 });
 document.getElementById('btnRideEnd').addEventListener('click', () => {
@@ -2121,14 +2119,12 @@ bindPostRideButtons({
   // 2026-05-15 fix: 保存できなかった時は false を返して caller (= postride_buttons.js) 側で
   // 「履歴に保存しました」の overwrite を抑止する (= 旧 実装は silent skip でも success 文言
   // を上書きしてしまい、 user が「保存できたつもり」になる bug があった).
+  // 2026-05-15 fix: 履歴同意 gate を廃止。 観るモードだけは記録対象外で残す
+  // (= 区間勾配を眺めるための仮想 ride、 走行記録ではない).
   addRide: async (rec) => {
     const ic = getIntroConsent();
     if (ic && ic.mode === 'view') {
       setPostrideStatus('観るモードは記録対象外です (= 走行ログ保存なし).');
-      return false;
-    }
-    if (!getRideConsent('history')) {
-      setPostrideStatus('履歴保存に同意されていないので保存されません。 ライド開始時の同意ダイアログで「履歴に記録する」 を ON にしてください。');
       return false;
     }
     const db = await getRideDb();
@@ -2138,10 +2134,11 @@ bindPostRideButtons({
   // brief 34 ε-3: Strava 機能を consent flag で guard (= strava consent off なら client_id を返さない).
   // brief 34 ε-8: 「観る」モードも上書きで disable (= 観るは Strava upload 対象外).
   // getClientId が null を返せば postride_buttons.js 側で「client_id 未設定」の status が出る。
+  // 2026-05-15 fix: Strava 同意 gate を廃止。 観るモードだけは Strava 非対応で残す。
+  // user が「Strava にアップロード」 button を押した事自体が意思表示。
   getClientId: () => {
     const ic = getIntroConsent();
-    if (ic && ic.mode === 'view') return null;  // 観るモードは Strava 非対応
-    if (!getRideConsent('strava')) return null;
+    if (ic && ic.mode === 'view') return null;
     return getStravaClientId();
   },
   getRedirectUri: getStravaRedirectUri,
