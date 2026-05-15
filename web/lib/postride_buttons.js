@@ -123,12 +123,17 @@ export function bindPostRideButtons(cfg) {
   });
 
   // 履歴に保存
+  // 2026-05-15 fix: addRide が boolean (= true=保存成功 / false=同意未取得等で skip) を
+  // 返すようにし、 success の時だけ「履歴に保存しました」 status を出す。 旧 実装は
+  // addRide が silent skip しても 「履歴に保存しました」 を上書きで出してしまい、 user が
+  // 「保存できたつもり」になる致命 bug があった (= 同意 OFF の chk を見落とした user が
+  // 履歴を見ると空、 という症状)。
   addClick(btnSave, async () => {
     const trkpts = cfg.getTrkpts();
     const summary = cfg.getSummary() || {};
     const date = summary.date || new Date().toISOString();
     const id = summary.id || `${date}-${Math.random().toString(36).slice(2, 5)}`;
-    await cfg.addRide({
+    const ok = await cfg.addRide({
       id, date,
       summary: {
         distance_m: Number(summary.distance_m || 0),
@@ -139,7 +144,11 @@ export function bindPostRideButtons(cfg) {
       },
       trkpts,
     });
-    setStatus(`履歴に保存しました (${trkpts.length} 点)`);
+    // addRide が undefined を返す旧 caller (= test 等) は従来通り success 扱い、
+    // false を返した時だけ status を上書きしない (= 直前の reject 文言を user に見せる).
+    if (ok !== false) {
+      setStatus(`履歴に保存しました (${trkpts.length} 点)`);
+    }
   });
 
   // 履歴を見る

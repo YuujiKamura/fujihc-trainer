@@ -668,7 +668,7 @@ function showPostride(gpxPath, points) {
   const ov = document.getElementById('postride-overlay');
   setText('post-gpx-path', gpxPath); setText('post-points', String(points)); setText('copy-status', '');
   ov.classList.add('visible');
-  requestAnimationFrame(() => { const b = document.getElementById('btnCopyPath'); if (b) b.focus(); });
+  requestAnimationFrame(() => { const b = document.getElementById('btnBackToPairing'); if (b) b.focus(); });
 }
 function hidePostride() { document.getElementById('postride-overlay').classList.remove('visible'); }
 function showConfirm() { document.getElementById('confirm-overlay').classList.add('visible'); }
@@ -2012,10 +2012,9 @@ document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   status('デモモード (記録は保存されません)');
 });
 document.getElementById('btnCancelDemo').addEventListener('click', () => { hideConfirm(); });
-document.getElementById('btnCopyPath').addEventListener('click', () => {
-  const path = document.getElementById('post-gpx-path').textContent;
-  copyToClipboard(path, document.getElementById('copy-status'));
-});
+// 2026-05-15 fix: 「パスをコピー」 button は旧 bridge mode で GPX のローカル保存パスを
+// コピーする用途だった。 blob download 化で path 表示が無意味になったため撤去。
+// 同様に「続けてもう一度」 は「閉じる」 にリネーム (= postride を畳んで pair に戻る).
 document.getElementById('btnBackToPairing').addEventListener('click', () => {
   hidePostride(); setAppState('pairing'); showPairing();
   if (rideState) rideState.reset();
@@ -2119,20 +2118,22 @@ bindPostRideButtons({
   getCourseName: () => 'fujihc',
   // brief 34 ε-3: IndexedDB 書込を consent flag で guard (= history consent off なら no-op).
   // brief 34 ε-8: 「観る」モード (= intro consent mode === 'view') も二重 guard (= 観るは記録対象外).
-  // getRideConsent('history') が false なら status を出して return、 IndexedDB 接続もしない。
+  // 2026-05-15 fix: 保存できなかった時は false を返して caller (= postride_buttons.js) 側で
+  // 「履歴に保存しました」の overwrite を抑止する (= 旧 実装は silent skip でも success 文言
+  // を上書きしてしまい、 user が「保存できたつもり」になる bug があった).
   addRide: async (rec) => {
-    // 観るモードは記録対象外 (= brief 34 ε-8、 仕様上 IndexedDB 書込禁止).
     const ic = getIntroConsent();
     if (ic && ic.mode === 'view') {
       setPostrideStatus('観るモードは記録対象外です (= 走行ログ保存なし).');
-      return;
+      return false;
     }
     if (!getRideConsent('history')) {
-      setPostrideStatus('履歴保存は同意されていません (= ride 開始前の consent で OFF 選択). 設定画面から再 ride で同意可。');
-      return;
+      setPostrideStatus('履歴保存に同意されていないので保存されません。 ライド開始時の同意ダイアログで「履歴に記録する」 を ON にしてください。');
+      return false;
     }
     const db = await getRideDb();
     await rideDbAdd(db, rec);
+    return true;
   },
   // brief 34 ε-3: Strava 機能を consent flag で guard (= strava consent off なら client_id を返さない).
   // brief 34 ε-8: 「観る」モードも上書きで disable (= 観るは Strava upload 対象外).
