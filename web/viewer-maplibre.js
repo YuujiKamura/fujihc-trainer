@@ -2160,11 +2160,24 @@ updateStravaStatusUI();
 
 const btnStravaConnect = document.getElementById('btnStravaConnect');
 if (btnStravaConnect) btnStravaConnect.addEventListener('click', async () => {
-  const clientId = getStravaClientId();
+  let clientId = getStravaClientId();
   if (!clientId) {
-    const status = document.getElementById('strava-status');
-    if (status) status.textContent = 'client_id 未設定 (= localStorage "fujihc.strava.client_id" に Strava app の Client ID を入れてください)';
-    return;
+    // 2026-05-15 fix: client_id 未設定なら prompt で UI 上で入力受ける、 user に localStorage
+    // 直書きを強制しない (= 過去訂正「アフォーダンス無し」反映)。
+    const input = (typeof prompt === 'function') ? prompt(
+      'Strava app の Client ID を入力してください\n' +
+      '(取得方法: Strava 設定 → My API Application で取得、 詳細は README 参照)',
+      ''
+    ) : '';
+    const trimmed = (input || '').trim();
+    if (!trimmed) {
+      const status = document.getElementById('strava-status');
+      if (status) status.textContent = 'client_id が入力されませんでした';
+      return;
+    }
+    try { localStorage.setItem('fujihc.strava.client_id', trimmed); } catch {}
+    clientId = trimmed;
+    updateStravaStatusUI();
   }
   // PKCE 認可 URL を開く
   const { makeCodeVerifier, makeCodeChallenge, buildAuthorizeUrl,
