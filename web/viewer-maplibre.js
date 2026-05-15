@@ -130,7 +130,11 @@ const COMMON_LAYERS = [
 // 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
 const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' };
 
-export function buildMapStyle({ bridgeReachable }) {
+export function buildMapStyle(env) {
+  // brief 31 commit β: env (= immutable ENV object) 受け、 bridgeReachable は env.mode で判定。
+  // 後方互換のため `{bridgeReachable: bool}` を渡されても動く (= env.bridgeReachable / env.mode は
+  // 同一 ENV object で同期、 旧 caller を破壊しない signature 拡張)。
+  const bridgeReachable = env && (env.mode === 'bridge' || env.bridgeReachable === true);
   // bridge mode: 個別 PBF / PNG file ツリーを localhost /tiles から fetch (= 従来)。
   // static mode: PMTiles 単一 file (pmtiles:// scheme) + ${BASE_PATH}static/tiles/gsi_dem 配下 PNG。
   const sources = bridgeReachable
@@ -176,12 +180,30 @@ export function buildMapStyle({ bridgeReachable }) {
 // map は `bootMap` で生成、 それまで null。 全 caller (= setupWheelZoom / loadCourse 等)
 // は bootMap 完了後に呼ばれるため、 null 参照は起きない。
 let map = null;
-// static mode (= bridge 不在、 GitHub Pages) でも兼用するため、 module top で flag を保持。
-// loadCourse() の fetch URL 分岐や、 ride 中の position-send skip 判定で参照。
-let _bridgeReachable = true;
+// brief 31 commit β: bridge/static mode 判定を immutable env object に集約
+// (= 旧 `let _bridgeReachable = true` の mutable + race door を廃止)。
+// ENV は `bootEnv()` 完了後に Object.freeze 済の値が入り、 以後変更されない。
+// 全 caller (loadCourse / loadOsmTile / buildMapStyle 等) は `ENV.mode === 'bridge'`
+// の形で参照する。 起動完了前に ENV が読まれた場合は null、 caller は ENV 未確定として扱う。
+let ENV = null;
 
-function bootMap(bridgeReachable) {
-  _bridgeReachable = bridgeReachable;
+// checkSetupStatus を 1 回だけ呼び、 結果から ENV (immutable) を構築する。
+// 既に呼ばれていれば同一 instance を返す (= idempotent)。
+async function bootEnv() {
+  if (ENV) return ENV;
+  const s = await checkSetupStatus();
+  const mode = s.bridgeReachable ? 'bridge' : 'static';
+  ENV = Object.freeze({
+    mode,
+    bridgeReachable: s.bridgeReachable,
+    tileBase: s.bridgeReachable ? BRIDGE_TILE_BASE_URL : STATIC_TILE_BASE_URL,
+    courseUrl: s.bridgeReachable ? 'course.json' : `${BASE_PATH}static/course.json`,
+    setupStatus: s,
+  });
+  return ENV;
+}
+
+function bootMap(env) {
   // pmtiles:// protocol は idempotent (= 冪等)、 bridge mode でも害なし。
   // index.html の <script src="./lib/vendor/pmtiles.js"> で window.pmtiles が IIFE 化済。
   if (typeof window !== 'undefined' && window.pmtiles) {
@@ -190,7 +212,7 @@ function bootMap(bridgeReachable) {
   }
   map = new maplibregl.Map({
     container: 'map',
-    style: buildMapStyle({ bridgeReachable }),
+    style: buildMapStyle(env),
     center: [138.7587, 35.4521],
     zoom: 13,
     pitch: 60,
@@ -646,13 +668,14 @@ async function initBleMode() {
 
 // brief 22: trainer / bridge 不要の画面操作確認モード.
 // brief 19b: createTestModeClient に置換、 fake send / state push は lib 側に集約.
-// brief 31: map 未生成なら checkSetupStatus 経由で bridgeReachable 確定 + bootMap、
-// 既生成なら no-op。 initMapMode / initTestMode は ?map / ?test query 経路でも
-// bootCheckSetupStatus 経路でも同じ map state を期待するため、 ここで統一。
+// brief 31 commit β: bootEnv() で ENV を 1 回確定してから bootMap(env) を呼ぶ。
+// ENV は idempotent (= bootEnv 内で freeze 済、 再呼出しても同一 instance)。
+// 旧 `bootMap(s.bridgeReachable)` を `bootMap(env)` に rewire し、 引数の単一化で
+// race door (= bridgeReachable bool が複数経路から渡される可能性) を構造的に消す。
 async function ensureMapBooted() {
   if (map) return;
-  const s = await checkSetupStatus();
-  bootMap(s.bridgeReachable);
+  const env = await bootEnv();
+  bootMap(env);
 }
 
 function initTestMode() {
@@ -701,16 +724,19 @@ function maybeSendSlope(slope_pct) {
 // brief 31: bridge 不在 (= s.bridgeReachable === false) なら static mode 確定、
 // dbinit-overlay は出さず initMapMode() に直行 (= 視覚デモ完結)。
 function bootCheckSetupStatus() {
-  checkSetupStatus().then((s) => {
-    if (!s.bridgeReachable) {
+  // brief 31 commit β: bootEnv() で ENV (= freeze 済 immutable env) を確定してから分岐。
+  // 旧 `bootMap(false)` / `bootMap(true)` の bool 直渡しを廃止、 全部 env 経由で統一。
+  bootEnv().then((env) => {
+    if (env.mode === 'static') {
       // GitHub Pages 等、 bridge 未到達 = static mode、 MAP_MODE 相当に倒す。
       // dbinit-overlay は bridge mode 専用 (= 「bridge 立ち上げて」と促す UI)、
       // static mode では bridge.py 起動を促しても無意味なため一切表示しない。
-      bootMap(false);
+      bootMap(env);
       initMapMode();
       return;
     }
-    bootMap(true);
+    bootMap(env);
+    const s = env.setupStatus;
     if (s.overall === 'ready') {
       setAppState('pairing');
       connectBridge();
@@ -823,11 +849,10 @@ function skipDbinit() {
 
 // === コース読み込み ===
 async function loadCourse() {
-  // brief 31: course.json は static mode では web/static/course.json、
-  // bridge mode では web root (= web/course.json、 既存)。
-  // GitHub Pages の project page prefix は BASE_PATH に含まれる、 静的経路では
-  // `${BASE_PATH}static/course.json` を、 bridge では従来通り相対 'course.json' を fetch。
-  const url = _bridgeReachable ? 'course.json' : `${BASE_PATH}static/course.json`;
+  // brief 31 commit β: ENV (= immutable env object) から URL を取得。
+  // bootEnv() で freeze 済の値、 caller 全部 await 経由なので未確定状態で呼ばれることはない。
+  // 万一 ENV 未初期化なら bridge mode の旧 default で fallback (= localhost 起動の従来挙動)。
+  const url = ENV ? ENV.courseUrl : 'course.json';
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -946,7 +971,8 @@ function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
   return new Promise((resolve) => {
     // brief 31: static mode (= bridge 未到達) では minimap 用 OSM raster を取得しない。
     // 第三者 harm 防止 (= 公開 viewer から OSM 公式 tile server への heavy use 発生回避)。
-    if (!_bridgeReachable) {
+    // commit β: 旧 _bridgeReachable 直接参照を ENV.mode 経由に置換 (= immutable env object)。
+    if (!ENV || ENV.mode !== 'bridge') {
       resolve();
       return;
     }

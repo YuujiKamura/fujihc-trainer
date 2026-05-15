@@ -29,12 +29,13 @@ describe('brief 31: BASE_PATH / BRIDGE_TILE_BASE_URL / STATIC_TILE_BASE_URL の�
 });
 
 describe('brief 31 構造修正: static mode で OSM 直叩き fallback が無効化されている', () => {
-  it('loadOsmTile は _bridgeReachable が false なら最初の onerror 前に early return', () => {
+  it('loadOsmTile は ENV.mode !== "bridge" なら最初の onerror 前に early return', () => {
     const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    // body の冒頭で _bridgeReachable false 時の early resolve があるはず
-    expect(body).toMatch(/if\s*\(\s*!\s*_bridgeReachable\s*\)\s*\{\s*resolve\(\s*\)\s*;\s*return\s*;\s*\}/);
+    // body の冒頭で ENV non-bridge 時の early resolve があるはず
+    expect(body).toMatch(/if\s*\(\s*!ENV\s*\|\|\s*ENV\.mode\s*!==?\s*['"]bridge['"]\s*\)/);
+    expect(body).toMatch(/resolve\(\s*\)\s*;\s*return\s*;/);
   });
 
   it('tile.openstreetmap.org への直叩きは loadOsmTile 内 1 箇所のみ (= bridge mode 時の fallback 限定)', () => {
@@ -84,27 +85,46 @@ describe('brief 31: checkSetupStatus が AbortSignal.timeout + bridgeReachable �
   });
 });
 
-describe('brief 31: bootCheckSetupStatus が bridgeReachable=false で initMapMode に分岐', () => {
-  it('bootCheckSetupStatus の body 内に `!s.bridgeReachable` + `initMapMode()` 呼出', () => {
+describe('brief 31 commit β: bootCheckSetupStatus が env.mode で static / bridge を分岐', () => {
+  it('bootCheckSetupStatus の body 内に bootEnv 呼出 + env.mode === "static" 分岐 + initMapMode 呼出', () => {
     const m = viewer.match(/function\s+bootCheckSetupStatus\s*\(\s*\)[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    expect(body).toMatch(/!\s*s\.bridgeReachable/);
+    expect(body).toMatch(/bootEnv\(\)/);
+    expect(body).toMatch(/env\.mode\s*===?\s*['"]static['"]/);
     expect(body).toMatch(/initMapMode\(\)/);
-    // dbinit-overlay は bridgeReachable=true かつ overall !== 'ready' のみ
+    // dbinit-overlay は bridge mode 経路でのみ呼ばれる
     expect(body).toMatch(/showDbinit\(/);
   });
 
-  it('static mode 経路 (= !bridgeReachable) は showDbinit を skip + connectBridge skip', () => {
-    // bridgeReachable=false の branch 内では showDbinit / connectBridge を呼ばないことを構造的に確認
-    const m = viewer.match(/if\s*\(\s*!\s*s\.bridgeReachable\s*\)\s*\{[\s\S]*?return;\s*\n?\s*\}/);
+  it('static mode 経路は showDbinit を skip + connectBridge skip + bootMap(env) + initMapMode のみ', () => {
+    // env.mode === 'static' の branch 内では showDbinit / connectBridge を呼ばないことを構造的に確認
+    const m = viewer.match(/if\s*\(\s*env\.mode\s*===?\s*['"]static['"]\s*\)\s*\{[\s\S]*?return;\s*\n?\s*\}/);
     expect(m).not.toBeNull();
     const branchBody = m[0];
     expect(branchBody).not.toMatch(/showDbinit\(/);
     expect(branchBody).not.toMatch(/connectBridge\(/);
-    // bootMap(false) + initMapMode() が必ず呼ばれる
-    expect(branchBody).toMatch(/bootMap\(\s*false\s*\)/);
+    // bootMap(env) + initMapMode() が必ず呼ばれる
+    expect(branchBody).toMatch(/bootMap\(\s*env\s*\)/);
     expect(branchBody).toMatch(/initMapMode\(/);
+  });
+});
+
+describe('brief 31 commit β: ENV (= immutable env object) と bootEnv が race door を構造消去', () => {
+  it('module-scope に `let ENV = null` (= bootEnv が freeze 済 instance を代入する hook)', () => {
+    expect(viewer).toMatch(/^let\s+ENV\s*=\s*null/m);
+  });
+
+  it('旧 `let _bridgeReachable = true` の mutable 宣言は撤去済 (= module top の宣言のみ pin)', () => {
+    expect(viewer).not.toMatch(/^let\s+_bridgeReachable\s*=/m);
+  });
+
+  it('bootEnv() 関数が定義されていて、 内部で Object.freeze を呼ぶ (= mutation 不可)', () => {
+    expect(viewer).toMatch(/async\s+function\s+bootEnv\s*\(\s*\)/);
+    // 全 source 上で bootEnv 内の Object.freeze と mode 三項演算を pin する
+    // (= body 抽出は brace nesting で誤動作するため、 全 viewer 上での grep に簡素化)
+    expect(viewer).toMatch(/Object\.freeze\(/);
+    expect(viewer).toMatch(/s\.bridgeReachable\s*\?\s*['"]bridge['"]\s*:\s*['"]static['"]/);
   });
 });
 
@@ -113,8 +133,8 @@ describe('brief 31: bootMap helper (= 旧 const map = new Map(...) の遅延化)
     expect(viewer).toMatch(/^let\s+map\s*=\s*null/m);
   });
 
-  it('function bootMap(bridgeReachable) 定義が存在 + new maplibregl.Map を呼ぶ', () => {
-    expect(viewer).toMatch(/function\s+bootMap\s*\(\s*bridgeReachable\s*\)/);
+  it('function bootMap(env) 定義が存在 + new maplibregl.Map を呼ぶ (= commit β で signature 変更)', () => {
+    expect(viewer).toMatch(/function\s+bootMap\s*\(\s*env\s*\)/);
     const m = viewer.match(/function\s+bootMap\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/new\s+maplibregl\.Map\(/);
@@ -126,12 +146,15 @@ describe('brief 31: bootMap helper (= 旧 const map = new Map(...) の遅延化)
   });
 });
 
-describe('brief 31: course.json fetch URL の mode 別分岐', () => {
-  it('loadCourse 内で _bridgeReachable に基づき fetch URL を分岐', () => {
-    const m = viewer.match(/async\s+function\s+loadCourse[\s\S]*?\}\)\s*\(\);?\s*\}|async\s+function\s+loadCourse[\s\S]*?\n\}/);
-    // 上記 regex は脆いので body を別 grep で確認
-    expect(viewer).toMatch(/_bridgeReachable\s*\?\s*['"]course\.json['"]/);
-    expect(viewer).toMatch(/\$\{BASE_PATH\}static\/course\.json/);
+describe('brief 31 commit β: course.json fetch URL は ENV.courseUrl 経由', () => {
+  it('loadCourse 内で ENV.courseUrl を使う (= bootEnv が mode 別に予め resolve 済)', () => {
+    expect(viewer).toMatch(/ENV\s*\?\s*ENV\.courseUrl\s*:/);
+  });
+
+  it('bootEnv 内で courseUrl が bridge / static 別に設定される', () => {
+    const m = viewer.match(/async\s+function\s+bootEnv\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/courseUrl:\s*s\.bridgeReachable\s*\?\s*['"]course\.json['"]\s*:\s*`\$\{BASE_PATH\}static\/course\.json`/);
   });
 });
 

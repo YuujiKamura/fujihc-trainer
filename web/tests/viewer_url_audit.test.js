@@ -162,8 +162,10 @@ describe('brief 26b: 起動 DB 構築フロー + 4 状態 state machine', () => 
     expect(viewer).toMatch(/\/tiles\/_setup_status/);
   });
 
-  it('起動分岐で TEST_MODE 外は checkSetupStatus を経由する', () => {
-    expect(viewer).toMatch(/checkSetupStatus\(\)\.then/);
+  it('起動分岐で TEST_MODE 外は bootEnv 経由で checkSetupStatus を呼ぶ (= brief 31 commit β)', () => {
+    // bootEnv が checkSetupStatus を await する形に変更、 旧 .then 連鎖は撤去済
+    expect(viewer).toMatch(/await\s+checkSetupStatus\s*\(\s*\)/);
+    expect(viewer).toMatch(/bootEnv\s*\(\s*\)\s*\.then\(/);
   });
 
   it('dbinit_progress ハンドラが wsHandlers に登録されている', () => {

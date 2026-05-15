@@ -11,8 +11,8 @@ const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
 describe('brief 31: buildMapStyle 関数の構造', () => {
-  it('export function buildMapStyle({ bridgeReachable })', () => {
-    expect(viewer).toMatch(/export\s+function\s+buildMapStyle\s*\(\s*\{\s*bridgeReachable\s*\}\s*\)/);
+  it('export function buildMapStyle(env) (= brief 31 commit β、 env immutable object 受け)', () => {
+    expect(viewer).toMatch(/export\s+function\s+buildMapStyle\s*\(\s*env\s*\)/);
   });
 
   it('bridge mode の osm source は tiles 配列形式 + BRIDGE_TILE_BASE_URL prefix', () => {
