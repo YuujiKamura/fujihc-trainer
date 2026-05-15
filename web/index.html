@@ -457,18 +457,26 @@
       <button id="btnSetupGoView" disabled style="background:#1a3322; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">▷ コースを観る (= trainer 不要、 区間勾配を眺める)</button>
     </div>
 
-    <!-- brief 33: Strava 連携 / 履歴セクション (= ride 前から open できる導線). -->
+    <!-- brief 33: 履歴 / Strava 連携セクション (= ride 前から open できる導線).
+         2026-05-15 user 指示「ストラバ連携とかめんどくさいからフォールドしてていいと思う」
+         反映: 「過去 ride を見る」 は表に残し、 Strava 連携 button 群は details 要素で
+         default 閉じ。 機能は残す、 普段の視覚負担を下げる。 -->
     <section id="strava-section">
-      <h3>Strava 連携 / 履歴</h3>
-      <div class="strava-status" id="strava-status">未連携</div>
-      <button id="btnStravaConnect">Strava と連携</button>
-      <button id="btnStravaDisconnect" hidden>連携を解除</button>
+      <h3>履歴 / Strava 連携</h3>
       <button id="btnViewHistoryFromSetup">過去 ride を見る</button>
-      <div style="color:#888; font-size:11px; margin-top:0.4rem;">
-        連携解除後、 完全に断つには Strava 側で
-        <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer">設定 → 連携アプリ</a>
-        から fujihc-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
-      </div>
+      <details id="strava-fold" style="margin-top:0.6rem;">
+        <summary style="cursor:pointer; color:#ffd54a; font-size:13px;">Strava 連携 (オプション)</summary>
+        <div style="margin-top:0.4rem;">
+          <div class="strava-status" id="strava-status">未連携</div>
+          <button id="btnStravaConnect">Strava と連携</button>
+          <button id="btnStravaDisconnect" hidden>連携を解除</button>
+          <div style="color:#888; font-size:11px; margin-top:0.4rem;">
+            連携解除後、 完全に断つには Strava 側で
+            <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer">設定 → 連携アプリ</a>
+            から fujihc-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
+          </div>
+        </div>
+      </details>
     </section>
 
     <!-- brief 34 ε-5: 「このサイトの全データを削除」UI. setup-overlay の末尾 section.
@@ -522,13 +530,19 @@
     <div>保存ファイル (<span id="post-points">0</span> 点):</div>
     <div class="gpx-line" id="post-gpx-path">--</div>
     <div class="hint">下記 button から GPX を保存 / Strava へ直送 / 履歴に蓄積できます (= brief 33)。</div>
-    <!-- brief 33: 4 button (= GPX download / Strava upload / 履歴に保存 / 履歴を見る). -->
+    <!-- brief 33: 4 button (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
+         2026-05-15 user 指示で Strava upload は details 要素で fold (= 普段は GPX / 履歴のみ表に). -->
     <div>
       <button id="btnGpxDownload">GPX をダウンロード</button>
-      <button id="btnStravaUpload">Strava へアップロード</button>
       <button id="btnSaveHistory">履歴に保存</button>
       <button id="btnViewHistory">履歴を見る</button>
     </div>
+    <details id="postride-strava-fold" style="margin-top:0.4rem;">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:13px;">Strava へアップロード (オプション)</summary>
+      <div style="margin-top:0.4rem;">
+        <button id="btnStravaUpload">Strava へアップロード</button>
+      </div>
+    </details>
     <div style="margin-top:0.4rem;">
       <button id="btnCopyPath">パスをコピー <span id="copy-status" style="color:#7fff00;"></span></button>
       <button id="btnBackToPairing">続けてもう一度</button>
