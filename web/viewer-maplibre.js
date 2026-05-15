@@ -590,6 +590,15 @@ const TEST_MODE = new URLSearchParams(location.search).has('test');
 if (new URLSearchParams(location.search).has('debug')) {
   document.body.classList.add('debug-on');
 }
+// 2026-05-16: service worker 登録 (= 2 回目以降 fetch ゼロでオフライン起動可、
+// user 「毎回タイルを並べる手間」 への対応). ?nosw=1 で skip (= dev 用).
+if ('serviceWorker' in navigator && !new URLSearchParams(location.search).has('nosw')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((err) => {
+      console.warn('[fujihill] service worker register failed:', err);
+    });
+  });
+}
 // ?map=1 で UI 操作なしの「地図表示だけ」モード. TEST_MODE と同じく client は
 // createTestModeClient、 加えて pairing overlay を即 hide + ride を自動 start.
 // 用途: AI / 自動 capture で OSM/dem/polygon の visual 検証だけしたい時.
