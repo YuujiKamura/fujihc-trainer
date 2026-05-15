@@ -269,7 +269,7 @@ function bootMap(env) {
     pitch: 60,
     bearing: 0,
     // pitch を default 60 → 85 まで拡張、 zoom 上限も MapLibre の最大 22 まで開放
-    maxPitch: 89,  // 2026-05-16 user 「上下可動域広くていい」 = 85 → 89 (MapLibre 仕様上の最大).
+    maxPitch: 85,  // MapLibre 仕様上の最大値 (= 89 にすると new Map で throw、 map 起動失敗).
     minPitch: 0,
     maxZoom: 24,
     minZoom: 13,
