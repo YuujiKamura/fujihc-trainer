@@ -285,6 +285,17 @@
   body.state-history #controls,
   body.state-history #minimap-container,
   body.state-history #rider-hud { display: none !important; }
+  /* 2026-05-16: ?debug=1 で右上に debug HUD 表示 (= rider 座標 / camera 差分 / frame timing 等、
+     ride 中の挙動を user が目視確認できる開発者向け). 公開時は default 非表示. */
+  #debug-hud {
+    position: fixed; top: 8px; right: 8px; z-index: 1700;
+    background: rgba(0, 0, 0, 0.75); color: #7fff00;
+    padding: 6px 10px;
+    font: 11px/1.45 ui-monospace, "Cascadia Code", monospace;
+    border: 1px solid #444; border-radius: 4px;
+    display: none; pointer-events: none; white-space: nowrap;
+  }
+  body.debug-on #debug-hud { display: block; }
   #history-panel {
     background: #1a1a22; border: 1px solid #444; border-radius: 10px;
     padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px;
@@ -344,6 +355,23 @@
   <div class="ride-row"><b>power</b> <span id="r-power">--</span> W</div>
   <div class="ride-row"><b>cad</b>   <span id="r-cadence">--</span> rpm</div>
   <div class="ride-row"><b>hr</b>    <span id="r-hr">--</span> bpm</div>
+</div>
+
+<!-- 2026-05-16: ?debug=1 のとき表示。 走行中の座標 / camera drift / frame timing を可視化、
+     user の「camera が rider 中心からズレていく」 「慣性力おかしい」 を数値で追える. -->
+<div id="debug-hud">
+  <b>rider</b>    <span id="d-rider-lat">--</span>, <span id="d-rider-lon">--</span><br>
+  <b>cam ctr</b>  <span id="d-cam-lat">--</span>, <span id="d-cam-lon">--</span><br>
+  <b>drift</b>    <span id="d-cam-drift">--</span> m<br>
+  <b>dist</b>     <span id="d-dist">--</span> m<br>
+  <b>spd</b>      <span id="d-speed">--</span> m/s (<span id="d-speed-kmh">--</span> km/h)<br>
+  <b>seg</b>      <span id="d-seg">--</span> + <span id="d-frac">--</span><br>
+  <b>slope</b>    <span id="d-slope">--</span> %<br>
+  <b>cam brng</b> <span id="d-brng">--</span>°<br>
+  <b>frame</b>    <span id="d-dt">--</span> ms (<span id="d-fps">--</span> fps)<br>
+  <b>pow / cad</b> <span id="d-pow">--</span> W / <span id="d-cad">--</span> rpm<br>
+  <b>trkpts</b>   <span id="d-trkn">--</span> 件 / lat-uniq <span id="d-trkuniq">--</span> / Δlat <span id="d-trkspread">--</span><br>
+  <b>chk</b>      <span id="d-chk">--</span>
 </div>
 
 <div id="controls">

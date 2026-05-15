@@ -571,6 +571,11 @@ const WS_URL = 'ws://localhost:8765';
 // WebSocket 接続を skip、 fake state を 1Hz で push、 ride/scan は即座に fake 応答.
 // 起動例: python -m http.server -d web/ 8000 -> http://localhost:8000/?test=1
 const TEST_MODE = new URLSearchParams(location.search).has('test');
+// 2026-05-16: ?debug=1 で右上に debug HUD を表示 (= 座標 drift / camera 差分 / frame timing).
+// 走行中 user が「camera が rider 中心からズレる」「慣性力おかしい」 を数値で目視できる.
+if (new URLSearchParams(location.search).has('debug')) {
+  document.body.classList.add('debug-on');
+}
 // ?map=1 で UI 操作なしの「地図表示だけ」モード. TEST_MODE と同じく client は
 // createTestModeClient、 加えて pairing overlay を即 hide + ride を自動 start.
 // 用途: AI / 自動 capture で OSM/dem/polygon の visual 検証だけしたい時.
@@ -1973,6 +1978,71 @@ function tick(t) {
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   setText('cam-zoom', map.getZoom().toFixed(2));
   setText('cam-pitch', map.getPitch().toFixed(0));
+  // 2026-05-16: ?debug=1 用の数値 dump (= body.debug-on で右上 panel に表示).
+  // user 「座標が外れる」「慣性力おかしい」 を走行中に数値で目視できる. setText は要素無しでも noop.
+  const mapCenter = map.getCenter();
+  const EARTH_M_PER_DEG_DBG = 111000;
+  const cosLatDbg = Math.cos(rLat * Math.PI / 180);
+  const dxDbg = (mapCenter.lng - rLon) * EARTH_M_PER_DEG_DBG * cosLatDbg;
+  const dzDbg = (mapCenter.lat - rLat) * EARTH_M_PER_DEG_DBG;
+  const camDriftM = Math.sqrt(dxDbg * dxDbg + dzDbg * dzDbg);
+  const dtMs = dt * 1000;
+  setText('d-rider-lat', rLat.toFixed(7));
+  setText('d-rider-lon', rLon.toFixed(7));
+  setText('d-cam-lat', mapCenter.lat.toFixed(7));
+  setText('d-cam-lon', mapCenter.lng.toFixed(7));
+  setText('d-cam-drift', camDriftM.toFixed(2));
+  setText('d-dist', curDist.toFixed(1));
+  setText('d-speed', snap.speed.toFixed(3));
+  setText('d-speed-kmh', (snap.speed * 3.6).toFixed(1));
+  setText('d-seg', String(pos.segmentIdx));
+  setText('d-frac', pos.fracInSegment.toFixed(3));
+  setText('d-slope', pos.slope_pct.toFixed(2));
+  setText('d-brng', smoothBearing.toFixed(1));
+  setText('d-dt', dtMs.toFixed(1));
+  setText('d-fps', dtMs > 0 ? (1000 / dtMs).toFixed(0) : '--');
+  setText('d-pow', currentPower != null ? String(currentPower) : '--');
+  setText('d-cad', currentCadence != null ? String(currentCadence) : '--');
+  // 2026-05-16 user 要望: 走行中 trkpt 蓄積状態を debug HUD に出す.
+  // 0km 起点固定 bug (= commit de57ce1) の即時検出 + power/cad/hr 欠損率の visibility.
+  // 2 時間走って保存壊れる事故再演防止のため、 走行中に「異常パターン」 を user が目視できる.
+  try {
+    const trkpts = rideState && typeof rideState.getTrkpts === 'function' ? rideState.getTrkpts() : [];
+    const tn = trkpts.length;
+    if (tn > 0) {
+      const uniqLat = new Set(trkpts.map((p) => p.lat)).size;
+      const firstLat = trkpts[0].lat;
+      const lastLat = trkpts[tn - 1].lat;
+      const spread = Math.abs(lastLat - firstLat);
+      setText('d-trkn', String(tn));
+      setText('d-trkuniq', String(uniqLat));
+      setText('d-trkspread', spread.toFixed(6));
+      // 異常検出: trkpt 60 件超えで lat unique 数 5 未満 / 累積距離 10m 未満 / spread 1e-5 未満 → 警告.
+      const checks = [];
+      if (tn >= 60 && uniqLat < 5) checks.push('!起点固定疑い');
+      if (tn >= 60 && curDist < 10) checks.push('!距離 0 疑い');
+      if (tn >= 60 && spread < 1e-5) checks.push('!lat 不動疑い');
+      const powN = trkpts.filter((p) => Number.isFinite(p.power)).length;
+      if (tn >= 60 && powN < tn * 0.5) checks.push('!power 欠損 50%超');
+      const hrN = trkpts.filter((p) => Number.isFinite(p.hr)).length;
+      if (tn >= 120 && hrN < tn * 0.5) checks.push('!hr 欠損 50%超');
+      const dEl = document.getElementById('d-chk');
+      if (dEl) {
+        if (checks.length === 0) {
+          dEl.textContent = '✓ ok';
+          dEl.style.color = '#7fff00';
+        } else {
+          dEl.textContent = checks.join(' ');
+          dEl.style.color = '#ff5050';
+        }
+      }
+    } else {
+      setText('d-trkn', '0');
+      setText('d-trkuniq', '--');
+      setText('d-trkspread', '--');
+      setText('d-chk', '(ride 未開始)');
+    }
+  } catch (_e) { /* validation は best-effort、 落ちても ride を止めない */ }
   // brief 35 同型 bug 修正: 旧 viewer は riderHeadingRad を計算しつつ updateMinimap に
   // `headingRad` (= 未定義) を渡していた、 runtime ReferenceError. jsdom test 環境で tick が
   // 走らないため source-grep が通り続けていた dead bug. minimap には rider 進行方向を渡す.
