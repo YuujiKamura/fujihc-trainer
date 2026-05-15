@@ -428,6 +428,37 @@
   </div>
 </div>
 
+<!-- 2026-05-15 fix: Strava 連携の Client ID 入力 overlay (= prompt() の代替、 user 案内付き).
+     btnStravaConnect click 時、 client_id 未設定なら表示。 入力 + 保存で OAuth flow へ。 -->
+<div id="strava-setup-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.55); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #ffd54a; border-radius:10px; padding:1.4rem 1.6rem; min-width:520px; max-width:700px; max-height:90vh; overflow-y:auto;">
+    <h2 style="color:#ffd54a; font-size:20px; margin:0 0 0.6rem;">Strava 連携の準備</h2>
+    <p style="margin:0.4rem 0; color:#ddd; font-size:13px; line-height:1.6;">
+      Strava に走行データをアップロードするには、 <b>あなた自身の Strava 開発者アプリ</b>を作って、 そこから取得する <b>Client ID</b> という番号が必要です。
+      (= このアプリ側に共通の ID を埋め込むと全 user が混線するため、 各自で作る設計です)
+    </p>
+    <h3 style="color:#ffd54a; font-size:14px; margin:0.8rem 0 0.3rem;">手順</h3>
+    <ol style="margin:0 0 0.4rem 1.2rem; color:#ddd; font-size:13px; line-height:1.7;">
+      <li>下のリンクから Strava の API 設定ページを開く (= 要 Strava ログイン)</li>
+      <li>「Create &amp; Manage Your App」 → My API Application を作成</li>
+      <li>「Authorization Callback Domain」 に <b>localhost</b> (or 公開時は GitHub Pages のホスト) を登録</li>
+      <li>表示された <b>Client ID</b> (= 数桁の番号) を コピー</li>
+      <li>下の欄に貼り付けて「保存して連携」</li>
+    </ol>
+    <p style="margin:0.6rem 0;">
+      <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">→ Strava API 設定ページを開く</a>
+    </p>
+    <div style="margin:0.6rem 0;">
+      <label style="display:block; color:#ffd54a; font-size:13px; margin-bottom:0.3rem;">Client ID</label>
+      <input id="stravaClientIdInput" type="text" placeholder="例: 12345" style="width:100%; padding:0.5rem; background:#0c0c10; color:#ddd; border:1px solid #444; border-radius:4px; font:14px ui-monospace, monospace;">
+    </div>
+    <div style="margin-top:1rem; display:flex; gap:0.6rem;">
+      <button id="btnStravaSetupSave" style="background:#2a4418; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; font-weight:bold; cursor:pointer;">▶ 保存して連携</button>
+      <button id="btnStravaSetupCancel" style="background:#1a1a22; color:#aaa; border:1px solid #444; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">× キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div id="postride-overlay" role="dialog" aria-modal="true">
   <div id="postride-panel">
     <h2>✓ ライド保存完了</h2>

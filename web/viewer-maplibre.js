@@ -2158,28 +2158,8 @@ function updateStravaStatusUI() {
 }
 updateStravaStatusUI();
 
-const btnStravaConnect = document.getElementById('btnStravaConnect');
-if (btnStravaConnect) btnStravaConnect.addEventListener('click', async () => {
-  let clientId = getStravaClientId();
-  if (!clientId) {
-    // 2026-05-15 fix: client_id 未設定なら prompt で UI 上で入力受ける、 user に localStorage
-    // 直書きを強制しない (= 過去訂正「アフォーダンス無し」反映)。
-    const input = (typeof prompt === 'function') ? prompt(
-      'Strava app の Client ID を入力してください\n' +
-      '(取得方法: Strava 設定 → My API Application で取得、 詳細は README 参照)',
-      ''
-    ) : '';
-    const trimmed = (input || '').trim();
-    if (!trimmed) {
-      const status = document.getElementById('strava-status');
-      if (status) status.textContent = 'client_id が入力されませんでした';
-      return;
-    }
-    try { localStorage.setItem('fujihc.strava.client_id', trimmed); } catch {}
-    clientId = trimmed;
-    updateStravaStatusUI();
-  }
-  // PKCE 認可 URL を開く
+async function startStravaOAuth(clientId) {
+  // 共通の OAuth 開始処理 (= client_id が確定済の前提)。
   const { makeCodeVerifier, makeCodeChallenge, buildAuthorizeUrl,
           STRAVA_PKCE_VERIFIER_SS_KEY, STRAVA_PKCE_CLIENT_ID_SS_KEY } =
     await import('./lib/strava_oauth.js');
@@ -2189,6 +2169,47 @@ if (btnStravaConnect) btnStravaConnect.addEventListener('click', async () => {
   sessionStorage.setItem(STRAVA_PKCE_CLIENT_ID_SS_KEY, String(clientId));
   const url = buildAuthorizeUrl({ clientId, redirectUri: getStravaRedirectUri(), codeChallenge: challenge });
   location.assign(url);
+}
+
+const btnStravaConnect = document.getElementById('btnStravaConnect');
+if (btnStravaConnect) btnStravaConnect.addEventListener('click', async () => {
+  let clientId = getStravaClientId();
+  if (!clientId) {
+    // 2026-05-15 fix: client_id 未設定なら setup overlay (= 案内 + 手順 + リンク + 入力欄) を表示。
+    // 過去 prompt() 案は「Client ID って何」が訪問者に伝わらず無意味、 専用 overlay で UX 完結。
+    const ov = document.getElementById('strava-setup-overlay');
+    if (ov) {
+      ov.style.display = 'flex';
+      const inp = document.getElementById('stravaClientIdInput');
+      if (inp) { inp.value = ''; inp.focus(); }
+    }
+    return;
+  }
+  // 既に client_id がある場合は直接 OAuth へ
+  await startStravaOAuth(clientId);
+});
+
+// setup-overlay 「保存して連携」ボタン: client_id を localStorage に保存して OAuth へ
+const btnStravaSetupSave = document.getElementById('btnStravaSetupSave');
+if (btnStravaSetupSave) btnStravaSetupSave.addEventListener('click', async () => {
+  const inp = document.getElementById('stravaClientIdInput');
+  const v = inp ? String(inp.value || '').trim() : '';
+  if (!v) {
+    if (inp) inp.focus();
+    return;
+  }
+  try { localStorage.setItem('fujihc.strava.client_id', v); } catch {}
+  const ov = document.getElementById('strava-setup-overlay');
+  if (ov) ov.style.display = 'none';
+  updateStravaStatusUI();
+  await startStravaOAuth(v);
+});
+
+// setup-overlay 「キャンセル」ボタン: overlay を閉じるだけ
+const btnStravaSetupCancel = document.getElementById('btnStravaSetupCancel');
+if (btnStravaSetupCancel) btnStravaSetupCancel.addEventListener('click', () => {
+  const ov = document.getElementById('strava-setup-overlay');
+  if (ov) ov.style.display = 'none';
 });
 
 const btnStravaDisconnect = document.getElementById('btnStravaDisconnect');
