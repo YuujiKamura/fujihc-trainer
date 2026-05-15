@@ -403,6 +403,12 @@
     <button id="btnRideStart" disabled>▶ ライド開始</button>
     <div style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">trainer のハンドシェイク完了後に押せるようになります</div>
 
+    <!-- 2026-05-15 fix: 「コースを観る」を setup-overlay からも起動可能に (= intro 通過後でも
+         走る ↔ 観る を切り替えたい時の出口、 user 指摘「コースを観るボタンが消えた」反映). -->
+    <div style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333; text-align:center;">
+      <button id="btnSetupGoView" style="background:#1a3322; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">▷ コースを観る (= trainer 不要、 区間勾配を眺める)</button>
+    </div>
+
     <!-- brief 33: Strava 連携 / 履歴セクション (= ride 前から open できる導線). -->
     <section id="strava-section">
       <h3>Strava 連携 / 履歴</h3>

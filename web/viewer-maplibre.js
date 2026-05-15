@@ -956,6 +956,15 @@ if (typeof document !== 'undefined') {
     hideIntroOverlay();
     dispatchAfterIntro();
   });
+  // 2026-05-15 fix: setup-overlay からも「コースを観る」に切替できるボタン (= user 指摘
+  // 「コースを観るボタンが消えた」反映、 intro skip 後でも走る ↔ 観る を切替可能).
+  const btnSetupGoView = document.getElementById('btnSetupGoView');
+  if (btnSetupGoView) btnSetupGoView.addEventListener('click', () => {
+    if (!isActionableNow()) return;
+    setIntroConsent({ mode: 'view' });
+    document.getElementById('setup-overlay')?.classList.remove('visible');
+    initViewMode();
+  });
   if (btnIntroClose) btnIntroClose.addEventListener('click', () => {
     // 「閉じる」は consent を保存しない (= reload 時に再表示).
     // ride / map fetch は走らせない (= 帯域消費ゼロ).
