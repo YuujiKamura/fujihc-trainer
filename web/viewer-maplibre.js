@@ -261,6 +261,14 @@ function bootMap(env) {
   map.on('load', () => {
     map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 });
     status('map loaded');
+    // 2026-05-15 fix: 「地形 data が出揃うまでデモ走行ボタンを押せないようにしろ」反映。
+    // probe ok だけでは「最低限の起動」、 実 viewport の地図全 tile 描画完了は別。
+    // map.on('idle') は viewport 内の全 source / tile load 完了で 1 度発火、
+    // ここで mapFullyLoaded = true にして terrain probe ok と AND で button enable。
+    map.once('idle', () => {
+      mapFullyLoaded = true;
+      updateActionButtonsForTerrain();
+    });
     // 操作系: マウスホイールで zoom (default 維持)、 縦ドラッグで pitch だけ変更、
     // 横ドラッグ (bearing 回転) は AI が進行方向に自動セットするので無効化
     map.dragRotate.disable();
@@ -1141,6 +1149,11 @@ function initViewMode() {
 // terrainReady の保存ボタン状態 (= ride 開始は pair 完了でないと disabled の既存挙動) は維持、
 // 本 gate は AND 結合 (= terrainReady === false で問答無用 disable、 true で「他の不変条件が許せば enable」).
 let terrainReady = false;
+// 2026-05-15 fix: 「map.on('idle') = MapLibre が viewport の全 tile load 完了」を別 flag で管理。
+// terrainReady (= probe ok) と AND で「実際にボタンが押せる」を判定 (= 下記 isActionableNow)。
+// これで「地形 probe ok だが実画面はまだ描画中」状態でボタンが解禁される bug を防ぐ。
+let mapFullyLoaded = false;
+function isActionableNow() { return terrainReady && mapFullyLoaded; }
 // btnRideStart は元々 HTML で disabled、 pair 完了で enabled になる既存挙動を保持するため、
 // terrain gate 単独で setRideStartEnabled する場合は pair 状態を二重 check する必要がある。
 // pair 状態は wsHandlers.connect_status('connected') で btn.disabled=false に遷移する DOM 直接書込、
@@ -1152,24 +1165,24 @@ function updateActionButtonsForTerrain() {
   // intro
   const introStart = typeof document !== 'undefined' ? document.getElementById('btnIntroStart') : null;
   const introView = typeof document !== 'undefined' ? document.getElementById('btnIntroView') : null;
-  if (introStart) introStart.disabled = !terrainReady;
-  if (introView) introView.disabled = !terrainReady;
+  if (introStart) introStart.disabled = !isActionableNow();
+  if (introView) introView.disabled = !isActionableNow();
   // setup
   const btnScan = typeof document !== 'undefined' ? document.getElementById('btnScan') : null;
   const btnScanHrm = typeof document !== 'undefined' ? document.getElementById('btnScanHrm') : null;
   const btnSkip = typeof document !== 'undefined' ? document.getElementById('btnSkip') : null;
-  if (btnScan) btnScan.disabled = !terrainReady;
-  if (btnScanHrm) btnScanHrm.disabled = !terrainReady;
-  if (btnSkip) btnSkip.disabled = !terrainReady;
+  if (btnScan) btnScan.disabled = !isActionableNow();
+  if (btnScanHrm) btnScanHrm.disabled = !isActionableNow();
+  if (btnSkip) btnSkip.disabled = !isActionableNow();
   // BLE
   const btnBleTrainer = typeof document !== 'undefined' ? document.getElementById('btn-ble-trainer') : null;
   const btnBleHrm = typeof document !== 'undefined' ? document.getElementById('btn-ble-hrm') : null;
-  if (btnBleTrainer) btnBleTrainer.disabled = !terrainReady;
-  if (btnBleHrm) btnBleHrm.disabled = !terrainReady;
+  if (btnBleTrainer) btnBleTrainer.disabled = !isActionableNow();
+  if (btnBleHrm) btnBleHrm.disabled = !isActionableNow();
   // ride start: terrainReady === false なら強制 disable、 true なら pair 通過済の場合のみ enable.
   const btnRide = typeof document !== 'undefined' ? document.getElementById('btnRideStart') : null;
   if (btnRide) {
-    if (!terrainReady) {
+    if (!isActionableNow()) {
       btnRide.disabled = true;
     } else if (_pairConnected) {
       btnRide.disabled = false;
