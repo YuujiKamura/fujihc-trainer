@@ -43,6 +43,14 @@ import {
 } from './lib/consent.js';
 // brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
 import { clearAllLocalData } from './lib/clear_local_data.js';
+// preflight + save_summary + autosave (= ride 開始前 validation / 保存予定 summary / 走行中保護).
+import { runPreflight } from './lib/preflight_check.js';
+import { renderPreflightPanel, hidePreflight } from './lib/preflight_panel.js';
+import { buildSaveSummary, detectAnomalies, summaryToDisplay } from './lib/save_summary.js';
+import { renderSaveSummary } from './lib/save_summary_panel.js';
+import {
+  saveAutosave, loadAutosave, clearAutosave, hasPendingAutosave,
+} from './lib/ride_autosave.js';
 // brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
@@ -355,6 +363,9 @@ let currentPower = 0;
 let currentHr = 0;
 // brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
 let lastTrkptT = 0;
+// autosave: 30 秒毎 cadence で IndexedDB に進行状態を保存するための前回 save 時刻
+let lastAutosaveT = 0;
+let rideStartedIso = null;  // ride 開始時の ISO 文字列 (= autosave に保存する rideStartedAt)
 
 function setupWheelZoom() {
   const mapEl = map.getContainer();
@@ -686,6 +697,9 @@ const wsHandlers = {
     } else if (msg.state === 'ended') {
       if (rideState) rideState.end();
       rideStartedAt = null;
+      rideStartedIso = null;
+      // ride 終了で autosave を消す (= 復元 dialog の対象から外す).
+      clearAutosave().catch((err) => console.warn('clearAutosave failed:', err));
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = true;
       showPostride(msg.gpx_path || '', msg.points || 0);
     } else if (msg.state === 'export-failed') { status(`GPX 書き出し失敗: ${msg.message || ''}`); }
@@ -704,6 +718,35 @@ function hidePairing() {
 function showPostride(gpxPath, points) {
   const ov = document.getElementById('postride-overlay');
   setText('post-gpx-path', gpxPath); setText('post-points', String(points)); setText('copy-status', '');
+  // save_summary: 実際に保存される値の summary を冒頭に描画。 異常検出時は confirm を出す.
+  try {
+    const trkpts = rideState ? rideState.getTrkpts() : [];
+    const snap = rideState ? rideState.snapshot() : { distance: 0 };
+    const summary = buildSaveSummary({
+      trkpts,
+      course,
+      rideStartedAt,
+      distanceM: snap.distance,
+      courseName: 'fujihill',
+    });
+    renderSaveSummary({
+      summary,
+      onAccept: () => {
+        const el = document.getElementById('save-summary-anomaly');
+        if (el) el.textContent = '✓ 異常を許容して保存可';
+      },
+      onAbort: () => {
+        const el = document.getElementById('save-summary-anomaly');
+        if (el) el.textContent = '✗ 保存を中止しました (button は無効)';
+        for (const id of ['btnGpxDownload', 'btnSaveHistory', 'btnStravaUpload']) {
+          const b = document.getElementById(id);
+          if (b) b.disabled = true;
+        }
+      },
+    });
+  } catch (err) {
+    console.warn('save summary render failed:', err);
+  }
   ov.classList.add('visible');
   requestAnimationFrame(() => { const b = document.getElementById('btnBackToPairing'); if (b) b.focus(); });
 }
@@ -1393,11 +1436,97 @@ if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
   try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihill] terrain probe init failed:', e); }
 }
 
-if (introConsented()) {
-  dispatchAfterIntro();
-} else {
-  showIntroOverlay();
+// 起動時に未完了 ride (= autosave 未クリア) があれば復元 dialog を出す。
+// dialog で「復元」→ dispatch 後に rideState 準備で applyPendingRestore、「破棄」→ clearAutosave して通常起動。
+// test 環境 (= window 不在 / IndexedDB 不在) や ?nopreflight=1 では skip.
+const SKIP_RESTORE = new URLSearchParams(location.search).get('nopreflight') === '1';
+function defaultDispatch() {
+  if (introConsented()) {
+    dispatchAfterIntro();
+  } else {
+    showIntroOverlay();
+  }
 }
+async function checkRestoreThenDispatch() {
+  if (SKIP_RESTORE || typeof window === 'undefined' || !globalThis.indexedDB) {
+    defaultDispatch();
+    return;
+  }
+  let pending = false;
+  let rec = null;
+  try {
+    pending = await hasPendingAutosave();
+    if (pending) rec = await loadAutosave();
+  } catch (err) {
+    console.warn('autosave check failed:', err);
+  }
+  if (!pending || !rec) {
+    defaultDispatch();
+    return;
+  }
+  showRestoreDialog(rec);
+}
+
+function showRestoreDialog(rec) {
+  const ov = document.getElementById('restore-overlay');
+  const info = document.getElementById('restore-info');
+  if (info) {
+    info.textContent = `${rec.rideStartedAt || '(時刻不明)'} 開始の ride が途中で終わっています (${rec.trkpts?.length || 0} 点, ${((rec.distanceM || 0) / 1000).toFixed(2)} km).`;
+  }
+  if (ov) ov.classList.add('visible');
+  const btnYes = document.getElementById('btnRestoreYes');
+  const btnDiscard = document.getElementById('btnRestoreDiscard');
+  if (btnYes) {
+    const nb = btnYes.cloneNode(true);
+    btnYes.parentNode.replaceChild(nb, btnYes);
+    nb.addEventListener('click', () => {
+      if (ov) ov.classList.remove('visible');
+      _pendingRestore = rec;  // dispatch 後に rideState 準備済で呼ぶ
+      defaultDispatch();
+    });
+  }
+  if (btnDiscard) {
+    const nb = btnDiscard.cloneNode(true);
+    btnDiscard.parentNode.replaceChild(nb, btnDiscard);
+    nb.addEventListener('click', () => {
+      clearAutosave().catch((err) => console.warn('clearAutosave failed:', err));
+      if (ov) ov.classList.remove('visible');
+      defaultDispatch();
+    });
+  }
+}
+
+let _pendingRestore = null;
+// rideState が初期化された後 (= bootMap → course load → createRideState 完了後) に呼ばれる.
+// 呼び出し点は course load 完了後の場所 (= 後段で hook を入れる)。 暫定 module-level 関数:
+function applyPendingRestore() {
+  if (!_pendingRestore || !rideState) return;
+  const rec = _pendingRestore;
+  _pendingRestore = null;
+  try {
+    rideState.start();
+    // trkpts を 1 件ずつ shim 内部 buffer に追加するため、 distanceM を直接代入する手段は
+    // shim API には無い。 ここは「復元時は trkpts を rideState 経由で再 append + distance は
+    // _rider.distanceTraveled に push」 する簡素な方式を採る。
+    // shim には setDistance API が無いので _rider に直接書く (= 過渡期の compromise).
+    if (rideState._rider && Number.isFinite(rec.distanceM)) {
+      rideState._rider.distanceTraveled = rec.distanceM;
+    }
+    for (const tp of (rec.trkpts || [])) {
+      const restoreExtras = { t: tp.t, power: tp.power, cad: tp.cad, hr: tp.hr };
+      rideState.appendTrkpt(restoreExtras);
+    }
+    rideStartedAt = performance.now();  // restore 後の経過時間は再起算 (= 旧 ride の wall-clock は autosave に保存済)
+    rideStartedIso = rec.rideStartedAt || new Date().toISOString();
+    lastTrkptT = performance.now();
+    lastAutosaveT = performance.now();
+    status(`途中 ride を復元しました (${rec.trkpts?.length || 0} 点, ${(rec.distanceM / 1000).toFixed(2)} km)`);
+  } catch (err) {
+    console.warn('applyPendingRestore failed:', err);
+  }
+}
+
+checkRestoreThenDispatch();
 
 function initMapMode() {
   if (!map) { ensureMapBooted().then(() => initMapMode()); return; }  // brief 31
@@ -1528,6 +1657,8 @@ async function loadCourse() {
   // shim 内 Rider と新 viewer 経路の rider を一致させる. 別 instance を作ると進行 state が
   // 二重管理になって drift する (= 過去 brief 19 の curIdx 二重持ち bug と同型予防).
   rider = rideState._rider;
+  // 起動時の autosave 復元が pending なら、 ここで rideState を進めた状態に持ち上げる.
+  applyPendingRestore();
   totalDist = course[course.length - 1].distance_m;
   setText('total', totalDist.toFixed(0));
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
@@ -2073,6 +2204,17 @@ function tick(t) {
       });
       lastTrkptT = nowT;
     }
+    // autosave: 30 秒毎に IndexedDB へ進行状態を save.
+    if (nowT - lastAutosaveT >= 30000) {
+      const trkpts = rideState.getTrkpts();
+      saveAutosave({
+        rideStartedAt: rideStartedIso || new Date().toISOString(),
+        distanceM: snap.distance,
+        courseName: 'fujihill',
+        trkpts,
+      }).catch((err) => console.warn('autosave failed:', err));
+      lastAutosaveT = nowT;
+    }
   }
   if (!rider.atGoal) {
     requestAnimationFrame(tick);
@@ -2104,6 +2246,8 @@ function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.start();
   lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
+  lastAutosaveT = performance.now();  // autosave 30 秒 cadence をリセット
+  rideStartedIso = new Date().toISOString();  // autosave に保存する ride 開始時刻
   _autoEnded = false;  // 2026-05-15: 完走自動終了 flag を ride 開始毎にリセット
   client.sendRideStart();
 }
@@ -2111,11 +2255,42 @@ document.getElementById('btnRideStart').addEventListener('click', () => {
   // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 二重 gate).
   if (!terrainReady) return;
   if (!client || !client.isOpen()) return;
-  // 2026-05-15 fix: 同意 dialog / inline checkbox を全廃止。 本 app は自分の trainer
-  // データを自分のローカルに保存するだけ、 同意取る相手がいない。 履歴は無条件で
-  // 保存される、 Strava upload は button 押下自体が意思表示。
-  startRideConfirmed();
+  // preflight check: 開始前に validation panel を出す。 結果 OK / warn なら user 同意で開始、
+  // fail なら開始 button disable。 ?nopreflight=1 で skip (= 開発/test 用 bypass).
+  const params = new URLSearchParams(location.search);
+  if (params.get('nopreflight') === '1') {
+    startRideConfirmed();
+    return;
+  }
+  showPreflightAndStart();
 });
+
+async function showPreflightAndStart() {
+  let pastRides = [];
+  try {
+    const db = await getRideDb();
+    pastRides = await rideDbList(db);
+  } catch { /* DB 開けなくても preflight 自体は出す (= IndexedDB check が fail を返す) */ }
+  const result = await runPreflight({
+    course,
+    trainer: {
+      connected: !!(client && client.isOpen()),
+      power: Number.isFinite(currentPower) ? currentPower : null,
+      cadence: Number.isFinite(currentCadence) ? currentCadence : null,
+      hr: Number.isFinite(currentHr) ? currentHr : null,
+    },
+    pastRides,
+    consent: {
+      history: getRideConsent('history'),
+      strava: getRideConsent('strava'),
+    },
+  });
+  renderPreflightPanel({
+    result,
+    onStart: () => { startRideConfirmed(); },
+    onCancel: () => { /* no-op、 user が pair 画面に戻る */ },
+  });
+}
 document.getElementById('btnRideEnd').addEventListener('click', () => {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.end();

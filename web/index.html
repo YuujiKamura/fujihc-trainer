@@ -270,6 +270,36 @@
   #consent-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
   #consent-panel .actions button#btnConsentAccept { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #consent-panel .actions button#btnConsentCancel { background: #14141a; color: #aaa; }
+  /* preflight-overlay (= ride 開始前の事前 validation panel、 z-index 1465).
+     consent (1460) より上、 setup (1500) より下に挟む。 list 形式で項目を縦に並べる. */
+  #preflight-overlay { position: fixed; inset: 0; z-index: 1465; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #preflight-overlay.visible { display: flex; }
+  #preflight-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
+  #preflight-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #preflight-panel p { margin: 0.4rem 0; color: #ddd; font-size: 13px; line-height: 1.5; }
+  #preflight-list { list-style: none; padding: 0; margin: 0.6rem 0; background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; max-height: 320px; overflow-y: auto; }
+  #preflight-message { font-size: 13px; margin: 0.4rem 0; }
+  #preflight-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #preflight-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #preflight-panel .actions button#btnPreflightStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #preflight-panel .actions button#btnPreflightStart:disabled { background: #444; color: #888; border-color: #444; cursor: not-allowed; }
+  /* save-summary block (= postride 冒頭の保存予定 summary). postride-panel 内で使用. */
+  .save-summary { background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; margin: 0.5rem 0; }
+  .save-summary h3 { margin: 0 0 0.4rem; font-size: 14px; color: #ffd54a; }
+  .save-summary dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.8rem; margin: 0; font-size: 12px; }
+  .save-summary dt { color: #aaa; }
+  .save-summary dd { color: #ddd; margin: 0; font-family: ui-monospace, monospace; }
+  .save-summary .anomaly { color: #ff5050; font-weight: bold; }
+  /* restore-overlay (= 起動時の途中 ride 復元 dialog、 intro と同じ z-index 1450). */
+  #restore-overlay { position: fixed; inset: 0; z-index: 1455; background: rgba(0, 0, 0, 0.85); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #restore-overlay.visible { display: flex; }
+  #restore-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 420px; max-width: 640px; }
+  #restore-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #restore-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
+  #restore-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #restore-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #restore-panel .actions button#btnRestoreYes { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #restore-panel .actions button#btnRestoreDiscard { background: #14141a; color: #ff8866; border-color: #ff8866; }
   /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
   #history-overlay {
     position: fixed; inset: 0; z-index: 1550;
@@ -555,6 +585,16 @@
 <div id="postride-overlay" role="dialog" aria-modal="true">
   <div id="postride-panel">
     <h2>✓ ライド保存完了</h2>
+    <!-- save_summary: 実際に保存しようとしてる値の summary。 異常時は赤字 + 確認 button. -->
+    <div class="save-summary" id="save-summary-block" hidden>
+      <h3>保存予定の内容</h3>
+      <dl id="save-summary-list"></dl>
+      <div id="save-summary-anomaly" class="anomaly" hidden></div>
+      <div id="save-summary-confirm" hidden style="margin-top:0.5rem;">
+        <button id="btnSaveAnomalyAccept" style="font:inherit; padding:0.4rem 0.8rem; background:#ff8866; color:#000; border:none; border-radius:4px; cursor:pointer;">異常検出、 それでも保存する</button>
+        <button id="btnSaveAnomalyAbort" style="font:inherit; padding:0.4rem 0.8rem; background:#14141a; color:#aaa; border:1px solid #444; border-radius:4px; cursor:pointer;">保存しない</button>
+      </div>
+    </div>
     <div>保存ファイル (<span id="post-points">0</span> 点):</div>
     <div class="gpx-line" id="post-gpx-path">--</div>
     <div class="hint">下記 button から GPX を保存 / Strava へ直送 / 履歴に蓄積できます (= brief 33)。</div>
@@ -652,6 +692,32 @@
     <div class="actions">
       <button id="btnConsentCancel" type="button">キャンセル</button>
       <button id="btnConsentAccept" type="button">同意して ride 開始</button>
+    </div>
+  </div>
+</div>
+
+<!-- preflight-overlay (= ride 開始前の事前 validation panel). startRideConfirmed 前段で表示。 -->
+<div id="preflight-overlay" role="dialog" aria-modal="true" aria-labelledby="preflight-title">
+  <div id="preflight-panel">
+    <h2 id="preflight-title">ride 開始前チェック</h2>
+    <p>これから保存される予定のデータ項目と現在値です。 内容を確認してから開始してください。</p>
+    <ul id="preflight-list"></ul>
+    <div id="preflight-message"></div>
+    <div class="actions">
+      <button id="btnPreflightCancel" type="button">キャンセル</button>
+      <button id="btnPreflightStart" type="button">開始する</button>
+    </div>
+  </div>
+</div>
+
+<!-- restore-overlay (= 起動時の途中 ride 復元 dialog). autosave があれば intro より先に表示. -->
+<div id="restore-overlay" role="dialog" aria-modal="true" aria-labelledby="restore-title">
+  <div id="restore-panel">
+    <h2 id="restore-title">途中の ride を復元しますか?</h2>
+    <p id="restore-info">前回の ride が途中で終わっています (autosave あり).</p>
+    <div class="actions">
+      <button id="btnRestoreDiscard" type="button">破棄する</button>
+      <button id="btnRestoreYes" type="button">復元する</button>
     </div>
   </div>
 </div>
