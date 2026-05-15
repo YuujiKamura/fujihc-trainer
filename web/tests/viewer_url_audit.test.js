@@ -28,12 +28,12 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(insideMatches).toBeGreaterThan(0);
   });
 
-  it('loadOsmTile 内に osm_raster 経路 literal が現れる (= brief 30 DB cache 一次経路、 TILE_BASE_URL 経由)', () => {
+  it('loadOsmTile 内に osm_raster 経路 literal が現れる (= brief 30 DB cache 一次経路、 BRIDGE_TILE_BASE_URL 経由)', () => {
     const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    // TILE_BASE_URL は ${location.origin}/tiles に展開される. source 上は
-    // `${TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png` で書かれる.
-    expect(m[0]).toMatch(/TILE_BASE_URL[^`]*\/osm_raster\//);
+    // brief 31: TILE_BASE_URL alias を撤去、 BRIDGE_TILE_BASE_URL を直接使う。
+    // source 上は `${BRIDGE_TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`。
+    expect(m[0]).toMatch(/BRIDGE_TILE_BASE_URL[^`]*\/osm_raster\//);
   });
 
   it('buildMinimapTopBase 内に /tiles/_fetch_minimap_raster POST 呼出 (= brief 30 起動時 cache 構築)', () => {
@@ -47,8 +47,10 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(viewer).not.toMatch(/https?:\/\/cyberjapandata\.gsi\.go\.jp/);
   });
 
-  it('TILE_BASE_URL を使う (= localhost /tiles/... 経由)', () => {
-    expect(viewer).toMatch(/TILE_BASE_URL/);
+  it('BRIDGE_TILE_BASE_URL を使う (= localhost /tiles/... 経由、 brief 31 で旧 TILE_BASE_URL alias 撤去)', () => {
+    expect(viewer).toMatch(/BRIDGE_TILE_BASE_URL/);
+    // alias は完全撤去、 source 内に残っていないこと
+    expect(viewer).not.toMatch(/const\s+TILE_BASE_URL\s*=/);
   });
 
   it('prefetchTilesAlongCourse 関数定義を含まない (= dead code 削除済)', () => {

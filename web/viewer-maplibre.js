@@ -45,11 +45,9 @@ const status = (msg) => { document.getElementById('status').textContent = msg; }
 // - BASE_PATH: GitHub Pages の project page prefix (= /fujihc-trainer/) 追従、
 //   localhost (= /) でも動く。 `location.pathname.replace(/\/[^/]*$/, '/')` で
 //   末尾 file 名を除いて parent path を取る。
-// - TILE_BASE_URL: 旧 const、 viewer_url_audit が grep する後方互換用 alias (= bridge 値)
 const BASE_PATH = location.pathname.replace(/\/[^/]*$/, '/');
 const BRIDGE_TILE_BASE_URL = `${location.origin}/tiles`;
 const STATIC_TILE_BASE_URL = `${location.origin}${BASE_PATH}static`;
-const TILE_BASE_URL = BRIDGE_TILE_BASE_URL;
 
 // === GSI 標高 PNG を terrarium 形式 PNG に変換するカスタムプロトコル ===
 // brief 21: 変換ロジックは web/lib/terrain_mesh.js に切出し済 (= test 6 件で pin)、
@@ -332,12 +330,15 @@ async function checkSetupStatus() {
       `${HTTP_BASE_URL}/tiles/_setup_status`,
       { signal: AbortSignal.timeout(500) },
     );
+    // 200 OK: bridge 起動済 + DB 充足の通常応答
+    // 503: bridge 起動済だが DB 未充足 (= dbinit 必要、 bridge 経路は使う)
+    // 404 / その他 non-ok: 静的サーバ (= /tiles/_setup_status 不在) → static mode
     if (resp.status === 503) return { overall: 'empty', sources: {}, bridgeReachable: true };
-    if (!resp.ok) return { overall: 'empty', sources: {}, bridgeReachable: true };
+    if (!resp.ok) return { overall: 'empty', sources: {}, bridgeReachable: false };
     const body = await resp.json();
     return { ...body, bridgeReachable: true };
   } catch (err) {
-    // timeout / 404 / network error: bridge 未到達 = static mode 確定
+    // timeout / network error: bridge 未到達 = static mode 確定
     return { overall: 'empty', sources: {}, bridgeReachable: false };
   }
 }
@@ -926,17 +927,29 @@ async function loadCourse() {
 // に rollback。 ToS 範囲内 1-shot 9-16 タイル fetch、 ride 中 再 fetch ゼロ。
 // 上半分 (= #minimap-top canvas): z=11 周辺 OSM タイル + course polyline + start/goal dot + 180度回転。
 // 下半分 (= #minimap-bottom canvas): 標高プロファイル (= brief 28 と同仕様、 関数名 rename のみ)。
-// 注意: ここで OSM 直叩きが復活している (= viewer_url_audit.test.js は loadOsmTile 限定で例外緩和)。
+// 注意: ここで OSM 直叩きが復活していたが、 brief 31 構造修正で static mode は
+// 完全 disable (= GitHub Pages 訪問者全員が OSM ToS heavy use 違反になる harm vector close)。
 // ride hot path には絶対戻さない、 prefetchTilesAlongCourse 復活も絶対 NG (= brief 13 物理 freeze)。
 
-// loadOsmTile: brief 30 で DB cache 化。 一次経路は ${TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png
-// (= bridge.py が SQLite から PNG を返す)、 fallback で OSM 直叩き (= 起動直後 / DB 不在 / bridge 未起動でも minimap が出る)。
+// loadOsmTile: brief 30 で DB cache 化、 brief 31 で mode 分岐。
+// bridge mode: 一次 ${BRIDGE_TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png (= bridge.py が SQLite から PNG)、
+//   fallback で OSM 直叩き (= localhost 単独利用、 ToS 上 heavy use ではない)
+// static mode (= GitHub Pages): minimap 用 OSM raster を bridge に依存するため、
+//   一次経路を最初から無効化 (= 即 resolve、 minimap は地形 PNG + 路線 polygon のみで描画)。
+//   ここで bridge URL を叩くと static 訪問者が localhost を引いて 404 → onerror で OSM 直叩き
+//   fallback 発火 → 訪問者全員が公式 tile server を heavy use する第三者 harm vector になる。
 // 失敗時は resolve のみ (= reject しない、 旧版踏襲)。
 // crossOrigin='anonymous' は canvas tainted 回避用 (= drawImage 後 getImageData は呼ばないので
 // 必須ではないが旧版踏襲、 OSM 側は CORS 許可ヘッダを返すので無害)。
 // User-Agent は browser が自動で送る (= bridge 側で fetch するときは fujihc-trainer/0.1 UA を明示)。
 function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
   return new Promise((resolve) => {
+    // brief 31: static mode (= bridge 未到達) では minimap 用 OSM raster を取得しない。
+    // 第三者 harm 防止 (= 公開 viewer から OSM 公式 tile server への heavy use 発生回避)。
+    if (!_bridgeReachable) {
+      resolve();
+      return;
+    }
     const img = new Image();
     img.crossOrigin = 'anonymous';
     let tried = false;
@@ -956,6 +969,7 @@ function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
     img.onerror = () => {
       // brief 30: 一次経路 (= DB cache) が 404/503 で空振ったら、 fallback で OSM 直叩き
       // (= 起動直後 / bridge 未起動 / cache 構築前)。 二度目の error は silent resolve.
+      // ※ ここに来るのは bridge mode のみ (= 上の early return で static は除外済)。
       if (!tried) {
         tried = true;
         img.src = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
@@ -965,7 +979,7 @@ function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
     };
     // brief 30 一次経路: bridge 経由で DB tiles table から hit (= source='osm_raster')。
     // 2 回目以降の起動では完全に DB hit、 OSM サーバへの再 fetch ゼロ。
-    img.src = `${TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`;
+    img.src = `${BRIDGE_TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`;
   });
 }
 

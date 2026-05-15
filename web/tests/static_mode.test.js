@@ -23,8 +23,23 @@ describe('brief 31: BASE_PATH / BRIDGE_TILE_BASE_URL / STATIC_TILE_BASE_URL の�
     expect(viewer).toMatch(/const\s+STATIC_TILE_BASE_URL\s*=\s*`\$\{location\.origin\}\$\{BASE_PATH\}static`/);
   });
 
-  it('TILE_BASE_URL は BRIDGE_TILE_BASE_URL の alias (= 既存 audit gate 後方互換)', () => {
-    expect(viewer).toMatch(/const\s+TILE_BASE_URL\s*=\s*BRIDGE_TILE_BASE_URL/);
+  it('TILE_BASE_URL alias は撤去済 (= brief 31 構造修正、 mode 別の宣言を直接使う)', () => {
+    expect(viewer).not.toMatch(/const\s+TILE_BASE_URL\s*=/);
+  });
+});
+
+describe('brief 31 構造修正: static mode で OSM 直叩き fallback が無効化されている', () => {
+  it('loadOsmTile は _bridgeReachable が false なら最初の onerror 前に early return', () => {
+    const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    // body の冒頭で _bridgeReachable false 時の early resolve があるはず
+    expect(body).toMatch(/if\s*\(\s*!\s*_bridgeReachable\s*\)\s*\{\s*resolve\(\s*\)\s*;\s*return\s*;\s*\}/);
+  });
+
+  it('tile.openstreetmap.org への直叩きは loadOsmTile 内 1 箇所のみ (= bridge mode 時の fallback 限定)', () => {
+    const allMatches = viewer.match(/tile\.openstreetmap\.org/g) || [];
+    expect(allMatches.length).toBe(1);
   });
 });
 
@@ -51,13 +66,19 @@ describe('brief 31: checkSetupStatus が AbortSignal.timeout + bridgeReachable �
     expect(viewer).toMatch(/AbortSignal\.timeout\(\s*500\s*\)/);
   });
 
-  it('bridgeReachable フィールドを 200/503/404/timeout/network error 5 経路で返す', () => {
+  it('bridgeReachable は 200 と 503 のみ true、 404 / non-ok / catch は false', () => {
     // checkSetupStatus 関数 body 全体を取って、 各 path で bridgeReachable: true/false を返すことを確認
     const m = viewer.match(/async\s+function\s+checkSetupStatus\s*\([\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    // 200 path (= body 展開) + 503 + non-ok の 3 path で bridgeReachable: true
-    expect((body.match(/bridgeReachable:\s*true/g) || []).length).toBeGreaterThanOrEqual(3);
+    // true 経路は 2 つ: 200 OK (= body 展開) + 503 (= bridge 起動済 DB 未充足)
+    expect((body.match(/bridgeReachable:\s*true/g) || []).length).toBe(2);
+    // false 経路は 2 つ以上: 404 / non-ok + catch (timeout / network)
+    expect((body.match(/bridgeReachable:\s*false/g) || []).length).toBeGreaterThanOrEqual(2);
+    // 503 だけは特殊 (= bridge 認知して true)
+    expect(body).toMatch(/resp\.status\s*===?\s*503[\s\S]*bridgeReachable:\s*true/);
+    // non-ok (= 404 含む) は false
+    expect(body).toMatch(/!resp\.ok[\s\S]*bridgeReachable:\s*false/);
     // catch path で bridgeReachable: false
     expect(body).toMatch(/catch[\s\S]*bridgeReachable:\s*false/);
   });
