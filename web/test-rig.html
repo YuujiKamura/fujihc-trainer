@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>fujihill rider test rig</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; background: #111; color: #ddd;
+               font: 13px/1.5 ui-monospace, "Cascadia Code", monospace;
+               overflow: hidden; }
+  #rig-canvas { display: block; width: 100vw; height: 100vh; }
+  #rig-hud { position: fixed; top: 8px; left: 8px; z-index: 10;
+             background: rgba(0,0,0,0.75); padding: 8px 12px;
+             border: 1px solid #444; border-radius: 4px; min-width: 280px;
+             pointer-events: none; }
+  #rig-hud .row { margin: 2px 0; }
+  #rig-hud b { color: #7fff00; }
+  #rig-controls { position: fixed; bottom: 8px; left: 8px; z-index: 10;
+                  background: rgba(0,0,0,0.75); padding: 8px 12px;
+                  border: 1px solid #444; border-radius: 4px; min-width: 320px; }
+  #rig-controls label { display: block; margin: 4px 0; }
+  #rig-controls input[type=range] { width: 220px; vertical-align: middle; }
+  #rig-controls button { padding: 4px 12px; margin: 4px 4px 0 0; cursor: pointer;
+                         background: #222; color: #ddd; border: 1px solid #555;
+                         border-radius: 3px; font: inherit; }
+  #rig-controls button:hover { background: #333; }
+  #rig-controls select { font: inherit; padding: 2px 6px;
+                         background: #222; color: #ddd; border: 1px solid #555; }
+  #rig-note { position: fixed; top: 8px; right: 8px; z-index: 10;
+              background: rgba(0,0,0,0.6); padding: 6px 10px;
+              border: 1px solid #333; border-radius: 4px; max-width: 260px;
+              font-size: 11px; color: #888; }
+</style>
+</head>
+<body>
+<canvas id="rig-canvas"></canvas>
+<div id="rig-hud">
+  <div class="row"><b>course</b> <span id="rig-course-name">--</span> (<span id="rig-course-len">--</span> m)</div>
+  <div class="row"><b>time</b> <span id="rig-time">0.0</span> s</div>
+  <div class="row"><b>dist</b> <span id="rig-dist">0.0</span> m</div>
+  <div class="row"><b>speed</b> <span id="rig-speed">0.0</span> km/h (<span id="rig-speed-mps">0.000</span> m/s)</div>
+  <div class="row"><b>slope</b> <span id="rig-slope">0.0</span> %</div>
+  <div class="row"><b>rider lat,lon</b> <span id="rig-lat">--</span>, <span id="rig-lon">--</span></div>
+  <div class="row"><b>cam lat,lon</b> <span id="rig-cam-lat">--</span>, <span id="rig-cam-lon">--</span></div>
+  <div class="row"><b>cam drift</b> <span id="rig-drift">0.00</span> m</div>
+  <div class="row"><b>cam bearing</b> <span id="rig-brng">0.0</span>°</div>
+  <div class="row"><b>trkpt</b> <span id="rig-trkn">0</span> 件 / uniq <span id="rig-trkuniq">0</span></div>
+  <div class="row"><b>fps</b> <span id="rig-fps">--</span></div>
+</div>
+<div id="rig-controls">
+  <label>course:
+    <select id="rig-course-select">
+      <option value="flat">平地 1km</option>
+      <option value="up5">5% 登り 1km</option>
+      <option value="down5">5% 下り 1km</option>
+      <option value="up10">10% 登り 500m</option>
+      <option value="sine">蛇行 2km (= 振幅 30m)</option>
+      <option value="fuji-prefix">富士ヒル前半切り出し</option>
+    </select>
+  </label>
+  <label>power: <input type="range" id="rig-power" min="0" max="500" step="5" value="200"> <span id="rig-power-v">200</span> W</label>
+  <label>体重: <input type="range" id="rig-mass" min="50" max="120" step="1" value="88"> <span id="rig-mass-v">88</span> kg</label>
+  <label>速度倍率: <input type="range" id="rig-speed-mult" min="0.5" max="5" step="0.1" value="1"> ×<span id="rig-speed-mult-v">1.0</span></label>
+  <div>
+    <button id="rig-start">再生</button>
+    <button id="rig-pause">一時停止</button>
+    <button id="rig-reset">リセット</button>
+  </div>
+</div>
+<div id="rig-note">
+  rider / 物理 / camera だけが動く検証 viewer。 MapLibre / BLE / IndexedDB 抜き、 grid 背景 + 合成 course。
+</div>
+<script type="module" src="./lib/test_rig_runner.js"></script>
+</body>
+</html>
