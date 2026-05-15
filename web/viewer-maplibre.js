@@ -12,6 +12,13 @@ import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
 import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
 import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
 import { createRideState } from './lib/ride_state.js';
+// brief 35: Terrain + Rider 2 層モデル. viewer は terrain + rider を直接保持し、
+// 移動状態 (= 速度 / 位置 / 補間 / 進行方位) はすべて rider/terrain API 経由で操作する.
+// createRideState は HTML / 既存 source-grep tests が期待する API surface (= rideState 変数 /
+// rideState.startFrom / rideState.appendTrkpt 等) を維持する shim 経路で残す (= 同じ Rider を
+// 内側に持つため二重 state にはならない).
+import { createTerrain } from './lib/terrain.js';
+import { createRider } from './lib/rider.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
@@ -308,8 +315,13 @@ function bootMap(env) {
 
 let course = [];
 let totalDist = 0;
+// brief 35: 移動モデルの第一級表現は Rider (= 主体) + Terrain (= 客観). 旧 module global
+// (= playSpeed / curIdx / curDist / currentCadence / currentPower / currentHr / spinAngle) は
+// すべて rider 内部に集約済. rideState は createRideState() の戻り値 (= 後方互換 shim、
+// 同じ Rider を内側に持つ) で、 HTML 既存 grep gate + viewer 既存 caller の名前空間互換を取る.
+let terrain = null;
+let rider = null;
 let rideState = null;
-let playSpeed = 0;
 let lastT = performance.now();
 let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihill.diff')) || 1.0; } catch { return 1.0; } })();
 let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
@@ -334,11 +346,11 @@ let minimapStats = null;
 // 道幅が画面 1/4 程度に収まる感覚 (= 走行視点として親密、 遠景も視認可).
 let userZoom = 21;
 let userPitch = 85;
-// rider 上のスピナー (= プロペラ) の累積回転角、 cadence rpm に比例して進む
-let spinAngle = 0;
-// 最新の cadence (state push 経由)、 ride 中ペダル回ってない時は 0 で静止
+// brief 35: 旧 spinAngle / currentCadence / currentPower / currentHr は rider 内部に集約.
+// 互換のため symbol を残す (= brief 33 grep gate / 既存 source 経路の名前互換). 値は
+// wsHandlers.state で rider.setSensors を呼ぶ際の経由口で、 単一 source of truth は rider.
+// 各値の生存範囲 = wsHandlers.state ハンドラ内のみ、 tick 経路は rider.cadence/power/hr を読む.
 let currentCadence = 0;
-// brief 33: ride 中の最新 power / hr (= state push 経由、 trkpt 蓄積に使う)
 let currentPower = 0;
 let currentHr = 0;
 // brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
@@ -577,15 +589,21 @@ const SLOPE_SEND_INTERVAL_MS = 1000;
 
 const wsHandlers = {
   state(msg) {
+    // brief 35: speed / sensor 値はすべて rider 経由で 1 経路に集約.
+    // 旧 viewer は playSpeed / currentCadence / currentPower / currentHr の 4 つを module global
+    // に直書きしていた。 fake state push (1Hz) と section click (即時) が同じ場所を奪い合うため、
+    // 観るモードで「click → 動かない」 体感 bug の元凶になっていた. 新 path では rider.setSpeed /
+    // rider.setSensors が唯一の入口、 fake state も BLE も section click も同じ API を叩く.
     if (typeof msg.speed_mps === 'number') {
       const s = msg.speed_mps;
-      if (Number.isFinite(s) && s >= 0 && s <= 25) playSpeed = s;
+      if (Number.isFinite(s) && s >= 0 && s <= 25 && rider) rider.setSpeed(s);
     }
     const pw = (msg.power_w != null) ? String(msg.power_w) : '--';
     const cd = (msg.cadence_rpm != null) ? msg.cadence_rpm.toFixed(0) : '--';
     if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
     if (typeof msg.power_w === 'number') currentPower = msg.power_w;
     if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
+    if (rider) rider.setSensors({ power: currentPower, cad: currentCadence, hr: currentHr });
     const sp = (msg.speed_mps != null && msg.speed_mps >= 0) ? (msg.speed_mps * 3.6).toFixed(1) : '--';
     setText('power', pw); setText('cadence', cd);
     // rider 追随 HUD (= 豆腐の下) にも同値を反映、 大きめ text で表示.
@@ -1216,14 +1234,14 @@ function initViewMode() {
     if (course && course.length > 0) {
       clearInterval(waitForCourse);
       renderSectionList(course, (sec) => {
-        // section 行クリック → rideState を section 始点から開始 (= 瞬間ジャンプ).
-        // 2026-05-15 user 判断「ジャンプに戻すか」 で 100km/h transition は撤回。
+        // section 行クリック → rider を section 始点から開始 (= 瞬間ジャンプ).
+        // brief 35: 旧 viewer は「rideState.startFrom 直後に playSpeed = 20/3.6 を直書き」
+        // という workaround を持っていた (= 1Hz fake state catch-up までの「動かない」 体感対策).
+        // 新 path では rider.setSpeed を即時に呼ぶことで、 1 経路の API 経由で同じ即時始動を実現.
+        // fake state push が後で同じ rider.setSpeed を呼ぶが、 idempotent なので競合しない.
         if (!rideState) return;
         rideState.startFrom(sec.start_idx);
-        // 2026-05-15 fix: 観るモードの fake state push は 1Hz、 click 後 ~1 秒は古い state
-        // (= paused 時の speed_mps=0) が playSpeed に残って「動かない」 体感を生んでいた。
-        // click 直後に直接 20km/h 相当をセットして即時走り出す。
-        playSpeed = 20 / 3.6;
+        if (rider) rider.setSpeed(20 / 3.6);
         lastT = performance.now();
         rideStartedAt = performance.now();
         setAppState('riding');
@@ -1497,7 +1515,14 @@ async function loadCourse() {
   // brief 23: GPS ジッター除去. lat/lon の short-window moving average (window=5)
   // で短距離ジグザグだけ補正、 道路カーブは保存. distance_m / slope_pct / elevation_m は不変.
   course = smoothCourse(course);
+  // brief 35: Terrain + Rider を viewer の 1 source-of-truth として確立.
+  // rideState (= 後方互換 shim) は内部で同じ Rider を保持するので、 viewer 側の rider 変数と
+  // shim 内 Rider は完全同一 instance、 二重 state にならない (= _rider 公開で共有).
+  terrain = createTerrain({ course });
   rideState = createRideState(course);
+  // shim 内 Rider と新 viewer 経路の rider を一致させる. 別 instance を作ると進行 state が
+  // 二重管理になって drift する (= 過去 brief 19 の curIdx 二重持ち bug と同型予防).
+  rider = rideState._rider;
   totalDist = course[course.length - 1].distance_m;
   setText('total', totalDist.toFixed(0));
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
@@ -1884,47 +1909,44 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
 
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
-  if (!rideState) { requestAnimationFrame(tick); return; }
-  rideState.advance(dt, playSpeed * speedMult);
-  const snap = rideState.snapshot();
-  const curIdx = snap.idx;
+  if (!rider || !rideState) { requestAnimationFrame(tick); return; }
+
+  // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
+  // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
+  // すべて rider.tick + rider.snapshot.position に集約済. viewer は snapshot を描画に流すだけ.
+  rider.tick(dt, { speedMultiplier: speedMult });
+  const snap = rider.snapshot();
+  const pos = snap.position;
   const curDist = snap.distance;
+  const rLat = pos.lat;
+  const rLon = pos.lon;
+  const rEle = pos.elevation;
+  const curIdx = pos.segmentIdx;
 
-  const p = course[curIdx];
-  const pNext = course[Math.min(curIdx + 1, course.length - 1)];
-  const segLen = pNext.distance_m - p.distance_m;
-  const frac = segLen > 0 ? Math.min(1, Math.max(0, (curDist - p.distance_m) / segLen)) : 0;
-  const rLon = p.lon + (pNext.lon - p.lon) * frac;
-  const rLat = p.lat + (pNext.lat - p.lat) * frac;
-  const rEle = p.elevation_m + (pNext.elevation_m - p.elevation_m) * frac;
-
-  // camera params (= bearing は course[curIdx]→course[curIdx+5] の travel heading)、
-  // center は interpolated rLon/rLat で sub-meter 精度を保つ
+  // camera bearing: 旧 viewer は curIdx の bearing と curIdx+1 の bearing を frac で線形補間して
+  // 「GPS 点間が不均一でも curIdx 変化の瞬間に視線がカクッと回転する」 問題を解消していた。
+  // Terrain.getPositionAtDistance は heading を 1 値だけ返すため、 ここでは旧 frac 補間 logic を
+  // 維持して滑らかさを保つ (= camera 専用、 rider.position.heading は単一 segment ベース).
   const cam = computeCameraParams(course, { curIdx }, { userZoom, userPitch, lookAhead: 5 });
-  // 2026-05-15 fix: bearing も frac 補間で滑らかに (= GPS 点間が不均一でも curIdx が変わる
-  // 瞬間にカメラ視線がカクッと回転する症状を解消、 user 指摘「速度に緩急」の主因)。
-  // curIdx の bearing と curIdx+1 の bearing を shortest-angle で補間。
   const nextIdx = Math.min(curIdx + 1, course.length - 1);
   const camNext = computeCameraParams(course, { curIdx: nextIdx }, { userZoom, userPitch, lookAhead: 5 });
   let bearingDiff = ((camNext.bearing - cam.bearing + 540) % 360) - 180;
-  const courseBearing = cam.bearing + bearingDiff * frac;
-  // 2026-05-15: user の横ドラッグ分を進行方向に加算 (= 旋回オフセットを維持).
+  const courseBearing = cam.bearing + bearingDiff * pos.fracInSegment;
+  // user 横ドラッグ分を camera の旋回 offset として加算 (= rider 進行方向には足し込まない).
   const smoothBearing = (courseBearing + userBearingOffset + 360) % 360;
-  // 2026-05-15 fix (user 指示「自機の豆腐は進行方向を向くように固定」): 豆腐の向きは
-  // 旋回 offset を含めない courseBearing で決める。 camera だけが旋回 offset を反映。
+  // 豆腐 (= rider polygon) の向きは進行方向で固定、 camera だけが offset を反映.
   const riderHeadingRad = (courseBearing + 360) % 360 * Math.PI / 180;
 
-  // スピナー累積角を cadence rpm に応じて進める (rpm → rad/s = rpm * 2π / 60)
-  spinAngle += currentCadence * (2 * Math.PI / 60) * dt;
-  // rider 立体を rider 位置 + 進行方向 + スピン角で更新
+  // rider 立体を rider 位置 + 進行方向 + スピン角で更新. spinAngle は rider.tick 内で
+  // cadence rpm に応じて自動進行済 (= rider.spinAngle で取り出す、 viewer 側の累積管理 不要).
   const ridSrc = map.getSource && map.getSource('rider');
   if (ridSrc) {
-    ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, spinAngle));
+    ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, snap.spinAngle));
   }
 
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
   // 「描画準備中」インジケータの解除トリガに干渉しない).
-  if (course.length > 0 && rideState && rideState.snapshot().active) {
+  if (course.length > 0 && snap.active) {
     map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
@@ -1935,8 +1957,8 @@ function tick(t) {
 
   setText('dist', curDist.toFixed(0));
   setText('ele', rEle.toFixed(0));
-  // rider 追随 HUD の slope は常時更新 (= state push に依存せず course から直接).
-  setText('r-slope', p.slope_pct.toFixed(1));
+  // rider 追随 HUD の slope は常時更新 (= state push に依存せず Terrain 経由で取得).
+  setText('r-slope', pos.slope_pct.toFixed(1));
   // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project、
   // body class が state-riding の時のみ表示。
   const riderHud = document.getElementById('rider-hud');
@@ -1951,12 +1973,15 @@ function tick(t) {
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   setText('cam-zoom', map.getZoom().toFixed(2));
   setText('cam-pitch', map.getPitch().toFixed(0));
-  updateMinimap(curDist, rEle, rLat, rLon, headingRad);
-  const dispKmh = playSpeed * speedMult * 3.6;
+  // brief 35 同型 bug 修正: 旧 viewer は riderHeadingRad を計算しつつ updateMinimap に
+  // `headingRad` (= 未定義) を渡していた、 runtime ReferenceError. jsdom test 環境で tick が
+  // 走らないため source-grep が通り続けていた dead bug. minimap には rider 進行方向を渡す.
+  updateMinimap(curDist, rEle, rLat, rLon, riderHeadingRad);
+  const dispKmh = snap.speed * speedMult * 3.6;
   const connected = !!(client && client.isOpen());
   setText('speed', snap.paused ? (connected ? '待機中' : 'paused') : `${dispKmh.toFixed(1)} km/h${connected ? ' (bridge)' : ' (demo)'}`);
 
-  if (!snap.paused) maybeSendSlope(p.slope_pct);
+  if (!snap.paused) maybeSendSlope(pos.slope_pct);
   if (snap.active && !snap.paused && connected) {
     const now = performance.now();
     if (now - lastPositionSendT >= POSITION_SEND_INTERVAL_MS) {
@@ -1966,6 +1991,7 @@ function tick(t) {
   }
   // brief 33: ride 中 1Hz で trkpt 蓄積 (= GPX / Strava upload / IndexedDB 履歴の元データ).
   // connected 不要 (= TEST_MODE / MAP_MODE / BLE / static でも本人 ride の trkpt は溜める).
+  // brief 35: rideState.appendTrkpt は legacy raw point ベース、 shim の grep gate 通過に必要.
   if (snap.active && !snap.paused) {
     const nowT = performance.now();
     if (nowT - lastTrkptT >= 1000) {
@@ -1978,7 +2004,7 @@ function tick(t) {
       lastTrkptT = nowT;
     }
   }
-  if (!rideState.isAtEnd()) requestAnimationFrame(tick);
+  if (!rider.atGoal) requestAnimationFrame(tick);
   else status('完走');
 }
 
@@ -2032,7 +2058,8 @@ document.getElementById('btnScanHrm').addEventListener('click', () => {
 // 撤去済の button への bind を削除。
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
-  playSpeed = 20 / 3.6;
+  // brief 35: 旧 playSpeed module global は廃止、 rider.setSpeed が唯一の入口.
+  if (rider) rider.setSpeed(20 / 3.6);
   if (rideState) rideState.start();
   lastT = performance.now();
   status('デモモード (記録は保存されません)');
