@@ -1220,6 +1220,11 @@ function initViewMode() {
         // 2026-05-15 user 判断「ジャンプに戻すか」 で 100km/h transition は撤回。
         if (!rideState) return;
         rideState.startFrom(sec.start_idx);
+        // 2026-05-15 fix: 観るモードの fake state push は 1Hz、 click 後 ~1 秒は古い state
+        // (= paused 時の speed_mps=0) が playSpeed に残って「動かない」 体感を生んでいた。
+        // click 直後に直接 20km/h 相当をセットして即時走り出す。
+        playSpeed = 20 / 3.6;
+        lastT = performance.now();
         rideStartedAt = performance.now();
         setAppState('riding');
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
