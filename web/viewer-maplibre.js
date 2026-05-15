@@ -333,6 +333,9 @@ let rideState = null;
 let lastT = performance.now();
 let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihill.diff')) || 1.0; } catch { return 1.0; } })();
 let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
+// 2026-05-16: 慣性係数 (= 0 〜 0.95、 trainer 由来 speed を rider に反映する時の前回値との重み).
+// blended = old * inertia + new * (1 - inertia)、 1.0 で完全停滞、 0.0 で即反映 (= 旧挙動).
+let inertiaFactor = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.inertia')); return Number.isFinite(v) ? v : 0.5; } catch { return 0.5; } })();
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 const POSITION_SEND_INTERVAL_MS = 1000;
@@ -612,7 +615,13 @@ const wsHandlers = {
     // rider.setSensors が唯一の入口、 fake state も BLE も section click も同じ API を叩く.
     if (typeof msg.speed_mps === 'number') {
       const s = msg.speed_mps;
-      if (Number.isFinite(s) && s >= 0 && s <= 25 && rider) rider.setSpeed(s);
+      if (Number.isFinite(s) && s >= 0 && s <= 25 && rider) {
+        // 2026-05-16: 慣性 slider 反映。 前回速度との指数移動平均で「足を止めて即減速」 を抑える。
+        // inertia=0 (= 旧挙動、 即反映)、 inertia=0.5 (= 半分残る)、 inertia=0.95 (= ほぼ維持)。
+        const oldS = (rider.speed != null) ? rider.speed : s;
+        const blended = oldS * inertiaFactor + s * (1 - inertiaFactor);
+        rider.setSpeed(blended);
+      }
     }
     const pw = (msg.power_w != null) ? String(msg.power_w) : '--';
     const cd = (msg.cadence_rpm != null) ? msg.cadence_rpm.toFixed(0) : '--';
@@ -2399,6 +2408,11 @@ if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
 bindSlider('rngDiff', 'diffVal', 'fujihill.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
 bindSlider('rngSpd', 'spdVal', 'fujihill.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
+// 2026-05-16: 慣性 slider。 pct/100 を inertiaFactor (= 0..0.95) に格納、 localStorage に永続化.
+const rIner = document.getElementById('rngInertia');
+if (rIner) rIner.value = String(Math.round(inertiaFactor * 100));
+setText('inertiaVal', String(Math.round(inertiaFactor * 100)));
+bindSlider('rngInertia', 'inertiaVal', 'fujihill.inertia', (pct) => { inertiaFactor = pct / 100; setText('inertiaVal', String(Math.round(pct))); });
 
 // 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
 // setPaintProperty で live 更新、 デバッグ表示も同時。
