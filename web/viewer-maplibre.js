@@ -1215,18 +1215,11 @@ function initViewMode() {
   const waitForCourse = setInterval(() => {
     if (course && course.length > 0) {
       clearInterval(waitForCourse);
-      // 2026-05-15 fix: 観るモードでは course 準備完了時点で rideState を start 状態にして
-      // おく (= active=true, paused=false, curDist=0). これで初回 click も viewTransition
-      // で 100km/h 移動できる (= 旧 logic は初回だけ startFrom で瞬間ジャンプだった).
-      // setAppState('riding') は click 時まで遅らせる (= minimap のタイル fetch が
-      // まだ進行中の状態で state-riding に入ると minimap が空のまま表示されてしまう).
-      if (rideState) rideState.start();
       renderSectionList(course, (sec) => {
-        // section 行クリック → 常に viewTransition (= 100km/h スムーズ移動) で targetDist へ.
-        // 既に近ければ seekToward が 1 frame で到達して silently 終了する.
+        // section 行クリック → rideState を section 始点から開始 (= 瞬間ジャンプ).
+        // 2026-05-15 user 判断「ジャンプに戻すか」 で 100km/h transition は撤回。
         if (!rideState) return;
-        const targetDist = course[sec.start_idx].distance_m;
-        viewTransition = { active: true, targetDist };
+        rideState.startFrom(sec.start_idx);
         rideStartedAt = performance.now();
         setAppState('riding');
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
@@ -1884,20 +1877,10 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
 }
 
-// 2026-05-15: 観るモードで別区間 click 時の「ワープではなく時速 100km で道沿い移動」 用 state.
-// active=true の間 tick が rideState.seekToward を回し、 targetDist に到達したら off.
-let viewTransition = { active: false, targetDist: 0 };
-const VIEW_TRANSITION_SPEED_MPS = 100 / 3.6;  // 100 km/h
-
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
   if (!rideState) { requestAnimationFrame(tick); return; }
-  if (viewTransition.active) {
-    const reached = rideState.seekToward(viewTransition.targetDist, dt, VIEW_TRANSITION_SPEED_MPS);
-    if (reached) viewTransition.active = false;
-  } else {
-    rideState.advance(dt, playSpeed * speedMult);
-  }
+  rideState.advance(dt, playSpeed * speedMult);
   const snap = rideState.snapshot();
   const curIdx = snap.idx;
   const curDist = snap.distance;
