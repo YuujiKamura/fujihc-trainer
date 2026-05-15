@@ -203,12 +203,10 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     expect(viewer).toMatch(/btnIntroView\.addEventListener\(['"]click['"][\s\S]{0,200}if\s*\(\s*!terrainReady\s*\)\s*return/);
   });
 
-  it('btnScan / btnScanHrm / btnSkip / btnRideStart 各 handler に terrainReady === false 短絡', () => {
-    // 各 handler 内に terrainReady 判定が入る
-    expect(viewer).toMatch(/btnRideStart['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!terrainReady\s*\)\s*return/);
-    expect(viewer).toMatch(/btnScan['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!terrainReady\s*\)\s*return/);
-    expect(viewer).toMatch(/btnScanHrm['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!terrainReady\s*\)\s*return/);
-    expect(viewer).toMatch(/btnSkip['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!terrainReady\s*\)\s*return/);
+  it('走行系 (btnRideStart / btnSkip) の handler に地形 gate 短絡 (2026-05-15 narrow: scan 系は地形と無関係で gate 不要)', () => {
+    // 走行開始系のみ地形必須 (= terrainReady or isActionableNow). scan / pair は地形と独立.
+    expect(viewer).toMatch(/btnRideStart['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!(?:terrainReady|isActionableNow\(\))\s*\)\s*return/);
+    expect(viewer).toMatch(/btnSkip['"]\)[\s\S]{0,80}addEventListener[\s\S]{0,300}if\s*\(\s*!(?:terrainReady|isActionableNow\(\))\s*\)\s*return/);
   });
 
   it('section list の onSelect 行クリック handler に terrainReady === false 短絡', () => {

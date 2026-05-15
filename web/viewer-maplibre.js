@@ -1922,8 +1922,14 @@ document.getElementById('btnScanHrm').addEventListener('click', () => {
 });
 document.getElementById('btnSkip').addEventListener('click', () => {
   // brief 34 ε-9: 地形 load 未完なら何もしない.
-  if (!terrainReady) return;
-  showConfirm();
+  if (!isActionableNow()) return;
+  // 2026-05-15 fix: 確認ダイアログ撤去、 即デモ走行開始 (= user 指摘「わざわざ確認ダイアログ出すな」).
+  // デモ走行は trainer 無し + 記録保存無し、 確認を要するクリティカル操作ではない.
+  hideConfirm(); hidePairing();
+  playSpeed = 20 / 3.6;
+  if (rideState) rideState.start();
+  lastT = performance.now();
+  status('デモモード (記録は保存されません)');
 });
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
