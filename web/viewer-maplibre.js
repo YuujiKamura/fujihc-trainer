@@ -139,6 +139,14 @@ const COMMON_LAYERS = [
 // 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
 const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' };
 
+// brief 34 ε-7: 富士スバルライン専用 DB bbox (= tile_constants.py:MINIMAP_BBOX と同値).
+// MapLibre の source に bounds として渡すと「この範囲外は要求しない」を伝えられる、
+// DevTools で発覚した「viewer が DB 外 tile を要求 → 404 量産」問題の解決。
+// GSI 再アクセスは無し (= 既得 DB をフル活用)、 外部 fetch 発生量ゼロ。
+export const FUJIHC_DB_BOUNDS = [138.65, 35.30, 138.85, 35.50];
+// center は bbox 中央 (= 138.75, 35.40)、 default view が DB 内に確実に収まる位置。
+export const FUJIHC_DB_CENTER = [138.75, 35.40];
+
 export function buildMapStyle(env) {
   // brief 31 commit β: env (= immutable ENV object) 受け、 bridgeReachable は env.mode で判定。
   // 後方互換のため `{bridgeReachable: bool}` を渡されても動く (= env.bridgeReachable / env.mode は
@@ -146,6 +154,7 @@ export function buildMapStyle(env) {
   const bridgeReachable = env && (env.mode === 'bridge' || env.bridgeReachable === true);
   // bridge mode: 個別 PBF / PNG file ツリーを localhost /tiles から fetch (= 従来)。
   // static mode: PMTiles 単一 file (pmtiles:// scheme) + ${BASE_PATH}static/tiles/gsi_dem 配下 PNG。
+  // brief 34 ε-7: 両 mode の osm / gsi-terrain source に bounds を設定 (= 範囲外要求を抑制).
   const sources = bridgeReachable
     ? {
         'osm': {
@@ -153,6 +162,7 @@ export function buildMapStyle(env) {
           tiles: [`${BRIDGE_TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
           minzoom: 13,
           maxzoom: 15,
+          bounds: FUJIHC_DB_BOUNDS,
           attribution: '© OpenStreetMap contributors',
         },
         'gsi-terrain': {
@@ -162,6 +172,7 @@ export function buildMapStyle(env) {
           encoding: 'terrarium',
           minzoom: 8,
           maxzoom: 14,
+          bounds: FUJIHC_DB_BOUNDS,
           attribution: '国土地理院 標高タイル',
           volatile: false,
         },
@@ -170,6 +181,7 @@ export function buildMapStyle(env) {
         'osm': {
           type: 'vector',
           url: `pmtiles://${STATIC_TILE_BASE_URL}/map.pmtiles`,
+          bounds: FUJIHC_DB_BOUNDS,
           attribution: '© OpenStreetMap contributors',
         },
         'gsi-terrain': {
@@ -179,6 +191,7 @@ export function buildMapStyle(env) {
           encoding: 'terrarium',
           minzoom: 8,
           maxzoom: 14,
+          bounds: FUJIHC_DB_BOUNDS,
           attribution: '国土地理院 標高タイル',
           volatile: false,
         },
@@ -222,7 +235,11 @@ function bootMap(env) {
   map = new maplibregl.Map({
     container: 'map',
     style: buildMapStyle(env),
-    center: [138.7587, 35.4521],
+    // brief 34 ε-7: default center を DB bbox 中央 (= 138.75, 35.40) に寄せて、
+    // 起動直後の view が確実に DB 範囲内に収まるようにする (= 404 量産抑制).
+    // 旧 [138.7587, 35.4521] (= 富士スバルライン Start 付近) は bbox 内ではあるが端寄り、
+    // 中央寄せの方が default view から見える範囲が広い。
+    center: FUJIHC_DB_CENTER,
     zoom: 13,
     pitch: 60,
     bearing: 0,
