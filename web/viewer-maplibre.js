@@ -1775,7 +1775,14 @@ function tick(t) {
   // camera params (= bearing は course[curIdx]→course[curIdx+5] の travel heading)、
   // center は interpolated rLon/rLat で sub-meter 精度を保つ
   const cam = computeCameraParams(course, { curIdx }, { userZoom, userPitch, lookAhead: 5 });
-  const headingRad = cam.bearing * Math.PI / 180;
+  // 2026-05-15 fix: bearing も frac 補間で滑らかに (= GPS 点間が不均一でも curIdx が変わる
+  // 瞬間にカメラ視線がカクッと回転する症状を解消、 user 指摘「速度に緩急」の主因)。
+  // curIdx の bearing と curIdx+1 の bearing を shortest-angle で補間。
+  const nextIdx = Math.min(curIdx + 1, course.length - 1);
+  const camNext = computeCameraParams(course, { curIdx: nextIdx }, { userZoom, userPitch, lookAhead: 5 });
+  let bearingDiff = ((camNext.bearing - cam.bearing + 540) % 360) - 180;
+  const smoothBearing = cam.bearing + bearingDiff * frac;
+  const headingRad = smoothBearing * Math.PI / 180;
 
   // スピナー累積角を cadence rpm に応じて進める (rpm → rad/s = rpm * 2π / 60)
   spinAngle += currentCadence * (2 * Math.PI / 60) * dt;
@@ -1788,7 +1795,7 @@ function tick(t) {
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
   // 「描画準備中」インジケータの解除トリガに干渉しない).
   if (course.length > 0 && rideState && rideState.snapshot().active) {
-    map.jumpTo({ ...cam, center: [rLon, rLat] });
+    map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
   if (rideStartedAt !== null) {
