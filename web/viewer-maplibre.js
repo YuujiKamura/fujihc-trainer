@@ -269,6 +269,14 @@ function bootMap(env) {
       mapFullyLoaded = true;
       updateActionButtonsForTerrain();
     });
+    // 2026-05-15 fix: idle 永遠未発火 (= 一部 tile 404 / load 失敗で全 tile 揃わない) を
+    // 想定して 5 秒 fallback。 過剰待ちで permanent disabled に陥らない安全弁。
+    setTimeout(() => {
+      if (!mapFullyLoaded) {
+        mapFullyLoaded = true;
+        updateActionButtonsForTerrain();
+      }
+    }, 5000);
     // 操作系: マウスホイールで zoom (default 維持)、 縦ドラッグで pitch だけ変更、
     // 横ドラッグ (bearing 回転) は AI が進行方向に自動セットするので無効化
     map.dragRotate.disable();
@@ -1171,14 +1179,16 @@ function updateActionButtonsForTerrain() {
   const btnScan = typeof document !== 'undefined' ? document.getElementById('btnScan') : null;
   const btnScanHrm = typeof document !== 'undefined' ? document.getElementById('btnScanHrm') : null;
   const btnSkip = typeof document !== 'undefined' ? document.getElementById('btnSkip') : null;
-  if (btnScan) btnScan.disabled = !isActionableNow();
-  if (btnScanHrm) btnScanHrm.disabled = !isActionableNow();
+  // 2026-05-15 fix (user 怒り): scan 系は地形と無関係、 disabled 制御から外す。
+  // trainer / 心拍計 pair は走行と独立した話、 地形 load 完了を待たせる理由がない。
+  // 「trainer なしでデモ走行」だけ走行系なので地形必須維持。
   if (btnSkip) btnSkip.disabled = !isActionableNow();
+  // btnScan / btnScanHrm は元の挙動に戻す (= HTML default、 viewer が他の経路で制御).
   // BLE
   const btnBleTrainer = typeof document !== 'undefined' ? document.getElementById('btn-ble-trainer') : null;
   const btnBleHrm = typeof document !== 'undefined' ? document.getElementById('btn-ble-hrm') : null;
-  if (btnBleTrainer) btnBleTrainer.disabled = !isActionableNow();
-  if (btnBleHrm) btnBleHrm.disabled = !isActionableNow();
+  // 2026-05-15 fix: BLE 系も scan 同様、 trainer pair 自体は地形と無関係、 disabled 解除。
+  // (元の HTML default state に任せる、 viewer 内の他経路で必要時に制御)
   // ride start: terrainReady === false なら強制 disable、 true なら pair 通過済の場合のみ enable.
   const btnRide = typeof document !== 'undefined' ? document.getElementById('btnRideStart') : null;
   if (btnRide) {
