@@ -162,3 +162,73 @@ def test_fetch_minimap_raster_async_accepts_async_cb(empty_db):
             rate_limit_sec=0.0, progress_cb=acb,
         ))
     assert len(calls) >= 2  # initial + done
+
+
+def test_minimap_bbox_covers_viewer_request_set():
+    """2026-05-15 regression: MINIMAP_BBOX が viewer (= buildMinimapTopBase) の
+    要求 16 タイル全てを含むこと.
+
+    過去事故: 旧 MINIMAP_BBOX = (138.65, 35.30, 138.85, 35.50) は z=11 で
+    x=[1812..1813] y=[807..809] = 6 タイルしかカバーしていなかった。 viewer 側は
+    course bbox + 20% margin + buffer=1 で x=[1811..1814] y=[806..809] = 16 タイル
+    を要求するため、 10 タイル分が DB に存在せず 404 を量産していた。
+
+    本 test は viewer JS (buildMinimapTopBase in web/viewer-maplibre.js) と同一の
+    tile-index 算出を Python で再現し、 MINIMAP_BBOX で覆われる set が viewer の
+    要求 set を superset 包含することを assert する。 MINIMAP_BBOX を再度
+    narrowing したらここで fail し、 console 404 の再演を物理的に止める。
+    """
+    import json
+    import math
+
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
+
+    course_p = REPO_ROOT / 'web' / 'course.json'
+    course = json.loads(course_p.read_text(encoding='utf-8'))
+    assert len(course) > 0
+
+    # === viewer JS と同一ロジックで 16 タイル set を構築 (=
+    # buildMinimapTopBase in viewer-maplibre.js の bbox+20%margin+buffer=1) ===
+    min_lat = min(p['lat'] for p in course)
+    max_lat = max(p['lat'] for p in course)
+    min_lon = min(p['lon'] for p in course)
+    max_lon = max(p['lon'] for p in course)
+    lat_m = (max_lat - min_lat) * 0.20
+    lon_m = (max_lon - min_lon) * 0.20
+    min_lat -= lat_m
+    max_lat += lat_m
+    min_lon -= lon_m
+    max_lon += lon_m
+
+    def lon_to_tile_x(lon, z):
+        return (lon + 180.0) / 360.0 * (1 << z)
+
+    def lat_to_tile_y(lat, z):
+        rad = math.radians(lat)
+        return (1.0 - math.log(math.tan(rad) + 1.0 / math.cos(rad)) / math.pi) / 2.0 * (1 << z)
+
+    z = MINIMAP_OSM_ZOOM
+    buffer = 1
+    min_tx = math.floor(lon_to_tile_x(min_lon, z)) - buffer
+    max_tx = math.floor(lon_to_tile_x(max_lon, z)) + buffer
+    min_ty = math.floor(lat_to_tile_y(max_lat, z)) - buffer
+    max_ty = math.floor(lat_to_tile_y(min_lat, z)) + buffer
+    viewer_requests = {
+        (z, tx, ty)
+        for tx in range(min_tx, max_tx + 1)
+        for ty in range(min_ty, max_ty + 1)
+    }
+    assert len(viewer_requests) == 16, (
+        f'viewer JS は富士スバルライン course で 16 タイルを要求する前提 '
+        f'(= {len(viewer_requests)} だと test 自身の前提崩壊)'
+    )
+
+    bbox_covers = enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM)
+    missing = viewer_requests - bbox_covers
+    assert not missing, (
+        f'MINIMAP_BBOX が viewer 要求の {len(missing)} タイルを覆えていない: '
+        f'{sorted(missing)}. MINIMAP_BBOX={MINIMAP_BBOX}, '
+        f'bbox 内 enum タイル数={len(bbox_covers)}, viewer 要求={len(viewer_requests)}. '
+        f'2026-05-15 console 404 量産事故の再演 — bbox を広げ直す必要あり.'
+    )

@@ -38,11 +38,26 @@ SCHEMA_VERSION = 1
 # brief 29 で確定した z=11 + 富士山周辺 bbox を中央定数化.
 MINIMAP_OSM_ZOOM = 11
 # (lon_min, lat_min, lon_max, lat_max). 富士スバルライン 24 km + 周辺余裕、
-# z=11 で 9-16 タイルに収まる範囲. 個人小規模 1-shot, OSM Tile Usage Policy
+# z=11 で 16 タイルに収まる範囲. 個人小規模 1-shot, OSM Tile Usage Policy
 # 「cache aggressively」推奨に積極準拠.
 #
-# 注意: この bbox は **富士スバルライン専用 hardcode**. 他コース (= 自分の GPX)
+# 2026-05-15 修正: viewer 側 (buildMinimapTopBase in viewer-maplibre.js) が
+# course bbox + 20% margin + buffer=1 で z=11 タイル x=[1811..1814] y=[806..809]
+# = 16 タイルを要求するのに対し、 旧 bbox (138.65/35.30/138.85/35.50) は
+# x=[1812..1813] y=[807..809] = 6 タイルしかカバーせず、 viewer 起動時に
+# 10 タイル 404 が console に並んでいた (= 上半分の minimap の周辺が透明欠け).
+# 新 bbox は viewer の要求 16 タイルを過不足なく覆う (= enumerate_bbox_tiles で
+# 同じ 16 タイル set を返す). OSM Tile Usage Policy 上は「個人小規模 + cache
+# aggressively」枠内で 16 タイル × 1 device × init 1 回のみ.
+#
+# 注意 1: この bbox は **富士スバルライン専用 hardcode**. 他コース (= 自分の GPX)
 # で運用する場合は course.json の lat/lon から bbox を導出して上書きすること.
 # 将来的に enumerate_bbox_tiles(course, MINIMAP_OSM_ZOOM, margin) で動的算出に
 # 切替予定 (= brief 候補)、 現状は明示性優先で固定値.
-MINIMAP_BBOX = (138.65, 35.30, 138.85, 35.50)
+#
+# 注意 2: viewer-maplibre.js の FUJIHC_DB_BOUNDS (= (138.65, 35.30, 138.85, 35.50))
+# とは概念的に分離. FUJIHC_DB_BOUNDS は MapLibre の vector/DEM source の bounds
+# (z>=13 で課程付近のみ要求させる coarse hint)、 MINIMAP_BBOX は z=11 raster
+# pre-fetch 範囲 (minimap canvas 用の 1-shot 9-16 タイル). 旧版では同値だったが、
+# minimap の viewer 要求が広い (= +margin/+buffer) 分だけ MINIMAP_BBOX が大きく.
+MINIMAP_BBOX = (138.40, 35.20, 138.95, 35.65)

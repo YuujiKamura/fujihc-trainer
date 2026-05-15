@@ -144,10 +144,15 @@ const COMMON_LAYERS = [
 // 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
 const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' };
 
-// brief 34 ε-7: 富士スバルライン専用 DB bbox (= tile_constants.py:MINIMAP_BBOX と同値).
+// brief 34 ε-7: 富士スバルライン専用 DB bbox (= MapLibre の vector/DEM source 用).
 // MapLibre の source に bounds として渡すと「この範囲外は要求しない」を伝えられる、
 // DevTools で発覚した「viewer が DB 外 tile を要求 → 404 量産」問題の解決。
 // GSI 再アクセスは無し (= 既得 DB をフル活用)、 外部 fetch 発生量ゼロ。
+// 2026-05-15 注記: tile_constants.py:MINIMAP_BBOX とは概念的に分離。 ここは
+// 主 map (z=13+ の vector + raster-dem) の source bounds、 MINIMAP_BBOX は
+// 別 canvas (上半分 minimap) の z=11 raster pre-fetch 範囲。 minimap は
+// course bbox + 20% margin + buffer=1 で 16 タイル要求するため MINIMAP_BBOX
+// の方が広い (= MINIMAP_BBOX ⊃ FUJIHC_DB_BOUNDS)。
 export const FUJIHC_DB_BOUNDS = [138.65, 35.30, 138.85, 35.50];
 // center は bbox 中央 (= 138.75, 35.40)、 default view が DB 内に確実に収まる位置。
 export const FUJIHC_DB_CENTER = [138.75, 35.40];
