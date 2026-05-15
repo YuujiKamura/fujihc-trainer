@@ -242,18 +242,14 @@ describe('brief 34 ε-8 integration: HTML DOM 構造', () => {
     expect(html).toMatch(/<button[^>]*id="btnIntroView"/);
   });
 
-  it('section-overlay element + section-list ul が HTML に存在', () => {
-    expect(html).toMatch(/<div\s+id="section-overlay"/);
+  it('section-list-panel (= 右上常時表示 panel) + section-list ul が HTML に存在 (= 2026-05-15 fix で全画面 overlay 撤回)', () => {
+    expect(html).toMatch(/<aside\s+id="section-list-panel"/);
     expect(html).toMatch(/<ul\s+id="section-list"/);
-    expect(html).toMatch(/<button[^>]*id="btnSectionClose"/);
   });
 
-  it('btnViewModeBackToList (= ride 中の区間リスト戻り button) が HTML に存在', () => {
-    expect(html).toMatch(/<button[^>]*id="btnViewModeBackToList"/);
-  });
-
-  it('section-overlay の z-index は 1470 (= consent 1460 と setup 1500 の間)', () => {
-    expect(html).toMatch(/#section-overlay\s*\{[^}]*z-index:\s*1470/);
+  it('section-list-panel は body.mode-view のときだけ display:block (= 走るモード時は非表示)', () => {
+    expect(html).toMatch(/body\.mode-view\s+#section-list-panel\s*\{\s*display:\s*block/);
+    expect(html).toMatch(/#section-list-panel\s*\{[^}]*display:\s*none/);
   });
 });
 

@@ -1139,19 +1139,27 @@ function initViewMode() {
     },
   });
 
-  // course が読み込まれるまで待ち、 揃ったら section-overlay を表示する.
+  // 2026-05-15 fix: section-overlay 全画面 modal は撤回、 右上 persistent panel
+  // (#section-list-panel) を body.mode-view CSS で常時表示。 行クリックでいつでも
+  // 別区間に切替可能 (= user 指摘「走行中に右上に区間リストが有って何時でも区間を選べる」反映).
   const waitForCourse = setInterval(() => {
     if (course && course.length > 0) {
       clearInterval(waitForCourse);
       renderSectionList(course, (sec) => {
-        // section 行クリック → rideState を section 始点から開始.
+        // section 行クリック → rideState を section 始点から開始 (= ride 中でも再選択可).
         if (!rideState) return;
         rideState.startFrom(sec.start_idx);
         rideStartedAt = performance.now();
-        hideSectionOverlay();
         setAppState('riding');
+        // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
+        const list = document.getElementById('section-list');
+        if (list) {
+          for (const li of list.querySelectorAll('li')) li.classList.remove('sec-active');
+          const activeLi = list.querySelector(`li[data-section-index="${sec.index}"]`);
+          if (activeLi) activeLi.classList.add('sec-active');
+        }
       });
-      showSectionOverlay();
+      // 右上 panel は body.mode-view 経由で自動表示、 明示 visible 制御不要.
     }
   }, 100);
 }

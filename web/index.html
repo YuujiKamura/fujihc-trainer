@@ -185,6 +185,21 @@
   #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
 
+  /* 2026-05-15 fix: 観るモード ride 中に右上常時表示する区間リスト panel.
+     全画面 section-overlay は撤去、 走行中いつでも区間を選び直せる UX に変更. */
+  #section-list-panel {
+    position: fixed; right: 1rem; top: 1rem; z-index: 999;
+    width: 300px; max-height: 80vh; overflow-y: auto;
+    background: rgba(0, 0, 0, 0.65); border: 1px solid #ffd54a; border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    font: 13px ui-monospace, monospace;
+    display: none;
+  }
+  body.mode-view #section-list-panel { display: block; }
+  #section-list-panel h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #section-list-panel .panel-hint { color: #aaa; font-size: 11px; margin: 0 0 0.5rem; line-height: 1.4; }
+  #section-list-panel .sec-active { background: #2a4418 !important; border-color: #7fff00 !important; }
+
   /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
      intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
      区間勾配を眺めるための UI。 Zwift Climb Portal 風 (= ただし trainer 不要 + ログ保存なし). */
@@ -531,18 +546,14 @@
      intro で「コースを観る」を選んだあと表示、 各行クリックで該当区間の start_idx から
      fake-state ride を開始する。 ride 中の「区間リストに戻る」button (= #btnViewModeBackToList) は
      viewer 側で配置 + show/hide 制御する (= state-riding.mode-view CSS で表示制御). -->
-<div id="section-overlay" role="dialog" aria-modal="true" aria-labelledby="section-title">
-  <div id="section-panel">
-    <h2 id="section-title">区間を選んで観る (= コース 10 等分)</h2>
-    <p>コース全長を 10 区間に分け、 各区間の平均勾配を表示します。 行をクリックすると、 その区間の始点から rider が一定速度で走る様子を眺められます。 走行ログは保存されません (= 観るモードは記録対象外)。</p>
-    <ul id="section-list" aria-label="コース区間リスト"></ul>
-    <div class="actions">
-      <button id="btnSectionClose" type="button">閉じる (= intro に戻る)</button>
-    </div>
-  </div>
-</div>
-<!-- brief 34 ε-8: 観るモード中の「区間リストに戻る」ボタン. body.state-riding.mode-view 時のみ表示. -->
-<button id="btnViewModeBackToList" type="button">← 区間リストに戻る</button>
+<!-- 2026-05-15 fix: 観るモード ride 中、 右上に常時表示する区間リスト panel.
+     行クリックでいつでも別区間にジャンプ可能 (= user 指摘「走行中に右上に区間リストが
+     あって何時でも区間を選べる」反映). 全画面 section-overlay は撤去. -->
+<aside id="section-list-panel" aria-label="コース区間リスト">
+  <h3>区間を選んで観る</h3>
+  <p class="panel-hint">行をクリックするとその区間の始点から走り直します。 ログ保存なし。</p>
+  <ul id="section-list" aria-label="コース 10 区間"></ul>
+</aside>
 
 <!-- brief 34 ε-3: 公開ガードレール consent-overlay (= ride 開始前の opt-in、 default 全 OFF). -->
 <div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
