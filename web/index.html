@@ -208,11 +208,26 @@
   #section-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
   #section-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
   #section-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
-  #section-list { list-style: none; padding: 0; margin: 0.6rem 0; }
-  #section-list li { background: #14141a; border: 1px solid #333; border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+  #section-list { list-style: none; padding: 0; margin: 0.4rem 0; }
+  /* 2026-05-15 fix: 区間リスト行を grid layout で整理。
+     1 行 = [区間番号 + 距離レンジ] + [勾配 (= 大、 右寄せ、 色強調)]、
+     下に [標高 ↑ 上昇量] を小さく副情報として配置。 */
+  #section-list li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 0.1rem 0.6rem;
+    align-items: baseline;
+    background: #14141a; border: 1px solid #333; border-radius: 4px;
+    padding: 0.4rem 0.6rem; margin-bottom: 0.25rem;
+    cursor: pointer;
+  }
   #section-list li:hover, #section-list li:focus { background: #2a2a36; border-color: #7fff00; outline: none; }
-  #section-list .sec-label { color: #ffd54a; font-weight: bold; }
-  #section-list .sec-meta { color: #aaa; font-size: 12px; }
+  #section-list .sec-label { color: #ffd54a; font-weight: bold; font-size: 13px; grid-column: 1; grid-row: 1; }
+  /* 勾配を右側に大きく出す (= 一番大事な情報). */
+  #section-list .sec-grade { color: #ff8866; font-weight: bold; font-size: 16px; text-align: right; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  /* 標高情報は副、 小さく gray で下段に. */
+  #section-list .sec-meta { color: #888; font-size: 11px; grid-column: 1; grid-row: 2; }
   #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
   #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
   /* state-riding 中の view モード戻り button (= section list に戻るための導線). */

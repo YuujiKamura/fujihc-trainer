@@ -914,13 +914,24 @@ function renderSectionList(courseArr, onSelect) {
     li.setAttribute('tabindex', '0');
     li.setAttribute('data-start-idx', String(sec.start_idx));
     li.setAttribute('data-section-index', String(sec.index));
+    // 2026-05-15 fix: 行を 3 要素に分解 (= 区間/距離 / 勾配大 / 標高副).
+    // 旧 formatSectionLabel は 1 文字列で詰めてたので「区間 N: km、 平均勾配 %」が水平に
+       // ごちゃっとして読めなかった。 grid layout + 勾配 right-align で整理。
+    const startKm = (sec.start_dist / 1000).toFixed(1);
+    const endKm = (sec.end_dist / 1000).toFixed(1);
     const label = document.createElement('span');
     label.className = 'sec-label';
-    label.textContent = formatSectionLabel(sec);
+    label.textContent = `区間 ${sec.index + 1}: ${startKm}-${endKm} km`;
+    const grade = document.createElement('span');
+    grade.className = 'sec-grade';
+    grade.textContent = `${sec.avg_slope_pct.toFixed(1)}%`;
+    const delta = sec.end_ele - sec.start_ele;
+    const deltaSign = delta >= 0 ? '+' : '';
     const meta = document.createElement('span');
     meta.className = 'sec-meta';
-    meta.textContent = `${(sec.start_ele).toFixed(0)}m → ${(sec.end_ele).toFixed(0)}m`;
+    meta.textContent = `${(sec.start_ele).toFixed(0)}m → ${(sec.end_ele).toFixed(0)}m (${deltaSign}${delta.toFixed(0)}m)`;
     li.appendChild(label);
+    li.appendChild(grade);
     li.appendChild(meta);
     // brief 34 ε-9: terrainReady === false の間は section 行クリックを block.
     // 視覚 disable は updateActionButtonsForTerrain が pointer-events:none で行うが、
