@@ -2130,7 +2130,9 @@ function tick(t) {
 
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
   // 「描画準備中」インジケータの解除トリガに干渉しない).
-  if (course.length > 0 && snap.active) {
+  // 2026-05-16 fix: map idle 発火済 (= mapFullyLoaded=true) なら ride 未開始でも jumpTo OK、
+  // user 「マウス左右で camera が回らない」 報告への対応 (= ride 開始前でも mouse drag 反映).
+  if (course.length > 0 && (snap.active || mapFullyLoaded)) {
     map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
