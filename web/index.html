@@ -163,6 +163,35 @@
   #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
   #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
   #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
+
+  /* brief 34 ε-1: 公開ガードレール intro-overlay (= z-index 1450、 ページ読込直後に必ず表示).
+     setup-overlay (1500) より下、 dbinit-overlay (1400) / history-overlay (1550) との衝突なし. */
+  #intro-overlay { position: fixed; inset: 0; z-index: 1450; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #intro-overlay.visible { display: flex; }
+  #intro-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
+  #intro-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #intro-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; line-height: 1.6; }
+  #intro-panel p.intro-disclaimer { color: #ffd54a; font-weight: bold; background: #221a08; border-left: 3px solid #ffd54a; padding: 0.6rem 0.8rem; }
+  #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
+  #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #intro-panel .actions button#btnIntroDemo { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
+
+  /* brief 34 ε-1: 公開ガードレール consent-overlay (= z-index 1460、 ride 開始前の opt-in).
+     intro (1450) より上、 setup (1500) より下に挟むと「intro 通過 → setup 画面 → ride 開始ボタンで consent 表示」が成立. */
+  #consent-overlay { position: fixed; inset: 0; z-index: 1460; background: rgba(0, 0, 0, 0.94); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #consent-overlay.visible { display: flex; }
+  #consent-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
+  #consent-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #consent-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; line-height: 1.5; }
+  #consent-panel .opt-row { display: flex; gap: 0.6rem; align-items: flex-start; margin: 0.6rem 0; padding: 0.5rem 0.7rem; background: #14141a; border: 1px solid #333; border-radius: 4px; }
+  #consent-panel .opt-row input[type=checkbox] { margin-top: 0.2rem; transform: scale(1.2); }
+  #consent-panel .opt-row label { color: #ddd; font-size: 13px; line-height: 1.5; }
+  #consent-panel .opt-row label .opt-title { color: #ffd54a; font-weight: bold; display: block; margin-bottom: 0.2rem; }
+  #consent-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #consent-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #consent-panel .actions button#btnConsentAccept { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #consent-panel .actions button#btnConsentCancel { background: #14141a; color: #aaa; }
   /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
   #history-overlay {
     position: fixed; inset: 0; z-index: 1550;
@@ -377,6 +406,51 @@
     <div id="history-empty" hidden>履歴は空です。 ride 終了画面で「履歴に保存」を押すと蓄積されます。</div>
     <div id="history-buttons">
       <button id="btnHistoryClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-1: 公開ガードレール intro-overlay (= 説明だけ、 4 文).
+     ボタン押下まで他 UI へ進めない (= viewer 側 introConsented guard で物理停止). -->
+<div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+  <div id="intro-panel">
+    <h2 id="intro-title">fujihc-trainer (= 富士ヒルクライム シミュレータ)</h2>
+    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。</p>
+    <p>コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。</p>
+    <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
+    <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 公道は車両以外通行制限があり、 第三者が検証する手段が事実上ありません。 この不確実性を許容してご利用ください。</p>
+    <p>データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし、 browser を消すと履歴も消えます)。</p>
+    <p>動作には FTMS trainer と Chrome / Edge が必要、 trainer なしでも試走デモのみ閲覧可。</p>
+    <div class="actions">
+      <button id="btnIntroClose" type="button">閉じる</button>
+      <button id="btnIntroDemo" type="button">試走デモを見る</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-3: 公開ガードレール consent-overlay (= ride 開始前の opt-in、 default 全 OFF). -->
+<div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+  <div id="consent-panel">
+    <h2 id="consent-title">ride 機能の使用同意</h2>
+    <p>ride を開始する前に、 以下の機能を使うかどうか選んでください。 後から「全データ削除」でいつでも取り消せます。</p>
+    <div class="opt-row">
+      <input type="checkbox" id="chkConsentHistory">
+      <label for="chkConsentHistory">
+        <span class="opt-title">走行ログをこの browser に保存する</span>
+        IndexedDB に ride 履歴を保存して「過去 ride を見る」で参照できるようにします。 default OFF (= 保存しない).
+      </label>
+    </div>
+    <div class="opt-row">
+      <input type="checkbox" id="chkConsentStrava">
+      <label for="chkConsentStrava">
+        <span class="opt-title">Strava にアップロードする機能を使う</span>
+        Strava 連携 button を有効化します (= 実際の upload は ride 終了画面で明示 click 時のみ発火). default OFF.
+      </label>
+    </div>
+    <p style="color:#888; font-size:12px;">どちらも OFF のまま「同意して ride 開始」を押せば、 ride は普通に動きますが履歴も Strava も使えません。</p>
+    <div class="actions">
+      <button id="btnConsentCancel" type="button">キャンセル</button>
+      <button id="btnConsentAccept" type="button">同意して ride 開始</button>
     </div>
   </div>
 </div>
