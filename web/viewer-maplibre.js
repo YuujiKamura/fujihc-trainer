@@ -708,6 +708,10 @@ async function initBleMode() {
   // map は既存 default mode と同じ. bridge への HTTP 不在で static tile に倒す.
   if (!map) { ensureMapBooted().then(() => initBleMode()); return; }
   setAppState('pairing');
+  // brief 34 ε-1 で setup-overlay の default class="visible" を撤去したため、
+  // intro 通過後の遷移先 (= initBleMode / bootCheckSetupStatus 経由 connectBridge) で
+  // 明示的に visible 付与する必要がある。 (= 起動直後 setup-overlay が前面に出る旧挙動の回避)
+  document.getElementById('setup-overlay')?.classList.add('visible');
   setText('setup-status', 'BLE モード: お使いの trainer / 心拍計を直接選んでください');
   setText('p-device', '(未接続)');
   setText('p-state', 'BLE 待機中');
@@ -1010,6 +1014,9 @@ function bootCheckSetupStatus() {
     const s = env.setupStatus;
     if (s.overall === 'ready') {
       setAppState('pairing');
+      // brief 34 ε-1 で setup-overlay の default class="visible" を撤去したので
+      // bridge mode 経路でも明示的に visible 付与する。
+      document.getElementById('setup-overlay')?.classList.add('visible');
       connectBridge();
     } else {
       // overall === 'empty' / 'partial': bridge は到達したが DB 不足、 dbinit overlay

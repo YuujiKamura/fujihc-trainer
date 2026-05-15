@@ -118,10 +118,13 @@ describe('brief 34 ε-6 integration: 全 overlay の HTML 初期 state (= defaul
     }
   });
 
-  it('setup-overlay は default visible (= 既存挙動、 brief 26b)、 ただし state-checking で hide される CSS が effective', () => {
-    // setup-overlay 自体は class="visible" を持つ、 ただし body.state-checking で CSS rule
-    // により hide される (= 既存 brief 26b の挙動、 ε-2 で intro overlay 通過後の遷移先).
-    expect(HTML).toMatch(/<div\s+id="setup-overlay"\s+class="visible"/);
+  it('setup-overlay は default で class="visible" を持たない (= intro 通過後に initBleMode / connectBridge で明示付与、 2026-05-15 fix)', () => {
+    // 旧 ε-1 で setup-overlay の `class="visible"` を残したまま intro-overlay を追加したため、
+    // setup-overlay (z=1500) が intro-overlay (z=1450) より上に来て intro が見えない bug が発生。
+    // fix: setup-overlay の default visible を撤去、 必要時 (= initBleMode / connectBridge) に
+    // 明示的に classList.add('visible') する形に変更。
+    expect(HTML).toMatch(/<div\s+id="setup-overlay"\s+role="dialog"/);
+    expect(HTML).not.toMatch(/<div\s+id="setup-overlay"\s+class="visible"/);
   });
 
   it('CSP script-src self (= ε-6 で attribution 監視と同列に重要、 既存 brief 33 から維持)', () => {
