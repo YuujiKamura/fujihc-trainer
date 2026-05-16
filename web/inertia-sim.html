@@ -367,11 +367,11 @@ function step(dt) {
   }
   st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
   // 表示速度 = 慣性ブレンド (= viewer の wsHandlers.state と同じ式)
-  // 慣性スライダー f を「効きが 2 倍」 の係数 k に変換 (= k = 2f/(1+f))。
-  // f=0→k=0 (素の物理)、 f=0.5→k=0.67、 f=1.0→k=1 をクランプ。 旧 0.95 上限の
-  // 約 2 倍の粘りまで届く。 k=1 だと表示が凍るので 0.99 で頭打ち。
+  // 慣性スライダー f を「効きが 4 倍」 の係数 k に変換 (= k = 4f/(1+3f))。
+  // f=0→k=0 (素の物理)、 f=0.5→k=0.8、 f=0.95→k=0.987。 k=1 で表示が凍るので
+  // 0.995 で頭打ち。 ただし係数は 1 が上限なので、 ここから先は EMA では伸びない。
   const f = st.inertia;
-  const k = Math.min(0.99, (2 * f) / (1 + f));
+  const k = Math.min(0.995, (4 * f) / (1 + 3 * f));
   st.vDisp = st.vDisp * k + st.vPhys * (1 - k);
   // 走行距離は表示速度を積分 (= 画面上のライダーは表示速度で動く)
   st.dist += st.vDisp * dt;
