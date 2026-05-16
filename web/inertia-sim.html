@@ -198,12 +198,27 @@ const riderMat = new THREE.MeshLambertMaterial({ color: 0xf0f6fc });
 const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 1.0, 4, 8), riderMat);
 torso.position.set(-0.2, 2.0, 0); torso.rotation.z = 0.5; torso.castShadow = true;
 bike.add(torso);
+// 車輪は XY 平面のリング (= 進行方向 X に沿って転がる)。
+// 転がりは Z 軸回転。 ただし無地トーラスは Z 対称で回転が見えないので、
+// スポークを十字に入れて回転が目で分かるようにする。
 const wheelGeo = new THREE.TorusGeometry(0.7, 0.13, 8, 20);
 const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111418 });
+const spokeGeo = new THREE.BoxGeometry(0.07, 1.36, 0.07);
+const spokeMat = new THREE.MeshLambertMaterial({ color: 0x8b949e });
+const wheels = [];
 for (const wx of [-1.0, 1.0]) {
-  const w = new THREE.Mesh(wheelGeo, wheelMat);
-  w.position.set(wx, 0.7, 0); w.castShadow = true;
-  bike.add(w);
+  const wheel = new THREE.Group();        // トーラス + スポークをまとめて Z 回転
+  const tire = new THREE.Mesh(wheelGeo, wheelMat);
+  tire.castShadow = true;
+  wheel.add(tire);
+  for (let a = 0; a < 3; a++) {            // 3 本スポーク (= 回転が見える)
+    const sp = new THREE.Mesh(spokeGeo, spokeMat);
+    sp.rotation.z = a * Math.PI / 3;
+    wheel.add(sp);
+  }
+  wheel.position.set(wx, 0.7, 0);
+  bike.add(wheel);
+  wheels.push(wheel);
 }
 world.add(bike);
 
@@ -220,21 +235,24 @@ world.add(stopMark);
 function slopeRad() { return Math.atan(st.slope / 100); }
 function layout() {
   const sr = slopeRad();
-  // rider を world 原点付近に保つため、 world 全体を「rider が居る点」 を軸に回す。
-  // rider のローカル位置: x = dist。 これを高さ 0 に保つように world を回転 + 平行移動。
   world.rotation.z = -sr;
-  // rider ローカル (dist,0,0) を回転後の world 座標へ → それを打ち消す offset
-  const rx = st.dist, h = 0;
-  const wx = rx * Math.cos(sr) - h * Math.sin(sr);
-  const wy = rx * Math.sin(sr) + h * Math.cos(sr);
-  world.position.set(-wx, -wy, 0);
   bike.position.set(st.dist, 0, 0);
+  // bike ローカル (dist,0,0) を world 回転で写した点を、 そのまま打ち消す平行移動。
+  // → ライダーは勾配や距離に関係なく常に画面原点に居る。
+  //   勾配を変えても回転の軸はこのライダー点、 カメラは原点を見るだけで追随する。
+  const cz = world.rotation.z;
+  const px = st.dist * Math.cos(cz);
+  const py = st.dist * Math.sin(cz);
+  world.position.set(-px, -py, 0);
 }
 
 // ---- 入力 -----------------------------------------------------------------
+// URL 引数で初期値を指定可 (= ?slope=-8&power=200&mass=95&inertia=70)。
+const qp = new URLSearchParams(location.search);
 function bind(id, key, fmt, scale = 1) {
   const r = document.getElementById('r-' + id);
   const v = document.getElementById('v-' + id);
+  if (qp.has(id)) r.value = qp.get(id);
   const apply = () => {
     st[key] = parseFloat(r.value) * scale;
     v.textContent = fmt(parseFloat(r.value));
@@ -354,10 +372,9 @@ function renderLoop() {
   step(dt);
   layout();
 
-  // 車輪回転 (= 表示速度に応じて)
-  bike.children.forEach(c => {
-    if (c.geometry && c.geometry.type === 'TorusGeometry') c.rotation.y += st.vDisp * dt * 1.4;
-  });
+  // 車輪回転 (= Z 軸まわり、 進行方向 X に転がる)。 角速度 = 速度 / 車輪半径。
+  const dTheta = st.vDisp * dt / 0.7;
+  wheels.forEach(w => { w.rotation.z -= dTheta; });
 
   acc += dt;
   if (acc > 0.1) {
