@@ -94,6 +94,12 @@
       (= よく整備された自転車)。 大きいと終始重い。 5 ‰ がロード標準。</div>
   </div>
   <div class="row">
+    <label>空気抵抗（CdA） <b id="v-cda">0.35 m²</b></label>
+    <input type="range" id="r-cda" min="18" max="60" step="1" value="35">
+    <div class="hint">前面の空気抵抗。 速度の二乗で効くので巡航・下りの主役。
+      0.20 エアロ姿勢 / 0.30 ドロップ / 0.40 アップライト。 低いほど速い。</div>
+  </div>
+  <div class="row">
     <label>慣性（フライホイール） <b id="v-inertia">150 kg相当</b></label>
     <input type="range" id="r-inertia" min="0" max="3000" step="50" value="150">
     <div class="hint">速度変化に抗う本物の慣性。 漕ぎ出しは重く、 足を止めても長く転がる。
@@ -119,6 +125,7 @@ const st = {
   power: 150,      // W
   mass: 88,        // kg、 rider + bike の総重量
   c_rr: 0.005,     // 転がり抵抗係数 (= スライダー ‰ / 1000)
+  cda: 0.35,       // 空気抵抗 CdA m² (= drag = 0.5*rho*CdA*v^2)
   inertiaKg: 150,  // kg 相当、 フライホイール慣性 (= 加速度の分母に足す)
   vPhys: 0,        // m/s、 速度
   accel: 0,        // m/s^2
@@ -335,6 +342,7 @@ bind('slope', 'slope', x => x.toFixed(1) + ' %');
 bind('power', 'power', x => x + ' W');
 bind('mass',  'mass',  x => x + ' kg');
 bind('rr',    'c_rr',  x => x + ' ‰', 0.001);
+bind('cda',   'cda',   x => (x / 100).toFixed(2) + ' m²', 0.01);
 bind('inertia', 'inertiaKg', x => x + ' kg相当');
 if (qp.has('dist')) st.dist = parseFloat(qp.get('dist')) || 0;  // 走行距離の初期値 (= 検証用)
 
@@ -374,8 +382,9 @@ function step(dt) {
   while (remain > 0) {
     const h = Math.min(SUB, remain);
     // フライホイール慣性 (st.inertiaKg) を物理に直接渡す。 速度変化に抗う本物の慣性。
+    // 空気抵抗は CdA を 1 本のノブにするため c_d=CdA / area=1 として渡す。
     st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope,
-      { mass: st.mass, c_rr: st.c_rr, inertia: st.inertiaKg });
+      { mass: st.mass, c_rr: st.c_rr, c_d: st.cda, area: 1, inertia: st.inertiaKg });
     remain -= h;
   }
   st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
