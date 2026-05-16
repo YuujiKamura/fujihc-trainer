@@ -88,6 +88,12 @@
     <div class="hint">rider + bike の総重量。 重いほど実際に長く転がる。</div>
   </div>
   <div class="row">
+    <label>転がり抵抗 <b id="v-rr">5 ‰</b></label>
+    <input type="range" id="r-rr" min="1" max="25" step="1" value="5">
+    <div class="hint">タイヤ + ベアリングの常時かかる抵抗。 小さいほど漕ぎ出しも巡航も軽い
+      (= よく整備された自転車)。 大きいと終始重い。 5 ‰ がロード標準。</div>
+  </div>
+  <div class="row">
     <label>慣性（フライホイール） <b id="v-inertia">150 kg相当</b></label>
     <input type="range" id="r-inertia" min="0" max="3000" step="50" value="150">
     <div class="hint">速度変化に抗う本物の慣性。 漕ぎ出しは重く、 足を止めても長く転がる。
@@ -112,6 +118,7 @@ const st = {
   slope: 0,        // %
   power: 150,      // W
   mass: 88,        // kg、 rider + bike の総重量
+  c_rr: 0.005,     // 転がり抵抗係数 (= スライダー ‰ / 1000)
   inertiaKg: 150,  // kg 相当、 フライホイール慣性 (= 加速度の分母に足す)
   vPhys: 0,        // m/s、 速度
   accel: 0,        // m/s^2
@@ -327,6 +334,7 @@ function bind(id, key, fmt, scale = 1) {
 bind('slope', 'slope', x => x.toFixed(1) + ' %');
 bind('power', 'power', x => x + ' W');
 bind('mass',  'mass',  x => x + ' kg');
+bind('rr',    'c_rr',  x => x + ' ‰', 0.001);
 bind('inertia', 'inertiaKg', x => x + ' kg相当');
 if (qp.has('dist')) st.dist = parseFloat(qp.get('dist')) || 0;  // 走行距離の初期値 (= 検証用)
 
@@ -367,7 +375,7 @@ function step(dt) {
     const h = Math.min(SUB, remain);
     // フライホイール慣性 (st.inertiaKg) を物理に直接渡す。 速度変化に抗う本物の慣性。
     st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope,
-      { mass: st.mass, inertia: st.inertiaKg });
+      { mass: st.mass, c_rr: st.c_rr, inertia: st.inertiaKg });
     remain -= h;
   }
   st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
