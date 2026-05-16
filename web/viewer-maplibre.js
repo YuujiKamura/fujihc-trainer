@@ -345,10 +345,11 @@ let inertiaKg = (() => {
   try { const v = parseFloat(localStorage.getItem('fujihill.inertiaKg')); return Number.isFinite(v) ? v : 800; }
   catch { return 800; }
 })();
-// rider の現在位置のコース勾配 (%)。 tick 内で pos.slope_pct から毎フレーム更新し、
-// wsHandlers.state の物理積分が参照する (= maybeSendSlope の throttle 値ではなくリアルタイム値)。
-let currentCourseSlopePct = 0;
 // 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
+// 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
+// のみ、 distanceM も速度を持たない) seed できず 0 始動とする。 復元直後の 1 state メッセージ分
+// だけ速度が低めに出るが、 1Hz で即積分されるため軽微 (= 数百 ms で復帰)。 autosave に速度を
+// 足せば seed 可能になるが現状はデータが無いので 0 のまま。
 let physicsSpeedMps = 0;
 // 直近 state メッセージの受信時刻 (= dt 算出用、 state push は約 1Hz)。
 let lastPhysicsStateT = null;
@@ -650,7 +651,13 @@ const wsHandlers = {
       if (dt < 0.1) dt = 0.1;
       if (dt > 2.0) dt = 2.0;
       const power = (typeof msg.power_w === 'number' && Number.isFinite(msg.power_w)) ? msg.power_w : 0;
-      const slopePct = Number.isFinite(currentCourseSlopePct) ? currentCourseSlopePct : 0;
+      // 2026-05-17 (Critical fix): コース勾配は rider の現在位置から都度引く。
+      // 旧経路は tick() で更新する module global を読んでいたが、
+      // state push (約 1Hz) が初回 tick より先に来ると slope=0 で積分してしまい、
+      // 富士ヒルの登坂で登り抵抗が抜けて速度が過大になる。 rider.snapshot().position は
+      // Terrain query 経由でいつでも現在位置のコース勾配を返すので、 そこを直接 source にする。
+      const riderPos = rider.snapshot().position;
+      const slopePct = (riderPos && Number.isFinite(riderPos.slope_pct)) ? riderPos.slope_pct : 0;
       // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定、 inertia-sim.html と同方式)。
       // 空気抵抗は CdA を 1 本にまとめるため c_d=CdA / area=1 で渡す。
       const SUB = 1 / 120;
@@ -2201,10 +2208,9 @@ function tick(t) {
   const rLon = pos.lon;
   const rEle = pos.elevation;
   const curIdx = pos.segmentIdx;
-  // 2026-05-17: rider 現在位置のコース勾配を物理積分用に毎フレーム保存。
-  // wsHandlers.state の applyPhysicsStep がこの値を slope_pct に使う (= maybeSendSlope の
-  // throttle 値ではなくリアルタイムのコース勾配)。
-  if (Number.isFinite(pos.slope_pct)) currentCourseSlopePct = pos.slope_pct;
+  // 2026-05-17: コース勾配は wsHandlers.state が rider.snapshot().position から都度引くため、
+  // tick() 側で module global へ写す経路は廃止 (= 初回 tick より前の state push で slope=0 に
+  // なる Critical バグの除去)。
 
   // camera bearing: 旧 viewer は curIdx の bearing と curIdx+1 の bearing を frac で線形補間して
   // 「GPS 点間が不均一でも curIdx 変化の瞬間に視線がカクッと回転する」 問題を解消していた。
