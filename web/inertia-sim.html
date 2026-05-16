@@ -8,8 +8,9 @@
 
   ノブは 2 つ:
    - 質量 (kg)        = 物理的な慣性。 大きいほど本当に長く転がる / 加速しにくい。
-   - 慣性スライダー    = 表示速度のなめらかさ。 viewer 右下のスライダーと同じもの。
-                         物理の転がり距離は変えず、 「足を止めた瞬間の急減速」 の体感だけ和らげる。
+   - 慣性スライダー    = 表示速度のなめらかさ。 物理の転がり距離は変えず、
+                         「足を止めた瞬間の急減速」 の体感だけ和らげる。
+                         0-100%、 効きは k=2f/(1+f) で旧版の約 2 倍まで粘る。
 -->
 <html lang="ja">
 <head>
@@ -80,13 +81,13 @@
   </div>
   <div class="row">
     <label>質量 <b id="v-mass">88 kg</b></label>
-    <input type="range" id="r-mass" min="50" max="170" step="1" value="88">
-    <div class="hint">物理的な慣性 (= rider + bike の総重量)。 重いほど実際に長く転がる。</div>
+    <input type="range" id="r-mass" min="60" max="110" step="1" value="88">
+    <div class="hint">rider + bike の総重量。 重いほど実際に長く転がる。</div>
   </div>
   <div class="row">
     <label>慣性スライダー <b id="v-inertia">50 %</b></label>
-    <input type="range" id="r-inertia" min="0" max="95" step="5" value="50">
-    <div class="hint">表示速度のなめらかさ。 viewer の右下スライダーと同じ。 急減速の体感だけ和らげる。</div>
+    <input type="range" id="r-inertia" min="0" max="100" step="5" value="50">
+    <div class="hint">表示速度のなめらかさ。 急減速の体感だけ和らげる。 0% で素の物理、 100% で最も粘る。</div>
   </div>
   <div class="btns">
     <button id="b-coast" class="primary">ペダルを止める</button>
@@ -366,7 +367,12 @@ function step(dt) {
   }
   st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
   // 表示速度 = 慣性ブレンド (= viewer の wsHandlers.state と同じ式)
-  st.vDisp = st.vDisp * st.inertia + st.vPhys * (1 - st.inertia);
+  // 慣性スライダー f を「効きが 2 倍」 の係数 k に変換 (= k = 2f/(1+f))。
+  // f=0→k=0 (素の物理)、 f=0.5→k=0.67、 f=1.0→k=1 をクランプ。 旧 0.95 上限の
+  // 約 2 倍の粘りまで届く。 k=1 だと表示が凍るので 0.99 で頭打ち。
+  const f = st.inertia;
+  const k = Math.min(0.99, (2 * f) / (1 + f));
+  st.vDisp = st.vDisp * k + st.vPhys * (1 - k);
   // 走行距離は表示速度を積分 (= 画面上のライダーは表示速度で動く)
   st.dist += st.vDisp * dt;
   if (st.dist < 0) st.dist = 0;
