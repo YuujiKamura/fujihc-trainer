@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<!--
+  慣性シミュレータ。 勾配を動的に変えて、 ペダルを止めたとき自転車がどれだけ進むかを
+  3D で見るための検証ワールド。 viewer 本体には載せない、 物理モデル単体の確認用。
+
+  物理は web/lib/bike_physics.js (= viewer 本体と同じ関数) をそのまま import。
+  別実装を作らない、 本体と同じ計算をここで可視化するだけ。
+
+  ノブは 2 つ:
+   - 質量 (kg)        = 物理的な慣性。 大きいほど本当に長く転がる / 加速しにくい。
+   - 慣性スライダー    = 表示速度のなめらかさ。 viewer 右下のスライダーと同じもの。
+                         物理の転がり距離は変えず、 「足を止めた瞬間の急減速」 の体感だけ和らげる。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>慣性シミュレータ — 富士ヒルトレーナー</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden;
+               font-family: -apple-system, "Segoe UI", sans-serif; color: #e6edf3; }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; }
+
+  .panel { position: absolute; background: rgba(20,26,34,0.92); border: 1px solid #30363d;
+           border-radius: 8px; padding: 12px 14px; }
+  #controls { right: 12px; top: 12px; width: 250px; }
+  #readout  { left: 12px;  top: 12px; width: 230px; }
+
+  .panel h2 { margin: 0 0 8px; font-size: 13px; color: #58a6ff; font-weight: 600; }
+  .row { margin: 9px 0; }
+  .row label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
+  .row label b { color: #f0f6fc; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #58a6ff; }
+  .hint { font-size: 10.5px; color: #8b949e; line-height: 1.4; margin-top: 2px; }
+
+  .btns { display: flex; gap: 6px; margin-top: 10px; }
+  button { flex: 1; padding: 7px 4px; font-size: 12px; cursor: pointer;
+           background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; }
+  button:hover { background: #30363d; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.primary:hover { background: #388bfd; }
+
+  .metric { display: flex; justify-content: space-between; font-size: 12.5px; margin: 6px 0; }
+  .metric span { color: #8b949e; }
+  .metric b { font-variant-numeric: tabular-nums; font-size: 14px; }
+  .big { font-size: 18px; color: #f0f6fc; }
+  .coast-val { color: #3fb950; }
+  #trace { width: 100%; height: 56px; background: #0d1117; border: 1px solid #30363d;
+           border-radius: 4px; margin-top: 8px; }
+  .state-pedal { color: #3fb950; }
+  .state-coast { color: #d29922; }
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+
+<div id="readout" class="panel">
+  <h2>計測</h2>
+  <div class="metric"><span>状態</span><b id="m-state" class="state-pedal">ペダリング中</b></div>
+  <div class="metric"><span>速度（物理）</span><b id="m-vphys" class="big">0.0</b></div>
+  <div class="metric"><span>速度（表示）</span><b id="m-vdisp">0.0 km/h</b></div>
+  <div class="metric"><span>加速度</span><b id="m-accel">0.00 m/s²</b></div>
+  <div class="metric"><span>走行距離</span><b id="m-dist">0 m</b></div>
+  <div class="metric"><span>直近コースト距離</span><b id="m-coast" class="coast-val">— m</b></div>
+  <canvas id="trace" width="206" height="56"></canvas>
+  <div class="hint">緑=物理速度 / 橙=表示速度。 横軸は直近 12 秒。</div>
+</div>
+
+<div id="controls" class="panel">
+  <h2>操作</h2>
+  <div class="row">
+    <label>勾配 <b id="v-slope">0.0 %</b></label>
+    <input type="range" id="r-slope" min="-15" max="15" step="0.5" value="0">
+    <div class="hint">下り負・登り正。 走行中に動かせる。</div>
+  </div>
+  <div class="row">
+    <label>パワー <b id="v-power">150 W</b></label>
+    <input type="range" id="r-power" min="0" max="400" step="10" value="150">
+  </div>
+  <div class="row">
+    <label>質量 <b id="v-mass">88 kg</b></label>
+    <input type="range" id="r-mass" min="60" max="110" step="1" value="88">
+    <div class="hint">物理的な慣性。 重いほど実際に長く転がる。</div>
+  </div>
+  <div class="row">
+    <label>慣性スライダー <b id="v-inertia">50 %</b></label>
+    <input type="range" id="r-inertia" min="0" max="95" step="5" value="50">
+    <div class="hint">表示速度のなめらかさ。 viewer の右下スライダーと同じ。 急減速の体感だけ和らげる。</div>
+  </div>
+  <div class="btns">
+    <button id="b-coast" class="primary">ペダルを止める</button>
+    <button id="b-reset">リセット</button>
+  </div>
+  <div class="hint" style="margin-top:8px">「ペダルを止める」 でパワー 0、 停止までの距離をコースト距離として計測。</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { applyPhysicsStep } from './lib/bike_physics.js';
+
+// ---- 状態 -----------------------------------------------------------------
+const st = {
+  slope: 0,        // %
+  power: 150,      // W
+  mass: 88,        // kg
+  inertia: 0.50,   // 0..0.95、 表示速度ブレンド係数
+  vPhys: 0,        // m/s、 物理の真の速度
+  vDisp: 0,        // m/s、 ブレンド後の表示速度
+  accel: 0,        // m/s^2
+  dist: 0,         // m、 走行距離 (= 表示速度を積分)
+  coasting: false, // ペダルを止めた状態か
+  coastStartDist: 0,
+  lastCoast: null, // m
+};
+
+// ---- 3D シーン -------------------------------------------------------------
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1117);
+scene.fog = new THREE.Fog(0x0d1117, 60, 220);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 600);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202830, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(-30, 60, 25);
+sun.castShadow = true;
+sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+
+// 道路 (= 長い帯、 world はこれを slope ぶん傾ける)
+const ROAD_LEN = 1200, ROAD_W = 8;
+const world = new THREE.Group();   // slope ぶん傾けるグループ
+scene.add(world);
+
+const roadMat = new THREE.MeshLambertMaterial({ color: 0x2b3138 });
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_LEN, ROAD_W), roadMat);
+road.rotation.x = -Math.PI / 2;
+road.position.x = ROAD_LEN / 2 - 50;
+road.receiveShadow = true;
+world.add(road);
+
+// 路肩の芝
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x1d3024 });
+for (const side of [-1, 1]) {
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_LEN, 40), grassMat);
+  g.rotation.x = -Math.PI / 2;
+  g.position.set(ROAD_LEN / 2 - 50, -0.02, side * (ROAD_W / 2 + 20));
+  g.receiveShadow = true;
+  world.add(g);
+}
+
+// 50m ごとの距離ポスト + ラベル
+const postMat = new THREE.MeshLambertMaterial({ color: 0xf0f6fc });
+function makeLabel(text) {
+  const c = document.createElement('canvas');
+  c.width = 160; c.height = 64;
+  const cx = c.getContext('2d');
+  cx.font = 'bold 40px sans-serif';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.lineWidth = 6; cx.strokeStyle = '#0d1117';
+  cx.strokeText(text, 80, 34);
+  cx.fillStyle = '#58a6ff';
+  cx.fillText(text, 80, 34);
+  const tex = new THREE.CanvasTexture(c);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  spr.scale.set(3.5, 1.4, 1);
+  return spr;
+}
+for (let d = 0; d <= 1000; d += 50) {
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.4, 0.25), postMat);
+  post.position.set(d, 1.2, ROAD_W / 2 + 1.5);
+  post.castShadow = true;
+  world.add(post);
+  if (d % 100 === 0) {  // ラベルは 100m ごと (= 混雑回避)
+    const lab = makeLabel(d + 'm');
+    lab.position.set(d, 3.2, ROAD_W / 2 + 1.5);
+    world.add(lab);
+  }
+}
+
+// 自転車 + ライダー (= 簡易、 位置がわかればよい)
+const bike = new THREE.Group();
+const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1f6feb });
+const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.4), bodyMat);
+frame.position.y = 1.1; frame.castShadow = true;
+bike.add(frame);
+const riderMat = new THREE.MeshLambertMaterial({ color: 0xf0f6fc });
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 1.0, 4, 8), riderMat);
+torso.position.set(-0.2, 2.0, 0); torso.rotation.z = 0.5; torso.castShadow = true;
+bike.add(torso);
+const wheelGeo = new THREE.TorusGeometry(0.7, 0.13, 8, 20);
+const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111418 });
+for (const wx of [-1.0, 1.0]) {
+  const w = new THREE.Mesh(wheelGeo, wheelMat);
+  w.position.set(wx, 0.7, 0); w.castShadow = true;
+  bike.add(w);
+}
+world.add(bike);
+
+// 停止地点マーカー (= 直近コースト終端)
+const stopMark = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.1, 0.1, 8, 8),
+  new THREE.MeshLambertMaterial({ color: 0xd29922 })
+);
+stopMark.position.y = 4; stopMark.visible = false;
+world.add(stopMark);
+
+// ---- slope を world に反映 -------------------------------------------------
+// 道路を rider 中心で傾ける。 rider は常に s=dist の位置に居る。
+function slopeRad() { return Math.atan(st.slope / 100); }
+function layout() {
+  const sr = slopeRad();
+  // rider を world 原点付近に保つため、 world 全体を「rider が居る点」 を軸に回す。
+  // rider のローカル位置: x = dist。 これを高さ 0 に保つように world を回転 + 平行移動。
+  world.rotation.z = -sr;
+  // rider ローカル (dist,0,0) を回転後の world 座標へ → それを打ち消す offset
+  const rx = st.dist, h = 0;
+  const wx = rx * Math.cos(sr) - h * Math.sin(sr);
+  const wy = rx * Math.sin(sr) + h * Math.cos(sr);
+  world.position.set(-wx, -wy, 0);
+  bike.position.set(st.dist, 0, 0);
+}
+
+// ---- 入力 -----------------------------------------------------------------
+function bind(id, key, fmt, scale = 1) {
+  const r = document.getElementById('r-' + id);
+  const v = document.getElementById('v-' + id);
+  const apply = () => {
+    st[key] = parseFloat(r.value) * scale;
+    v.textContent = fmt(parseFloat(r.value));
+  };
+  r.addEventListener('input', apply);
+  apply();
+}
+bind('slope', 'slope', x => x.toFixed(1) + ' %');
+bind('power', 'power', x => x + ' W');
+bind('mass',  'mass',  x => x + ' kg');
+bind('inertia', 'inertia', x => x + ' %', 0.01);
+
+const bCoast = document.getElementById('b-coast');
+const rPower = document.getElementById('r-power');
+function startCoast() {
+  st.coasting = true;
+  st.coastStartDist = st.dist;
+  rPower.disabled = true;
+  bCoast.textContent = 'ペダリング再開';
+}
+function resumePedal() {
+  st.coasting = false;
+  rPower.disabled = false;
+  bCoast.textContent = 'ペダルを止める';
+}
+bCoast.addEventListener('click', () => st.coasting ? resumePedal() : startCoast());
+document.getElementById('b-reset').addEventListener('click', () => {
+  st.vPhys = 0; st.vDisp = 0; st.dist = 0; st.lastCoast = null;
+  resumePedal(); stopMark.visible = false;
+});
+
+// ---- 物理ループ ------------------------------------------------------------
+const clock = new THREE.Clock();
+const traceCv = document.getElementById('trace');
+const tcx = traceCv.getContext('2d');
+const hist = []; // {vp, vd} 直近 12 秒ぶん
+
+function step(dt) {
+  const power = st.coasting ? 0 : st.power;
+  // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定)
+  const SUB = 1 / 120;
+  let remain = Math.min(dt, 0.1);
+  const vBefore = st.vPhys;
+  while (remain > 0) {
+    const h = Math.min(SUB, remain);
+    st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope, { mass: st.mass });
+    remain -= h;
+  }
+  st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
+  // 表示速度 = 慣性ブレンド (= viewer の wsHandlers.state と同じ式)
+  st.vDisp = st.vDisp * st.inertia + st.vPhys * (1 - st.inertia);
+  // 走行距離は表示速度を積分 (= 画面上のライダーは表示速度で動く)
+  st.dist += st.vDisp * dt;
+  if (st.dist < 0) st.dist = 0;
+
+  // コースト停止判定 (= 表示速度がほぼ 0)
+  if (st.coasting && st.vDisp < 0.15 && st.vPhys < 0.15) {
+    st.lastCoast = st.dist - st.coastStartDist;
+    stopMark.position.x = st.dist;
+    stopMark.visible = true;
+    resumePedal();
+  }
+}
+
+function updateHud() {
+  document.getElementById('m-state').textContent = st.coasting ? 'コースト中' : 'ペダリング中';
+  document.getElementById('m-state').className = st.coasting ? 'state-coast' : 'state-pedal';
+  document.getElementById('m-vphys').textContent = (st.vPhys * 3.6).toFixed(1);
+  document.getElementById('m-vdisp').textContent = (st.vDisp * 3.6).toFixed(1) + ' km/h';
+  document.getElementById('m-accel').textContent = st.accel.toFixed(2) + ' m/s²';
+  document.getElementById('m-dist').textContent = Math.round(st.dist) + ' m';
+  document.getElementById('m-coast').textContent =
+    st.lastCoast == null ? '— m' : st.lastCoast.toFixed(1) + ' m';
+}
+
+function drawTrace() {
+  const W = traceCv.width, H = traceCv.height;
+  tcx.clearRect(0, 0, W, H);
+  const maxV = 22; // m/s ~ 79km/h スケール
+  const draw = (key, color) => {
+    tcx.strokeStyle = color; tcx.lineWidth = 1.5; tcx.beginPath();
+    hist.forEach((p, i) => {
+      const x = i / Math.max(1, hist.length - 1) * W;
+      const y = H - Math.min(1, p[key] / maxV) * H;
+      i ? tcx.lineTo(x, y) : tcx.moveTo(x, y);
+    });
+    tcx.stroke();
+  };
+  draw('vp', '#3fb950');
+  draw('vd', '#d29922');
+}
+
+// ---- カメラ ----------------------------------------------------------------
+function placeCamera() {
+  // ライダーは world 内で常に画面ほぼ中央。 world は slope で傾く。
+  // カメラは固定の 3/4 後方俯瞰。
+  camera.position.set(-14, 10, 16);
+  camera.lookAt(2, 2, 0);
+}
+
+// ---- リサイズ --------------------------------------------------------------
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+placeCamera();
+
+// ---- メインループ ----------------------------------------------------------
+let acc = 0;
+function renderLoop() {
+  const dt = Math.min(0.05, clock.getDelta());
+  step(dt);
+  layout();
+
+  // 車輪回転 (= 表示速度に応じて)
+  bike.children.forEach(c => {
+    if (c.geometry && c.geometry.type === 'TorusGeometry') c.rotation.y += st.vDisp * dt * 1.4;
+  });
+
+  acc += dt;
+  if (acc > 0.1) {
+    acc = 0;
+    updateHud();
+    hist.push({ vp: st.vPhys, vd: st.vDisp });
+    while (hist.length > 120) hist.shift(); // 120 * 0.1s = 12s
+    drawTrace();
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(renderLoop);
+}
+renderLoop();
+</script>
+</body>
+</html>
