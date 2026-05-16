@@ -286,7 +286,9 @@ world.add(stopMark);
 function slopeRad() { return Math.atan(st.slope / 100); }
 function layout() {
   const sr = slopeRad();
-  world.rotation.z = -sr;
+  // 登り (+勾配) は進行方向 +X で標高が上がる → world.rotation.z は +sr。
+  // (符号を逆にすると下りが登りの見た目になる)
+  world.rotation.z = sr;
   bike.position.set(st.dist, 0, 0);
   // bike ローカル (dist,0,0) を world 回転で写した点を、 そのまま打ち消す平行移動。
   // → ライダーは勾配や距離に関係なく常に画面原点に居る。
