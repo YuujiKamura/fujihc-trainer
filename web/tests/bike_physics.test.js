@@ -110,4 +110,54 @@ describe('bike_physics.applyPhysicsStep', () => {
     expect(v1).toBeCloseTo(v3, 5);
     expect(v2).toBeCloseTo(v3, 5);
   });
+
+  it('inertia 未指定 / 0: 従来挙動と一致 (= 既存 caller を壊さない)', () => {
+    const a = applyPhysicsStep(5, 0.1, 200, 3);
+    const b = applyPhysicsStep(5, 0.1, 200, 3, { inertia: 0 });
+    expect(a).toBe(b);
+  });
+
+  it('inertia 大: 漕ぎ出しが重い (= 同 power でも加速が鈍る)', () => {
+    let v_none = 0, v_fly = 0;
+    const dt = 0.1;
+    for (let i = 0; i < 50; i++) {  // 5 秒、 平地発進
+      v_none = applyPhysicsStep(v_none, dt, 300, 0);
+      v_fly = applyPhysicsStep(v_fly, dt, 300, 0, { inertia: 300 });
+    }
+    expect(v_fly).toBeLessThan(v_none);  // フライホイールぶん加速が鈍い
+  });
+
+  it('inertia 大: 足を止めても長く転がる (= コースト距離が伸びる)', () => {
+    // 8 m/s から平地で power=0、 止まる (v<0.3) までの走行距離を比較
+    const coastDist = (inertia) => {
+      let v = 8, dist = 0;
+      const dt = 0.1;
+      for (let i = 0; i < 3000 && v > 0.3; i++) {
+        v = applyPhysicsStep(v, dt, 0, 0, { inertia });
+        dist += v * dt;
+      }
+      return dist;
+    };
+    expect(coastDist(300)).toBeGreaterThan(coastDist(0));   // フライホイール有りは長い
+    expect(coastDist(900)).toBeGreaterThan(coastDist(300)); // 強いほど更に長い
+  });
+
+  it('inertia は重力負荷を増やさない (= 登りで質量だけ増やすより速い)', () => {
+    // 登り 8%: フライホイール 200 は加速の分母にしか効かない。
+    // 質量 +200 は重力にも効くので、 同じ慣性量でも登りは遅くなるはず。
+    let v_fly = 6, v_mass = 6;
+    const dt = 0.1;
+    for (let i = 0; i < 150; i++) {  // 15 秒登坂
+      v_fly = applyPhysicsStep(v_fly, dt, 300, 8, { mass: 88, inertia: 200 });
+      v_mass = applyPhysicsStep(v_mass, dt, 300, 8, { mass: 288, inertia: 0 });
+    }
+    expect(v_fly).toBeGreaterThan(v_mass);
+  });
+
+  it('inertia 負値: 0 にクランプ (= mass を割り込まない)', () => {
+    const a = applyPhysicsStep(5, 0.1, 200, 3, { inertia: -500 });
+    const b = applyPhysicsStep(5, 0.1, 200, 3, { inertia: 0 });
+    expect(a).toBe(b);
+    expect(Number.isFinite(a)).toBe(true);
+  });
 });

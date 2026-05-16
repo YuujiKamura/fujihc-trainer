@@ -34,6 +34,10 @@ const DEFAULTS = Object.freeze({
   g: 9.80665,
   v_min: 0.5,
   max_v: 30,  // 安全 cap (= 108 km/h、 物理的に下りで突き抜ける防止)
+  // inertia: フライホイール等の「並進質量に乗らない慣性」 を kg 相当で足す。
+  // 加速度の分母 (= mass + inertia) にだけ効き、 重力・転がり抵抗には効かない。
+  // → 速度変化に抗う (= 漕ぎ出しは重く、 足を止めても長く転がる)。 0 で無効。
+  inertia: 0,
 });
 
 /**
@@ -43,7 +47,7 @@ const DEFAULTS = Object.freeze({
  * @param {number} dt 経過秒数
  * @param {number} power_w 入力 power (W、 trainer 起源、 ペダル止めなら 0)
  * @param {number} slope_pct 勾配 % (= 100 * rise/run、 下り負 / 登り正)
- * @param {object} [opts] DEFAULTS を override
+ * @param {object} [opts] DEFAULTS を override (mass / inertia / c_rr 等)
  * @returns {number} 新速度 (m/s、 v_min 以上 max_v 以下にクランプ)
  */
 export function applyPhysicsStep(v, dt, power_w, slope_pct, opts = {}) {
@@ -56,7 +60,9 @@ export function applyPhysicsStep(v, dt, power_w, slope_pct, opts = {}) {
   const rolling = o.c_rr * o.mass * o.g * Math.cos(slope_rad);
   const drag = 0.5 * o.rho * o.c_d * o.area * v_eff * v_eff;
   const net_force = propulsion - gravity - rolling - drag;
-  const accel = net_force / o.mass;
+  // 加速度は「並進質量 + フライホイール慣性」 で割る。 重力 / 転がりの計算は
+  // mass のまま (= フライホイールは持ち上がらないし路面も押さない)。
+  const accel = net_force / (o.mass + Math.max(0, Number(o.inertia) || 0));
   let new_v = v + accel * dt;
   if (new_v < 0) new_v = 0;  // 停止以下にはならない (= 後退しない)
   if (new_v > o.max_v) new_v = o.max_v;

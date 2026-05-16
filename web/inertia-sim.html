@@ -6,11 +6,15 @@
   物理は web/lib/bike_physics.js (= viewer 本体と同じ関数) をそのまま import。
   別実装を作らない、 本体と同じ計算をここで可視化するだけ。
 
-  ノブは 2 つ:
-   - 質量 (kg)        = 物理的な慣性。 大きいほど本当に長く転がる / 加速しにくい。
-   - 慣性スライダー    = 表示速度のなめらかさ。 物理の転がり距離は変えず、
-                         「足を止めた瞬間の急減速」 の体感だけ和らげる。
-                         0-100%、 効きは k=2f/(1+f) で旧版の約 2 倍まで粘る。
+  慣性ノブは 2 つ、 どちらも本物の物理 (= bike_physics.js):
+   - 質量 (kg)            = rider + bike の総重量。 加速にも重力にも効く。
+   - 慣性 (フライホイール) = 速度変化に抗う回転慣性。 加速度の分母にだけ効き、
+                             重力には効かない。 漕ぎ出しは重く、 足を止めても
+                             長く転がる。 kg 相当で指定、 上限なし。
+
+  2026-05-16: 旧版は「表示速度を EMA でなめらかにするだけ」 の見せかけ慣性で、
+  係数が 1.0 で頭打ちになり何度倍にしても伸びなかった。 物理の加速度分母に
+  フライホイール慣性を足す本物の機構に作り直した (= user 指示「仕組みを作り直せ」)。
 -->
 <html lang="ja">
 <head>
@@ -59,13 +63,12 @@
 <div id="readout" class="panel">
   <h2>計測</h2>
   <div class="metric"><span>状態</span><b id="m-state" class="state-pedal">ペダリング中</b></div>
-  <div class="metric"><span>速度（物理）</span><b id="m-vphys" class="big">0.0</b></div>
-  <div class="metric"><span>速度（表示）</span><b id="m-vdisp">0.0 km/h</b></div>
+  <div class="metric"><span>速度</span><b id="m-vphys" class="big">0.0 km/h</b></div>
   <div class="metric"><span>加速度</span><b id="m-accel">0.00 m/s²</b></div>
   <div class="metric"><span>走行距離</span><b id="m-dist">0 m</b></div>
   <div class="metric"><span>直近コースト距離</span><b id="m-coast" class="coast-val">— m</b></div>
   <canvas id="trace" width="206" height="56"></canvas>
-  <div class="hint">緑=物理速度 / 橙=表示速度。 横軸は直近 12 秒。</div>
+  <div class="hint">速度の推移。 横軸は直近 12 秒。</div>
 </div>
 
 <div id="controls" class="panel">
@@ -85,9 +88,10 @@
     <div class="hint">rider + bike の総重量。 重いほど実際に長く転がる。</div>
   </div>
   <div class="row">
-    <label>慣性スライダー <b id="v-inertia">50 %</b></label>
-    <input type="range" id="r-inertia" min="0" max="100" step="5" value="50">
-    <div class="hint">表示速度のなめらかさ。 急減速の体感だけ和らげる。 0% で素の物理、 100% で最も粘る。</div>
+    <label>慣性（フライホイール） <b id="v-inertia">150 kg相当</b></label>
+    <input type="range" id="r-inertia" min="0" max="600" step="20" value="150">
+    <div class="hint">速度変化に抗う本物の慣性。 漕ぎ出しは重く、 足を止めても長く転がる。
+      重力には効かないので登りが重くなるわけではない。 上限なし、 いくらでも強くできる。</div>
   </div>
   <div class="btns">
     <button id="b-coast" class="primary">ペダルを止める</button>
@@ -107,12 +111,11 @@ import { applyPhysicsStep } from './lib/bike_physics.js';
 const st = {
   slope: 0,        // %
   power: 150,      // W
-  mass: 88,        // kg
-  inertia: 0.50,   // 0..0.95、 表示速度ブレンド係数
-  vPhys: 0,        // m/s、 物理の真の速度
-  vDisp: 0,        // m/s、 ブレンド後の表示速度
+  mass: 88,        // kg、 rider + bike の総重量
+  inertiaKg: 150,  // kg 相当、 フライホイール慣性 (= 加速度の分母に足す)
+  vPhys: 0,        // m/s、 速度
   accel: 0,        // m/s^2
-  dist: 0,         // m、 走行距離 (= 表示速度を積分)
+  dist: 0,         // m、 走行距離
   coasting: false, // ペダルを止めた状態か
   coastStartDist: 0,
   lastCoast: null, // m
@@ -324,7 +327,7 @@ function bind(id, key, fmt, scale = 1) {
 bind('slope', 'slope', x => x.toFixed(1) + ' %');
 bind('power', 'power', x => x + ' W');
 bind('mass',  'mass',  x => x + ' kg');
-bind('inertia', 'inertia', x => x + ' %', 0.01);
+bind('inertia', 'inertiaKg', x => x + ' kg相当');
 if (qp.has('dist')) st.dist = parseFloat(qp.get('dist')) || 0;  // 走行距離の初期値 (= 検証用)
 
 const bCoast = document.getElementById('b-coast');
@@ -344,7 +347,7 @@ function resumePedal() {
 }
 bCoast.addEventListener('click', () => st.coasting ? resumePedal() : startCoast());
 document.getElementById('b-reset').addEventListener('click', () => {
-  st.vPhys = 0; st.vDisp = 0; st.dist = 0; st.lastCoast = null;
+  st.vPhys = 0; st.dist = 0; st.lastCoast = null;
   resumePedal(); stopMark.visible = false;
 });
 
@@ -352,7 +355,7 @@ document.getElementById('b-reset').addEventListener('click', () => {
 const clock = new THREE.Clock();
 const traceCv = document.getElementById('trace');
 const tcx = traceCv.getContext('2d');
-const hist = []; // {vp, vd} 直近 12 秒ぶん
+const hist = []; // {vp} 直近 12 秒ぶん
 
 function step(dt) {
   const power = st.coasting ? 0 : st.power;
@@ -362,25 +365,20 @@ function step(dt) {
   const vBefore = st.vPhys;
   while (remain > 0) {
     const h = Math.min(SUB, remain);
-    st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope, { mass: st.mass });
+    // フライホイール慣性 (st.inertiaKg) を物理に直接渡す。 速度変化に抗う本物の慣性。
+    st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope,
+      { mass: st.mass, inertia: st.inertiaKg });
     remain -= h;
   }
   st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
-  // 表示速度 = 慣性ブレンド (= viewer の wsHandlers.state と同じ式)
-  // 慣性スライダー f を「効きが 4 倍」 の係数 k に変換 (= k = 4f/(1+3f))。
-  // f=0→k=0 (素の物理)、 f=0.5→k=0.8、 f=0.95→k=0.987。 k=1 で表示が凍るので
-  // 0.995 で頭打ち。 ただし係数は 1 が上限なので、 ここから先は EMA では伸びない。
-  const f = st.inertia;
-  const k = Math.min(0.995, (4 * f) / (1 + 3 * f));
-  st.vDisp = st.vDisp * k + st.vPhys * (1 - k);
-  // 走行距離は表示速度を積分 (= 画面上のライダーは表示速度で動く)
-  st.dist += st.vDisp * dt;
+  // 走行距離は速度を積分
+  st.dist += st.vPhys * dt;
   if (st.dist < 0) st.dist = 0;
 
-  // コースト停止判定 (= 表示速度がほぼ 0)。 停止したら距離を記録してそのまま静止。
+  // コースト停止判定 (= 速度がほぼ 0)。 停止したら距離を記録してそのまま静止。
   // 勝手にペダリングへ戻さない (= 登りで一瞬で止まり、 即漕ぎ出すのを防ぐ)。
   // 再開はユーザーが「ペダリング再開」 を押した時だけ。
-  if (st.coasting && !st.coastDone && st.vDisp < 0.15 && st.vPhys < 0.15) {
+  if (st.coasting && !st.coastDone && st.vPhys < 0.15) {
     st.lastCoast = st.dist - st.coastStartDist;
     stopMark.position.x = st.dist;
     stopMark.visible = true;
@@ -392,8 +390,7 @@ function updateHud() {
   const stateText = st.coasting ? (st.coastDone ? '停止（計測完了）' : 'コースト中') : 'ペダリング中';
   document.getElementById('m-state').textContent = stateText;
   document.getElementById('m-state').className = st.coasting ? 'state-coast' : 'state-pedal';
-  document.getElementById('m-vphys').textContent = (st.vPhys * 3.6).toFixed(1);
-  document.getElementById('m-vdisp').textContent = (st.vDisp * 3.6).toFixed(1) + ' km/h';
+  document.getElementById('m-vphys').textContent = (st.vPhys * 3.6).toFixed(1) + ' km/h';
   document.getElementById('m-accel').textContent = st.accel.toFixed(2) + ' m/s²';
   document.getElementById('m-dist').textContent = Math.round(st.dist) + ' m';
   document.getElementById('m-coast').textContent =
@@ -414,7 +411,6 @@ function drawTrace() {
     tcx.stroke();
   };
   draw('vp', '#3fb950');
-  draw('vd', '#d29922');
 }
 
 // ---- カメラ ----------------------------------------------------------------
@@ -445,14 +441,14 @@ function renderLoop() {
   layout();
 
   // 車輪回転 (= Z 軸まわり、 進行方向 X に転がる)。 角速度 = 速度 / 車輪半径。
-  const dTheta = st.vDisp * dt / 0.7;
+  const dTheta = st.vPhys * dt / 0.7;
   wheels.forEach(w => { w.rotation.z -= dTheta; });
 
   acc += dt;
   if (acc > 0.1) {
     acc = 0;
     updateHud();
-    hist.push({ vp: st.vPhys, vd: st.vDisp });
+    hist.push({ vp: st.vPhys });
     while (hist.length > 120) hist.shift(); // 120 * 0.1s = 12s
     drawTrace();
   }
