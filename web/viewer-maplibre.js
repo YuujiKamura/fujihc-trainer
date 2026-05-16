@@ -21,6 +21,7 @@ import { createRideState } from './lib/ride_state.js';
 // 内側に持つため二重 state にはならない).
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
+import { applyPhysicsStep } from './lib/bike_physics.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
@@ -335,9 +336,22 @@ let rideState = null;
 let lastT = performance.now();
 let diffMult = (() => { try { return parseFloat(localStorage.getItem('fujihill.diff')) || 1.0; } catch { return 1.0; } })();
 let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.spd')); return Number.isFinite(v) ? v : 1.0; } catch { return 1.0; } })();
-// 2026-05-16: 慣性係数 (= 0 〜 0.95、 trainer 由来 speed を rider に反映する時の前回値との重み).
-// blended = old * inertia + new * (1 - inertia)、 1.0 で完全停滞、 0.0 で即反映 (= 旧挙動).
-let inertiaFactor = (() => { try { const v = parseFloat(localStorage.getItem('fujihill.inertia')); return Number.isFinite(v) ? v : 0.5; } catch { return 0.5; } })();
+// 2026-05-17: 物理駆動への切替。 旧 inertiaFactor (= EMA 係数 0..0.95) は見せかけの慣性で、
+// 「下りで足を止めると減速がデカすぎる」 という user 不満を解けなかった。 新方式は
+// web/lib/bike_physics.js の applyPhysicsStep で trainer の power とコース勾配から速度を
+// 時間積分する。 慣性 slider は EMA 係数ではなくフライホイール慣性 (kg 相当) を指す。
+// localStorage キーは旧 fujihill.inertia (= 0..0.95 を保存) と別名にする (= 読み違え防止)。
+let inertiaKg = (() => {
+  try { const v = parseFloat(localStorage.getItem('fujihill.inertiaKg')); return Number.isFinite(v) ? v : 800; }
+  catch { return 800; }
+})();
+// rider の現在位置のコース勾配 (%)。 tick 内で pos.slope_pct から毎フレーム更新し、
+// wsHandlers.state の物理積分が参照する (= maybeSendSlope の throttle 値ではなくリアルタイム値)。
+let currentCourseSlopePct = 0;
+// 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
+let physicsSpeedMps = 0;
+// 直近 state メッセージの受信時刻 (= dt 算出用、 state push は約 1Hz)。
+let lastPhysicsStateT = null;
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 const POSITION_SEND_INTERVAL_MS = 1000;
@@ -624,14 +638,31 @@ const wsHandlers = {
     // に直書きしていた。 fake state push (1Hz) と section click (即時) が同じ場所を奪い合うため、
     // 観るモードで「click → 動かない」 体感 bug の元凶になっていた. 新 path では rider.setSpeed /
     // rider.setSensors が唯一の入口、 fake state も BLE も section click も同じ API を叩く.
-    if (typeof msg.speed_mps === 'number') {
-      const s = msg.speed_mps;
-      if (Number.isFinite(s) && s >= 0 && s <= 25 && rider) {
-        // 2026-05-16: 慣性 slider 反映。 前回速度との指数移動平均で「足を止めて即減速」 を抑える。
-        // inertia=0 (= 旧挙動、 即反映)、 inertia=0.5 (= 半分残る)、 inertia=0.95 (= ほぼ維持)。
-        const oldS = (rider.speed != null) ? rider.speed : s;
-        const blended = oldS * inertiaFactor + s * (1 - inertiaFactor);
-        rider.setSpeed(blended);
+    // 2026-05-17: rider の速度は trainer の speed_mps を直接使わず、 viewer 側で物理積分する。
+    // trainer の speed は「平地 + power のみ」 の機種が多く、 下り勾配の重力加速や慣性が入らない
+    // ため「足を止めて即減速」 の不自然挙動になっていた。 新経路は web/lib/bike_physics.js の
+    // applyPhysicsStep で power とコース勾配から速度を時間積分する (= inertia-sim.html と同じ計算)。
+    if (rider) {
+      const now = performance.now();
+      // dt = 前回 state メッセージからの経過秒。 state push は約 1Hz。 初回は 1 秒とみなす。
+      let dt = (lastPhysicsStateT != null) ? (now - lastPhysicsStateT) / 1000 : 1.0;
+      lastPhysicsStateT = now;
+      if (dt < 0.1) dt = 0.1;
+      if (dt > 2.0) dt = 2.0;
+      const power = (typeof msg.power_w === 'number' && Number.isFinite(msg.power_w)) ? msg.power_w : 0;
+      const slopePct = Number.isFinite(currentCourseSlopePct) ? currentCourseSlopePct : 0;
+      // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定、 inertia-sim.html と同方式)。
+      // 空気抵抗は CdA を 1 本にまとめるため c_d=CdA / area=1 で渡す。
+      const SUB = 1 / 120;
+      let remain = dt;
+      while (remain > 0) {
+        const h = Math.min(SUB, remain);
+        physicsSpeedMps = applyPhysicsStep(physicsSpeedMps, h, power, slopePct,
+          { mass: 88, c_rr: 0.005, c_d: 0.35, area: 1, inertia: inertiaKg });
+        remain -= h;
+      }
+      if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0) {
+        rider.setSpeed(physicsSpeedMps);
       }
     }
     const pw = (msg.power_w != null) ? String(msg.power_w) : '--';
@@ -2170,6 +2201,10 @@ function tick(t) {
   const rLon = pos.lon;
   const rEle = pos.elevation;
   const curIdx = pos.segmentIdx;
+  // 2026-05-17: rider 現在位置のコース勾配を物理積分用に毎フレーム保存。
+  // wsHandlers.state の applyPhysicsStep がこの値を slope_pct に使う (= maybeSendSlope の
+  // throttle 値ではなくリアルタイムのコース勾配)。
+  if (Number.isFinite(pos.slope_pct)) currentCourseSlopePct = pos.slope_pct;
 
   // camera bearing: 旧 viewer は curIdx の bearing と curIdx+1 の bearing を frac で線形補間して
   // 「GPS 点間が不均一でも curIdx 変化の瞬間に視線がカクッと回転する」 問題を解消していた。
@@ -2463,11 +2498,21 @@ if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
 if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
 bindSlider('rngDiff', 'diffVal', 'fujihill.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
 bindSlider('rngSpd', 'spdVal', 'fujihill.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
-// 2026-05-16: 慣性 slider。 pct/100 を inertiaFactor (= 0..0.95) に格納、 localStorage に永続化.
+// 2026-05-17: 慣性 slider はフライホイール慣性 (kg 相当) を指す。 bindSlider は値を pct/100 で
+// 保存する設計なので kg 値には使えない、 専用 binding にする。 slider は 0..3000 kg、 step 50。
 const rIner = document.getElementById('rngInertia');
-if (rIner) rIner.value = String(Math.round(inertiaFactor * 100));
-setText('inertiaVal', String(Math.round(inertiaFactor * 100)));
-bindSlider('rngInertia', 'inertiaVal', 'fujihill.inertia', (pct) => { inertiaFactor = pct / 100; setText('inertiaVal', String(Math.round(pct))); });
+if (rIner) {
+  rIner.value = String(inertiaKg);
+  setText('inertiaVal', String(Math.round(inertiaKg)));
+  rIner.addEventListener('input', () => {
+    const kg = parseFloat(rIner.value);
+    if (Number.isFinite(kg)) {
+      inertiaKg = kg;
+      setText('inertiaVal', String(Math.round(kg)));
+      try { localStorage.setItem('fujihill.inertiaKg', String(kg)); } catch {}
+    }
+  });
+}
 
 // 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
 // setPaintProperty で live 更新、 デバッグ表示も同時。

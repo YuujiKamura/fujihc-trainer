@@ -415,9 +415,10 @@
   </div>
   <div class="row"><label>負荷</label><input id="rngDiff" type="range" min="10" max="200" step="5" value="100"><span class="val"><span id="diffVal">100</span>%</span></div>
   <div class="row"><label>速度倍率</label><input id="rngSpd" type="range" min="50" max="200" step="5" value="100"><span class="val"><span id="spdVal">1.00</span>x</span></div>
-  <!-- 2026-05-16: 慣性 slider (= trainer から来た speed を rider に反映する時の前回値との重み)。
-       0% = 即反映 (= 慣性ゼロ、 旧挙動)、 100% = 完全維持 (= 速度全く変わらない)、 default 50%。 -->
-  <div class="row"><label>慣性</label><input id="rngInertia" type="range" min="0" max="95" step="5" value="50"><span class="val"><span id="inertiaVal">50</span>%</span></div>
+  <!-- 2026-05-17: 慣性 slider はフライホイール慣性 (= kg 相当)。 物理の加速度の分母に足され、
+       速度変化に抗う本物の慣性。 漕ぎ出しは重く、 足を止めても長く転がる。 重力には効かない。
+       0..3000 kg相当、 step 50、 default 800 (= inertia-sim.html と揃える)。 -->
+  <div class="row"><label>慣性</label><input id="rngInertia" type="range" min="0" max="3000" step="50" value="800"><span class="val"><span id="inertiaVal">800</span>kg相当</span></div>
   <!-- 光源 (hillshade) 調整: 方向 0..360° / 強度 0..100 (= MapLibre 0..1 を ×100) -->
   <div class="row"><label>光源方向</label><input id="rngLightDir" type="range" min="0" max="360" step="5" value="135"><span class="val"><span id="lightDirVal">135</span>°</span></div>
   <div class="row"><label>光源強度</label><input id="rngLightStr" type="range" min="0" max="100" step="5" value="100"><span class="val"><span id="lightStrVal">100</span>%</span></div>
