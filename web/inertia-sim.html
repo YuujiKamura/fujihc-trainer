@@ -71,8 +71,8 @@
   <h2>操作</h2>
   <div class="row">
     <label>勾配 <b id="v-slope">0.0 %</b></label>
-    <input type="range" id="r-slope" min="-15" max="15" step="0.5" value="0">
-    <div class="hint">下り負・登り正。 走行中に動かせる。</div>
+    <input type="range" id="r-slope" min="-15" max="30" step="0.5" value="0">
+    <div class="hint">下り −15% 〜 激坂 +30%。 走行中に動かせる。 地面の色が勾配で変わる。</div>
   </div>
   <div class="row">
     <label>パワー <b id="v-power">150 W</b></label>
@@ -146,7 +146,30 @@ const POST_N = 24;                          // ポストのプール数 (= 24*50
 const world = new THREE.Group();            // slope ぶん傾けるグループ
 scene.add(world);
 
-const roadMat = new THREE.MeshLambertMaterial({ color: 0x2b3138 });
+// 勾配で地面の色を変える。 下り=寒色、 平地=グレー、 登りがきつくなるほど暖色→赤。
+const GRADE_STOPS = [
+  [-15, 0x2b6cff],  // 急な下り: 青
+  [0,   0x3b424c],  // 平地: ニュートラルグレー
+  [6,   0xc9ae1f],  // 黄
+  [12,  0xdd6312],  // 橙
+  [20,  0xc62828],  // 赤
+  [30,  0x7a1530],  // 激坂: 暗赤
+];
+const _gcA = new THREE.Color(), _gcB = new THREE.Color(), _gcOut = new THREE.Color();
+function gradeColor(pct) {
+  const s = GRADE_STOPS;
+  if (pct <= s[0][0]) return _gcOut.setHex(s[0][1]);
+  if (pct >= s[s.length - 1][0]) return _gcOut.setHex(s[s.length - 1][1]);
+  for (let i = 0; i < s.length - 1; i++) {
+    if (pct >= s[i][0] && pct <= s[i + 1][0]) {
+      const t = (pct - s[i][0]) / (s[i + 1][0] - s[i][0]);
+      _gcA.setHex(s[i][1]); _gcB.setHex(s[i + 1][1]);
+      return _gcOut.copy(_gcA).lerp(_gcB, t);
+    }
+  }
+  return _gcOut.setHex(s[1][1]);
+}
+const roadMat = new THREE.MeshLambertMaterial({ color: 0x3b424c });
 const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_LEN, ROAD_W), roadMat);
 road.rotation.x = -Math.PI / 2;
 road.receiveShadow = true;
@@ -272,6 +295,8 @@ function layout() {
   const px = st.dist * Math.cos(cz);
   const py = st.dist * Math.sin(cz);
   world.position.set(-px, -py, 0);
+  // 勾配で地面の色を更新 (= きつい登りほど赤、 下りは青)。
+  roadMat.color.copy(gradeColor(st.slope));
   // 道路 + 芝をライダー直下へ置き直す (= 有限の板でも地面が無限に続く)。
   road.position.x = st.dist;
   grass[0].position.x = st.dist;
@@ -303,12 +328,14 @@ const bCoast = document.getElementById('b-coast');
 const rPower = document.getElementById('r-power');
 function startCoast() {
   st.coasting = true;
+  st.coastDone = false;
   st.coastStartDist = st.dist;
   rPower.disabled = true;
   bCoast.textContent = 'ペダリング再開';
 }
 function resumePedal() {
   st.coasting = false;
+  st.coastDone = false;
   rPower.disabled = false;
   bCoast.textContent = 'ペダルを止める';
 }
@@ -342,17 +369,20 @@ function step(dt) {
   st.dist += st.vDisp * dt;
   if (st.dist < 0) st.dist = 0;
 
-  // コースト停止判定 (= 表示速度がほぼ 0)
-  if (st.coasting && st.vDisp < 0.15 && st.vPhys < 0.15) {
+  // コースト停止判定 (= 表示速度がほぼ 0)。 停止したら距離を記録してそのまま静止。
+  // 勝手にペダリングへ戻さない (= 登りで一瞬で止まり、 即漕ぎ出すのを防ぐ)。
+  // 再開はユーザーが「ペダリング再開」 を押した時だけ。
+  if (st.coasting && !st.coastDone && st.vDisp < 0.15 && st.vPhys < 0.15) {
     st.lastCoast = st.dist - st.coastStartDist;
     stopMark.position.x = st.dist;
     stopMark.visible = true;
-    resumePedal();
+    st.coastDone = true;
   }
 }
 
 function updateHud() {
-  document.getElementById('m-state').textContent = st.coasting ? 'コースト中' : 'ペダリング中';
+  const stateText = st.coasting ? (st.coastDone ? '停止（計測完了）' : 'コースト中') : 'ペダリング中';
+  document.getElementById('m-state').textContent = stateText;
   document.getElementById('m-state').className = st.coasting ? 'state-coast' : 'state-pedal';
   document.getElementById('m-vphys').textContent = (st.vPhys * 3.6).toFixed(1);
   document.getElementById('m-vdisp').textContent = (st.vDisp * 3.6).toFixed(1) + ' km/h';
