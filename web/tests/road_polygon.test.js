@@ -254,9 +254,16 @@ describe('buildGradeColoredRoadPolygons', () => {
     }
     // 2026-05-15 fix: 「始点側」semantics. segment 0 = course[0].slope_pct = 0.5 → flat.
     expect(fc.features[0].properties.grade).toBe('flat');
-    // segment 3: slope = course[3].slope_pct = 8.0 → hard / #e67e22.
+    // segment 3: slope = course[3].slope_pct = 8.0 → grade name は hard。
+    // 2026-05-17: color は連続補間に変更、 離散 bin 色そのものではない。 急勾配ほど
+    // 暖色 (赤寄り) になる性質を確認: segment 3 (8.0%) は segment 0 (0.5%) より
+    // 赤成分が高く緑成分が低い。
     expect(fc.features[3].properties.grade).toBe('hard');
-    expect(fc.features[3].properties.color).toBe('#e67e22');
+    const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const c0 = rgbOf(fc.features[0].properties.color);
+    const c3 = rgbOf(fc.features[3].properties.color);
+    expect(c3[0]).toBeGreaterThan(c0[0]);  // 赤成分: 急勾配の方が高い
+    expect(c3[1]).toBeLessThan(c0[1]);     // 緑成分: 急勾配の方が低い
   });
 
   it('slope_pct null 安全 (= 欠落しても flat default 緑、 落ちない)', () => {

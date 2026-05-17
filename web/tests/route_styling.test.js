@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   GRADE_THRESHOLDS,
   classifyGrade,
+  gradeColorContinuous,
   buildGradeColoredRoute,
   makeGradeColorExpression,
 } from '../lib/route_styling.js';
@@ -214,5 +215,46 @@ describe('makeGradeColorExpression', () => {
       expect(cond[2]).toBe(GRADE_THRESHOLDS[i].name);
       expect(color).toBe(GRADE_THRESHOLDS[i].color);
     }
+  });
+});
+
+// 2026-05-17: 勾配色を 6 段階離散 bin から連続 RGB 補間に。 user 指示
+// 「路面の勾配毎の色をもっと滑らかに細かく」 への対応。
+describe('gradeColorContinuous (連続グレード色)', () => {
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+  it('平地 (0%) は緑 #3aa055', () => {
+    expect(gradeColorContinuous(0)).toBe('#3aa055');
+  });
+
+  it('null / undefined / NaN は緑 (= 安全側 default)', () => {
+    expect(gradeColorContinuous(null)).toBe('#3aa055');
+    expect(gradeColorContinuous(undefined)).toBe('#3aa055');
+    expect(gradeColorContinuous(NaN)).toBe('#3aa055');
+  });
+
+  it('下り (負値) は緑にクランプ', () => {
+    expect(gradeColorContinuous(-5)).toBe('#3aa055');
+  });
+
+  it('激坂 (17% 以上) は紫 #8e44ad にクランプ', () => {
+    expect(gradeColorContinuous(17)).toBe('#8e44ad');
+    expect(gradeColorContinuous(25)).toBe('#8e44ad');
+  });
+
+  it('hex 形式 (#rrggbb) を返す', () => {
+    expect(gradeColorContinuous(6)).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('bin 境界で色がガクッと変わらない (= 3.9% と 4.1% が近い)', () => {
+    const a = rgb(gradeColorContinuous(3.9));
+    const b = rgb(gradeColorContinuous(4.1));
+    const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    expect(dist).toBeLessThan(20);  // 連続補間なら僅差、 離散 bin なら大ジャンプ
+  });
+
+  it('急勾配ほど緑成分が減る (= 暖色化、 単調性)', () => {
+    expect(rgb(gradeColorContinuous(2))[1]).toBeGreaterThan(rgb(gradeColorContinuous(10))[1]);
+    expect(rgb(gradeColorContinuous(10))[1]).toBeGreaterThan(rgb(gradeColorContinuous(16))[1]);
   });
 });

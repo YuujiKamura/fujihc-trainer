@@ -13,7 +13,7 @@
 // buildGradeColoredRoadPolygons で、 1 source / 1 layer で「grade 色分け + 道幅 polygon」
 // を MapLibre に渡せる.
 
-import { classifyGrade } from './route_styling.js';
+import { classifyGrade, gradeColorContinuous } from './route_styling.js';
 
 // 1 度 latitude あたりの meter 数 (= 地球を球で近似、 WGS84 平均).
 const METERS_PER_DEG_LAT = 111320;
@@ -238,9 +238,11 @@ export function buildRoadPolygons(course, widthM = 5) {
 export function buildGradeColoredRoadPolygons(course, widthM = 5) {
   const fc = buildRoadPolygons(course, widthM);
   for (const f of fc.features) {
-    const { name, color } = classifyGrade(f.properties.slope_pct);
+    // grade name は離散 6 段 (= 区間ラベル等で使う)、 color は連続補間
+    // (= 隣接 segment の色段差を無くし滑らかなグラデーションにする)。
+    const { name } = classifyGrade(f.properties.slope_pct);
     f.properties.grade = name;
-    f.properties.color = color;
+    f.properties.color = gradeColorContinuous(f.properties.slope_pct);
   }
   return fc;
 }

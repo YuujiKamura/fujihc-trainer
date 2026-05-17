@@ -9,7 +9,7 @@
 // scope は SW を register した path の階層、 起動 origin 配下全部を覆う想定。
 // 強制更新は version bump (= CACHE_NAME の suffix を変える) で旧 cache を消す。
 
-const CACHE_NAME = 'fujihill-v4';
+const CACHE_NAME = 'fujihill-v5';
 
 // install 時に一括取得する static 資産。 dynamic な tile / pmtiles は事前リスト不可、
 // fetch handler 側で cache-on-demand する (= 走った tile から順に永続化)。
