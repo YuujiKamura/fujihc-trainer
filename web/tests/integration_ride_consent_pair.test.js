@@ -98,9 +98,10 @@ describe('brief 34 ε-3 integration: pair 完了前は btnRideStart.disabled ===
     expect(spies.rec.connectedTransition).toBe(1);
   });
 
-  it('viewer source: connect_status の connected branch で btnRideStart.disabled = false が設定される', () => {
-    // 「state === connected」branch 内に「btnRideStart」「.disabled = false」が並ぶこと.
-    expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,400}btnRideStart[\s\S]{0,200}\.disabled\s*=\s*false/);
+  it('viewer source: connect_status の connected branch で setRideStartEnabled(terrainReady) で btnRideStart を enable する', () => {
+    // 「state === connected」branch 内で btnRideStart の enable 経路 (= setRideStartEnabled) を踏むこと.
+    // 単一窓口 setRideStartEnabled に集約済 (= btnRideStart.disabled の直接書込ではなく hint も同期).
+    expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,800}setRideStartEnabled\(\s*terrainReady\s*\)/);
   });
 });
 

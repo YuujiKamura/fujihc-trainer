@@ -796,15 +796,13 @@ const wsHandlers = {
       try { localStorage.setItem('fujihill.trainer.address', msg.address); } catch {}
       // brief 34 ε-9: pair 完了 flag を立て、 terrain gate の状態に応じて btnRideStart 制御.
       _pairConnected = true;
-      const startBtn = document.getElementById('btnRideStart');
-      // terrainReady === true なら enable + focus、 false なら disabled のまま (terrain が遅延中).
-      if (startBtn) {
-        if (terrainReady) {
-          startBtn.disabled = false;
-          requestAnimationFrame(() => startBtn.focus());
-        } else {
-          startBtn.disabled = true;  // terrain 完了で updateActionButtonsForTerrain が enable する
-        }
+      // terrainReady === true なら enable + focus、 false なら disabled のまま (terrain が遅延中、
+      // 完了時に updateActionButtonsForTerrain が enable する)。 setRideStartEnabled 経由で
+      // hint 文「ハンドシェイク完了後に押せる…」の表示/非表示も同時に同期される。
+      setRideStartEnabled(terrainReady);
+      if (terrainReady) {
+        const startBtn = document.getElementById('btnRideStart');
+        if (startBtn) requestAnimationFrame(() => startBtn.focus());
       }
       lastSlopeSent = null; lastSlopeSendT = 0;
     }
@@ -1018,8 +1016,7 @@ function initTestMode() {
   setText('p-device', 'TEST MODE (no trainer)');
   setText('p-state', '✓ TEST MODE');
   updateStepIndicator(-1, 3);
-  const startBtn = document.getElementById('btnRideStart');
-  if (startBtn) startBtn.disabled = false;
+  setRideStartEnabled(true);
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
     fakeStateGenerator: () => {
@@ -1480,6 +1477,19 @@ function isActionableNow() { return terrainReady && mapFullyLoaded; }
 // 過去通知を override しない」を満たすため、 「pair 完了通知を 1 度でも受けたか」の独立 flag を持つ。
 let _pairConnected = false;
 
+// btnRideStart の disabled と直下のヒント文 (#ride-start-hint) を同期して書き換える単一窓口。
+// hint「trainer のハンドシェイク完了後に押せるようになります」 = ボタン無効時の説明文なので、
+// enabled===true なら hidden、 false なら表示。 hint を静的 div のまま放置すると
+// 「ボタンは緑 (enabled) なのに無効時 hint が残る」 ちぐはぐが起きる (= enable 経路が複数あり
+// btnRideStart.disabled だけ書き換えて hint を触らないため)。 button state 従属に一本化する。
+function setRideStartEnabled(enabled) {
+  if (typeof document === 'undefined') return;
+  const btn = document.getElementById('btnRideStart');
+  if (btn) btn.disabled = !enabled;
+  const hint = document.getElementById('ride-start-hint');
+  if (hint) hint.hidden = !!enabled;
+}
+
 function updateActionButtonsForTerrain() {
   // intro
   const introStart = typeof document !== 'undefined' ? document.getElementById('btnIntroStart') : null;
@@ -1505,15 +1515,11 @@ function updateActionButtonsForTerrain() {
   // 2026-05-15 fix: BLE 系も scan 同様、 trainer pair 自体は地形と無関係、 disabled 解除。
   // (元の HTML default state に任せる、 viewer 内の他経路で必要時に制御)
   // ride start: terrainReady === false なら強制 disable、 true なら pair 通過済の場合のみ enable.
-  const btnRide = typeof document !== 'undefined' ? document.getElementById('btnRideStart') : null;
-  if (btnRide) {
-    if (!isActionableNow()) {
-      btnRide.disabled = true;
-    } else if (_pairConnected) {
-      btnRide.disabled = false;
-    }
-    // else: pair 未完なら disabled のまま (= 既存挙動).
-  }
+  // ride start: terrainReady && mapFullyLoaded && pair 完了 が揃った時だけ enable。
+  // どの条件が欠けても disabled (= actionable だが pair 未完なら disabled のまま、 既存挙動と等価:
+  // disabled=false は connect_status の connected branch でしか立たず、 そこも terrainReady を見る)。
+  // setRideStartEnabled に通すことで hint 文の表示/非表示も同時に同期される。
+  setRideStartEnabled(isActionableNow() && _pairConnected);
   // section list の行は terrainReady === false で pointer-events を切る (= 視覚 + 操作両方).
   // 個別 li の disabled は <li> に効かないので class + style 経由で抑止する.
   const list = typeof document !== 'undefined' ? document.getElementById('section-list') : null;
@@ -2563,8 +2569,19 @@ async function showPreflightAndStart() {
   renderPreflightPanel({
     result,
     onStart: () => { startRideConfirmed(); },
-    onCancel: () => { /* no-op、 user が pair 画面に戻る */ },
+    onCancel: () => {
+      // cancel 経路で pair 画面に戻れるよう setup-overlay を復元 (= 既に ride 中なら出さない).
+      if (!document.body.classList.contains('state-riding')) {
+        document.getElementById('setup-overlay')?.classList.add('visible');
+      }
+    },
   });
+  // preflight-overlay (z=1465) は setup-overlay (z=1500) より下。 setup が visible のまま
+  // preflight を出すと完全に背後に隠れ、「ライド開始を押しても何も起きない」状態になる
+  // (= consent-overlay と同型 bug、 2026-05-15 の ε-3 fix と同じ構造)。 setup-overlay を
+  // 一旦 hide して preflight を露出させる。 onStart → startRideConfirmed → ride_status:started
+  // → hidePairing が setup を二重 hide するが冪等。
+  document.getElementById('setup-overlay')?.classList.remove('visible');
 }
 document.getElementById('btnRideEnd').addEventListener('click', () => {
   if (!client || !client.isOpen()) return;

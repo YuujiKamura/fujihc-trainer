@@ -193,7 +193,8 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     expect(body).toMatch(/btnScan['"]/);
     expect(body).toMatch(/btnScanHrm/);
     expect(body).toMatch(/btnSkip/);
-    expect(body).toMatch(/btnRideStart/);
+    // ride start は単一窓口 setRideStartEnabled に集約 (= btnRideStart.disabled + hint 同期).
+    expect(body).toMatch(/setRideStartEnabled/);
     expect(body).toMatch(/\.disabled\s*=/);
   });
 
@@ -219,7 +220,7 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
   it('connect_status の connected branch で pair 完了 + terrainReady === true なら btnRideStart enable', () => {
     // 「state === 'connected'」 branch 内に _pairConnected = true と terrainReady の check が並ぶ
     expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,800}_pairConnected\s*=\s*true/);
-    expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,800}terrainReady[\s\S]{0,200}\.disabled\s*=\s*false/);
+    expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,800}setRideStartEnabled\(\s*terrainReady\s*\)/);
   });
 
   it('startTerrainProbe 関数が定義され、 起動時 1 回呼ばれる', () => {
