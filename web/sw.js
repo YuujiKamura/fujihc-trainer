@@ -9,14 +9,14 @@
 // scope は SW を register した path の階層、 起動 origin 配下全部を覆う想定。
 // 強制更新は version bump (= CACHE_NAME の suffix を変える) で旧 cache を消す。
 
-const CACHE_NAME = 'fujihill-v1';
+const CACHE_NAME = 'fujihill-v2';
 
 // install 時に一括取得する static 資産。 dynamic な tile / pmtiles は事前リスト不可、
 // fetch handler 側で cache-on-demand する (= 走った tile から順に永続化)。
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './viewer-maplibre.js?v=30',
+  './viewer-maplibre.js?v=31',
   './course.json',
   './static/course.json',
   './static/map.pmtiles',
