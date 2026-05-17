@@ -57,7 +57,7 @@ def test_fetch_gsi_async_progress_cb_called_n_zero_to_total(empty_db):
     with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1,
-            rate_limit_sec=0.0, progress_cb=cb,
+            rate_limit_sec=0.0, progress_cb=cb, bbox=None,
         ))
 
     assert result['fetched'] >= 1
@@ -96,6 +96,7 @@ def test_fetch_gsi_async_skips_existing_rows(empty_db):
     with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
+            bbox=None,
         ))
     assert result['skipped'] >= 1
     assert result['skipped'] + result['fetched'] >= result['total']
@@ -109,6 +110,7 @@ def test_fetch_gsi_async_404_recorded_as_row(empty_db):
     with patch('fujihill.dbinit.urllib.request.urlopen', side_effect=err):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
+            bbox=None,
         ))
     assert result['fetched'] == 0  # 200 は 0
     with sqlite3.connect(empty_db) as db:
@@ -130,6 +132,7 @@ def test_fetch_gsi_async_writes_metadata(empty_db):
     with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
         _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
+            bbox=None,
         ))
     with sqlite3.connect(empty_db) as db:
         rows = dict(db.execute(
@@ -155,9 +158,52 @@ def test_fetch_gsi_async_accepts_async_progress_cb(empty_db):
     with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
         _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
-            progress_cb=acb,
+            progress_cb=acb, bbox=None,
         ))
     assert len(calls) >= 2  # initial + done
+
+
+def test_fetch_gsi_async_default_bbox_covers_fuji_summit(empty_db):
+    """default (bbox=FUJI_TERRAIN_BBOX) は course corridor を超え、
+    富士山頂を含むタイルまで fetch する (= 地形メッシュに富士山本体が乗る)."""
+    from fujihill.tile_constants import FUJI_TERRAIN_BBOX
+    from fujihill.tile_coverage import (
+        enumerate_bbox_tiles,
+        enumerate_coverage_tiles,
+    )
+
+    class _CM:
+        def __enter__(self):
+            return io.BytesIO(b'\x89PNG' + b'\x00' * 50)
+
+        def __exit__(self, *a):
+            return False
+
+    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+        result = _run(dbinit.fetch_gsi_async(
+            empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
+        ))
+
+    # 富士山頂 (35.3606N, 138.7274E) を含む z=14 タイルを退化 bbox で 1 枚算出.
+    summit_tiles = enumerate_bbox_tiles((138.7274, 35.3606, 138.7274, 35.3606), 14)
+    assert len(summit_tiles) == 1
+    summit = next(iter(summit_tiles))
+
+    # 旧来 (corridor 単独) ではこの山頂タイルは取れていなかった ── 本 test の前提.
+    corridor = enumerate_coverage_tiles(COURSE, [14], 1)
+    assert summit not in corridor, 'precondition: 山頂タイルは corridor 外のはず'
+
+    # default fetch では DB に富士山頂タイルが入っている.
+    with sqlite3.connect(empty_db) as db:
+        rows = set(db.execute(
+            'SELECT zoom_level, tile_column, tile_row FROM tiles WHERE source=?',
+            ('gsi_dem',),
+        ).fetchall())
+    assert summit in rows, '富士山頂タイルが DB に無い (= 地形が富士山を覆っていない)'
+
+    # total は bbox ∪ corridor と一致 (= fetch 範囲が和集合になっている).
+    expected = enumerate_bbox_tiles(FUJI_TERRAIN_BBOX, 14) | corridor
+    assert result['total'] == len(expected)
 
 
 # ---------- extract_osm_async ----------

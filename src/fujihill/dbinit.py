@@ -23,6 +23,7 @@ from typing import Awaitable, Callable, Optional
 
 from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
+    FUJI_TERRAIN_BBOX,
     GSI_DEM_ZOOMS,
     GSI_RATE_LIMIT_SEC,
     MINIMAP_BBOX,
@@ -120,6 +121,7 @@ async def fetch_gsi_async(
     rate_limit_sec: float = GSI_RATE_LIMIT_SEC,
     user_agent: str = DEFAULT_USER_AGENT,
     progress_cb: ProgressCb = None,
+    bbox=FUJI_TERRAIN_BBOX,
 ) -> dict:
     """GSI 標高タイルを async でレート制限 DL してローカル DB に格納.
 
@@ -132,12 +134,22 @@ async def fetch_gsi_async(
         user_agent: GSI に送る UA.
         progress_cb: 1 タイル fetch ごとに { source, n, total, phase } を渡す.
                      phase は 'fetching' (= 進行中) / 'done' (= 完了 1 回のみ).
+        bbox: 地形メッシュ用に追加で覆う (lon_min, lat_min, lon_max, lat_max).
+              default は FUJI_TERRAIN_BBOX (= 富士山の外周まで). None を渡すと
+              course corridor のみ (= 旧来の細い帯、 corridor 限定 test 用).
+
+    Fetch 対象タイルは course corridor と bbox の和集合. corridor 単独では
+    富士スバルライン沿いの細い帯しか取れず、 viewer (terrain3d.html) が要求する
+    富士山本体のタイルが DB に無く 404 欠け / GSI 都度 fetch になっていた.
 
     Returns:
         { fetched: int, skipped: int, errors: int, total: int }
     """
     db_path = Path(db_path)
-    tiles = sorted(enumerate_coverage_tiles(course, [zoom], corridor_tiles))
+    coverage = enumerate_coverage_tiles(course, [zoom], corridor_tiles)
+    if bbox is not None:
+        coverage |= enumerate_bbox_tiles(bbox, zoom)
+    tiles = sorted(coverage)
     existing = await asyncio.to_thread(_existing_tiles_sync, db_path, 'gsi_dem')
     to_fetch = [t for t in tiles if t not in existing]
     total = len(tiles)

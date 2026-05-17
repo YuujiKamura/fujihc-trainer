@@ -64,9 +64,15 @@ def test_empty_db_returns_empty_overall(empty_db, course_path):
     assert body['sources']['gsi_dem']['tiles_present'] == 0
     assert body['sources']['osm']['status'] == 'empty'
     assert body['sources']['osm']['tiles_present'] == 0
-    # expected は course / zoom / corridor 由来の決定値
-    expected_gsi = len(enumerate_coverage_tiles(
-        COURSE_FIXTURE, GSI_DEM_ZOOMS, DEFAULT_CORRIDOR_TILES))
+    # expected は course / zoom / corridor 由来の決定値.
+    # gsi_dem は地形メッシュ用に corridor ∪ FUJI_TERRAIN_BBOX で覆う.
+    from fujihill.tile_constants import FUJI_TERRAIN_BBOX
+    from fujihill.tile_coverage import enumerate_bbox_tiles
+    expected_gsi_set = enumerate_coverage_tiles(
+        COURSE_FIXTURE, GSI_DEM_ZOOMS, DEFAULT_CORRIDOR_TILES)
+    for z in GSI_DEM_ZOOMS:
+        expected_gsi_set |= enumerate_bbox_tiles(FUJI_TERRAIN_BBOX, z)
+    expected_gsi = len(expected_gsi_set)
     expected_osm = len(enumerate_coverage_tiles(
         COURSE_FIXTURE, OSM_VECTOR_ZOOMS, DEFAULT_CORRIDOR_TILES))
     assert body['sources']['gsi_dem']['tiles_expected'] == expected_gsi
@@ -99,11 +105,19 @@ def test_partial_gsi_only_returns_partial(empty_db, course_path):
 
 def test_all_ready_returns_ready_overall(empty_db, course_path):
     """3 source の expected 数だけ insert すると overall=ready (= brief 30 で osm_raster 追加)."""
-    from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihill.tile_constants import (
+        FUJI_TERRAIN_BBOX, MINIMAP_BBOX, MINIMAP_OSM_ZOOM,
+    )
     from fujihill.tile_coverage import enumerate_bbox_tiles
-    for src, zooms in (('gsi_dem', GSI_DEM_ZOOMS), ('osm', OSM_VECTOR_ZOOMS)):
-        for z, x, y in sorted(enumerate_coverage_tiles(
-                COURSE_FIXTURE, zooms, DEFAULT_CORRIDOR_TILES)):
+    # gsi_dem は corridor ∪ FUJI_TERRAIN_BBOX、 osm は corridor のみ.
+    gsi_set = enumerate_coverage_tiles(
+        COURSE_FIXTURE, GSI_DEM_ZOOMS, DEFAULT_CORRIDOR_TILES)
+    for z in GSI_DEM_ZOOMS:
+        gsi_set |= enumerate_bbox_tiles(FUJI_TERRAIN_BBOX, z)
+    osm_set = enumerate_coverage_tiles(
+        COURSE_FIXTURE, OSM_VECTOR_ZOOMS, DEFAULT_CORRIDOR_TILES)
+    for src, tile_set in (('gsi_dem', gsi_set), ('osm', osm_set)):
+        for z, x, y in sorted(tile_set):
             _insert_tile(empty_db, src, z, x, y, status=200, data=b'\x01')
     # brief 30: osm_raster の expected 数だけ insert
     for z, x, y in sorted(enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM)):

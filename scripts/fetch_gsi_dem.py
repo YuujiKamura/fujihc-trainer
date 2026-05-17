@@ -21,11 +21,12 @@ from pathlib import Path
 from fujihill import dbinit
 from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
+    FUJI_TERRAIN_BBOX,
     GSI_DEM_ZOOMS,
     GSI_RATE_LIMIT_SEC,
     TILE_FETCH_WARN_THRESHOLD,
 )
-from fujihill.tile_coverage import enumerate_coverage_tiles
+from fujihill.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 # 後方互換: 既存 test (= test_fetch_gsi_dem.py) が参照する公開 API.
 # 中核 fetch / insert は dbinit に移動済だが、 旧 import path を維持する.
@@ -80,7 +81,12 @@ def main():
     args = parser.parse_args()
 
     course = json.loads(Path(args.course).read_text(encoding='utf-8'))
-    tiles = sorted(enumerate_coverage_tiles(course, [args.zoom], args.corridor_tiles))
+    # fetch_gsi_async と同じ和集合 (course corridor ∪ FUJI_TERRAIN_BBOX) で
+    # 事前カウント. corridor だけ数えると confirm_or_abort / 表示が実 fetch 数を
+    # 大幅に過小評価する.
+    coverage = enumerate_coverage_tiles(course, [args.zoom], args.corridor_tiles)
+    coverage |= enumerate_bbox_tiles(FUJI_TERRAIN_BBOX, args.zoom)
+    tiles = sorted(coverage)
 
     db_check = sqlite3.connect(args.db)
     existing = set(

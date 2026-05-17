@@ -16,6 +16,21 @@ DEFAULT_BUFFER_M = 1000  # 1 km
 # zoom 範囲 (brief 15/16 で source 別に override 可)
 GSI_DEM_ZOOMS = [14]  # 標高は 14 で十分 (= MapLibre terrain 要求最大)
 
+# 3D 地形メッシュ (web/terrain3d.html) が覆う bbox.
+# (lon_min, lat_min, lon_max, lat_max).
+#
+# 旧来 DEM fetch は course corridor (= 富士スバルライン沿い ±1 タイルの細い帯)
+# しか取らず、 富士山本体 (山頂・裾野) が地形メッシュの外にあった ── コースの
+# 道だけが宙に浮き、 肝心の富士山が見えない状態だった.
+# この bbox は富士山頂 (35.3606N / 138.7274E) を中心に半径 ~15km をとり、
+# 富士山の外周 (= 裾野) と course (lat 35.37-35.45 / lon 138.69-138.76) を内包する.
+# z=14 で概ね 16x15 ≈ 240 タイル (= 個人用 1-shot、 GSI 大量アクセス自粛の範囲内).
+#
+# 注意: web/terrain3d.html の FUJI_TERRAIN_BBOX と同値で持つ (= Python fetch と
+# JS viewer が同じタイル range を要求する). 片方だけ変えると DB cache と viewer
+# 要求がずれて 404 欠けが出る ── 変更時は両方そろえること.
+FUJI_TERRAIN_BBOX = (138.562, 35.226, 138.893, 35.495)
+
 # OSM は zoom 13/14/15 の 3 段持つ (2026-05-15 再改).
 # 理由: viewer は minzoom=13/maxzoom=15 で OSM source を declare、 ride 開始前の
 # 俯瞰 (z=13 周辺) でも z=13 タイルが必要、 ride 視点 (z=23) は z=15 を overzoom 拡大.

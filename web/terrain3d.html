@@ -107,7 +107,7 @@
 <script type="module">
 import * as THREE from 'three';
 import {
-  courseBounds, tileRangeForBounds, decodeGsiHeightGrid,
+  tileRangeForBounds, decodeGsiHeightGrid,
   stitchHeightGrid, buildTerrainGeometry, buildCoursePath, buildCourseRibbon,
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
@@ -117,11 +117,15 @@ import { riderStartPlacement } from './lib/rider_placement.js';
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
 const DEM_ZOOM = 14;
-// コース外接矩形に足す余白 (m)。 基礎ページは起伏が見えれば十分なので 500m。
-const BOUNDS_BUFFER_M = 500;
-// 取得タイル数の上限。 z=14 でコース bbox (約 8.8km × 6.2km + 余白) は概ね 5×9≒45 枚、
-// 余裕を見て 120 を上限とし、 超えたら地形を組まずエラー表示 (= 規約配慮の物理 gate)。
-const MAX_TILES = 120;
+// 地形メッシュが覆う bbox [W, S, E, N] (度)。 富士山頂中心 ~15km 角で、
+// 富士山の外周 (= 裾野) と course を内包する。 旧来は courseBounds(course, 500m)
+// = スバルライン沿いの細い帯しか覆わず、 肝心の富士山が地形メッシュ外だった。
+// src/fujihill/tile_constants.py の FUJI_TERRAIN_BBOX と同値 (= Python fetch と
+// JS viewer が同じタイル range を要求する。 片方だけ変えると 404 欠けが出る)。
+const FUJI_TERRAIN_BBOX = [138.562, 35.226, 138.893, 35.495];
+// 取得タイル数の上限。 z=14 で FUJI_TERRAIN_BBOX は概ね 16×15≒240 枚、
+// 余裕を見て 300 を上限とし、 超えたら地形を組まずエラー表示 (= 規約配慮の物理 gate)。
+const MAX_TILES = 300;
 // GSI への同時接続数 (= 大量アクセス自粛への配慮、 1 画面 1 回のみ取得)。
 const GSI_FETCH_LIMIT = 6;
 const TILE_PX = 256;
@@ -416,7 +420,8 @@ async function main() {
   if (!Array.isArray(course) || course.length === 0) {
     throw new Error('course.json が空です');
   }
-  const bounds = courseBounds(course, BOUNDS_BUFFER_M);
+  // 地形は富士山の外周まで覆う固定 bbox を使う (= course 沿いの細い帯ではなく)。
+  const bounds = FUJI_TERRAIN_BBOX;
   const range = tileRangeForBounds(bounds, DEM_ZOOM);
   if (range.count > MAX_TILES) {
     throw new Error(`DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
@@ -542,12 +547,15 @@ async function main() {
   bike.scale.setScalar(span * 0.011);
   bike.position.set(
     placement.position[0], placement.position[1], placement.position[2]);
-  // mesh は -Z 前方なので、 forward を見る lookAt で進行方向へ向く (forward.Y=0
-  // なので路面に対し水平のまま)。
-  bike.lookAt(
-    placement.position[0] + placement.forward[0],
-    placement.position[1] + placement.forward[1],
-    placement.position[2] + placement.forward[2]);
+  // bike mesh は -Z 前方。 Object3D.lookAt は camera 以外では +Z をターゲットへ
+  // 向ける (= 検証済) ため、 旧 lookAt(position+forward) では前方 (-Z) が forward の
+  // 逆 = 下り方向を向いてしまっていた。 model 前方ベクトル (0,0,-1) を forward へ
+  // 直接回す。 forward.Y=0 の単位ベクトルなので Y 軸まわりの回転のみ ── 路面に対し
+  // 水平を保つ。
+  bike.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(
+      placement.forward[0], placement.forward[1], placement.forward[2]));
   scene.add(bike);
 
   // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
@@ -580,7 +588,10 @@ async function main() {
     }
     camera.up.set(0, 1, 0);
     orbit.phi = Math.min(PHI_MAX, Math.max(PHI_MIN, orbit.phi));
-    orbit.radius = Math.min(span * 3.5, Math.max(span * 0.18, orbit.radius));
+    // 最大拡大 (= 最小 radius) は span*0.03。 span は地形全体 (= 富士山外周まで
+    // 含む広域) のため、 旧 span*0.18 ではコース・rider に寄れない (= 拡大キャップが
+    // 狭すぎる)。 地形が広がっても rider 周辺まで寄れるよう係数を小さく取る。
+    orbit.radius = Math.min(span * 3.5, Math.max(span * 0.03, orbit.radius));
     camera.position.set(
       target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
       target.y + orbit.radius * Math.cos(orbit.phi),

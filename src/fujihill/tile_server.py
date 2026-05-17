@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fujihill.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
+    FUJI_TERRAIN_BBOX,
     GSI_DEM_ZOOMS,
     MINIMAP_BBOX,
     MINIMAP_OSM_ZOOM,
@@ -179,10 +180,13 @@ def get_setup_status(db_path, course_path):
         return (503, None)
 
     # source 別 expected 数の計算スキーム:
-    # - gsi_dem / osm (vector): course 点列を corridor で覆う → enumerate_coverage_tiles.
+    # - gsi_dem: course corridor ∪ FUJI_TERRAIN_BBOX. fetch_gsi_async と同じ
+    #   和集合で数えないと、 地形メッシュ用に追加 fetch した bbox タイル分を
+    #   取りこぼし present > expected で常に ready 判定になってしまう.
+    # - osm (vector): course 点列を corridor で覆う → enumerate_coverage_tiles.
     # - osm_raster (minimap): bbox 直接列挙 → enumerate_bbox_tiles. brief 30.
     sources_spec = (
-        ('gsi_dem', ('coverage', GSI_DEM_ZOOMS)),
+        ('gsi_dem', ('coverage+bbox', GSI_DEM_ZOOMS)),
         ('osm', ('coverage', OSM_VECTOR_ZOOMS)),
         ('osm_raster', ('bbox', [MINIMAP_OSM_ZOOM])),
     )
@@ -194,6 +198,13 @@ def get_setup_status(db_path, course_path):
             expected_set: set = set()
             for z in zooms:
                 expected_set |= enumerate_bbox_tiles(MINIMAP_BBOX, z)
+            expected = len(expected_set)
+        elif mode == 'coverage+bbox':
+            # gsi_dem: corridor ∪ FUJI_TERRAIN_BBOX (= fetch_gsi_async と一致).
+            expected_set = set()
+            for z in zooms:
+                expected_set |= enumerate_bbox_tiles(FUJI_TERRAIN_BBOX, z)
+            expected_set |= enumerate_coverage_tiles(course, zooms, DEFAULT_CORRIDOR_TILES)
             expected = len(expected_set)
         else:
             expected = len(enumerate_coverage_tiles(course, zooms, DEFAULT_CORRIDOR_TILES))
