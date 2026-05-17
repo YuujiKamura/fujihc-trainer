@@ -82,10 +82,17 @@ function rgbToHex(rgb) {
   }).join('');
 }
 
+// 色を変える勾配の刻み (%)。 slope をこの幅で量子化してから GRADE_COLOR_STOPS の
+// 連続ランプをサンプルする。 0.5% ごとに 1 色 ── 同じ 0.5% 区間内は同色、 区間が
+// 変わると色が 1 段変わる。 完全連続だと隣接 segment がほぼ同色に溶けて勾配差が
+// 読み取りにくいため、 0.5% 刻みの段で勾配の変化をはっきり見せる。
+export const GRADE_STEP_PCT = 0.5;
+
 /**
- * 勾配 % を「連続的な」色に変換する (= classifyGrade の 6 段階離散 bin ではなく、
- * GRADE_COLOR_STOPS 間を RGB 線形補間)。 隣接 segment の slope 差が滑らかな色差として
- * 出て、 bin 境界 (例: 3.9% → 4.1%) でのガクッとした色段差が消える。
+ * 勾配 % を色に変換する (= classifyGrade の 6 段階離散 bin ではなく、
+ * GRADE_COLOR_STOPS の連続 RGB ランプを 0.5% 刻みでサンプルした色)。
+ * slope を GRADE_STEP_PCT (0.5%) に量子化してからランプを補間するので、
+ * 同じ 0.5% 区間は同色、 区間境界で色が 1 段変わる。
  *
  * null / undefined / NaN は flat (= 緑) 扱い。 最小 stop 以下は最初の色、
  * 最大 stop 以上は最後の色でクランプ。
@@ -96,6 +103,8 @@ function rgbToHex(rgb) {
 export function gradeColorContinuous(slope_pct) {
   let s = slope_pct;
   if (s === null || s === undefined || Number.isNaN(s)) s = 0;
+  // 0.5% 刻みに量子化 ── これで色が 0.5% ごとの段で変わる。
+  s = Math.round(s / GRADE_STEP_PCT) * GRADE_STEP_PCT;
   const stops = GRADE_COLOR_STOPS;
   if (s <= stops[0][0]) return rgbToHex(stops[0][1]);
   const last = stops[stops.length - 1];

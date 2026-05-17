@@ -258,6 +258,14 @@ describe('gradeColorContinuous (連続グレード色)', () => {
     expect(rgb(gradeColorContinuous(10))[1]).toBeGreaterThan(rgb(gradeColorContinuous(16))[1]);
   });
 
+  it('0.5% 刻みで色が段になる (= 同じ 0.5% 区間は同色、 区間が変わると別色)', () => {
+    // 量子化は最近傍 0.5%。 3.0 区間は [2.75, 3.25)、 3.5 区間は [3.25, 3.75)。
+    expect(gradeColorContinuous(3.0)).toBe(gradeColorContinuous(3.2));  // 同区間 → 同色
+    expect(gradeColorContinuous(3.0)).toBe(gradeColorContinuous(2.8));  // 同区間 → 同色
+    expect(gradeColorContinuous(3.0)).not.toBe(gradeColorContinuous(3.5));  // 別区間 → 別色
+    expect(gradeColorContinuous(3.4)).not.toBe(gradeColorContinuous(3.0));  // 3.4 は 3.5 区間
+  });
+
   it('富士ヒルの登坂域 (0〜10%) で色が多様 (= 隣接サンプルが互いに識別できる)', () => {
     // 0,2,4,6,8,10% を 2% 刻みでサンプルし、 どの隣接ペアも肉眼で区別できる色差を持つこと。
     // 旧 6 段階では 0〜10% が緑〜黄〜橙の狭い帯で隣接差が乏しかった ── 多色化の回帰 pin。
