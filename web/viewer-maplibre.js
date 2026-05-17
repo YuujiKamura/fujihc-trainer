@@ -59,9 +59,11 @@ import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sectio
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
 import { createTerrainLoader } from './lib/terrain_loader.js';
 
-// upsample 倍率. 4 で 256x256 -> 1024x1024 (= 1.5m grid 等価, VRAM 9 タイル × 4 MB).
-// 8 にすると VRAM 4 倍 (= 144 MB) で実用範囲、 ただし bilinear で新情報は出ないので過剰.
-const TERRAIN_UPSAMPLE_FACTOR = 4;
+// upsample 倍率. 2 で 256x256 -> 512x512。 bilinear upsample は元 DEM に無い情報を
+// 生まない (= ただの補間)、 4 は 1 タイル 4 MB RGBA を生んで VRAM / 転送帯域を浪費する。
+// 低 VRAM GPU (= RX 6400 等) では DEM テクスチャ転送が描画の支配項になるため 2 に下げる
+// (= VRAM は 4 の 1/4)。 2 でメッシュは十分滑らか、 視覚差は実質ゼロ。
+const TERRAIN_UPSAMPLE_FACTOR = 2;
 
 const status = (msg) => { document.getElementById('status').textContent = msg; };
 
