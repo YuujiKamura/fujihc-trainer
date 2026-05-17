@@ -80,6 +80,7 @@
   <div class="metric"><span>標高レンジ</span><b id="m-ele">—</b></div>
   <div class="metric"><span>範囲 (東西×南北)</span><b id="m-size">—</b></div>
   <div class="metric"><span>DEM タイル</span><b id="m-tiles">—</b></div>
+  <div class="metric"><span>DEM 取得元</span><b id="m-demsrc">—</b></div>
   <div class="hint">ドラッグで回転、 ホイールで拡大縮小。</div>
 </div>
 
@@ -126,7 +127,13 @@ const TILE_PX = 256;
 // stitch 後のグリッドを step 間引きしてこの程度に収める。
 const TARGET_GRID_DIM = 400;
 const GSI_BASE = 'https://cyberjapandata.gsi.go.jp/xyz';
-const GSI_DEM = `${GSI_BASE}/dem_png`;
+// DEM タイルの取得元。 bridge (= 既存 viewer の配信元) が同一オリジンで
+// /tiles/gsi_dem を配信していればそれを使い (= 既存のコースタイル DB を再利用、
+// GSI への外部アクセスなし)、 無ければ GSI online (dem_png) にフォールバックする。
+// bridge の /tiles/gsi_dem は GSI dem_png 形式そのまま (= viewer の gsidem:// と同じ)
+// なので decodeGsiHeightGrid がそのまま通る。
+const GSI_DEM_ONLINE = `${GSI_BASE}/dem_png`;
+const LOCAL_DEM_BASE = `${location.origin}/tiles/gsi_dem`;
 // 地形に貼る表示モード。 GSI の各タイル種を切り替える (= 標高メッシュは共通、 skin だけ差替)。
 //   photo  = 航空写真 (seamlessphoto)、 std = 標準地図、 relief = 色別標高図、
 //   hybrid = 航空写真 + 地図の道路/注記/等高線を白背景透過で重ねた合成。
@@ -228,9 +235,22 @@ async function buildModeTexture(mode, tileCoords, range) {
   return tex;
 }
 
+// DEM タイル取得元を解決する。 range 中央付近の z14 タイルを 1 枚 probe し、
+// 同一オリジンの local tile DB が応答すればそれを使う (= 既存コースタイルの再利用)。
+async function resolveDemBase(range) {
+  const cx = range.xMin + Math.floor(range.tilesX / 2);
+  const cy = range.yMin + Math.floor(range.tilesY / 2);
+  try {
+    const r = await fetch(`${LOCAL_DEM_BASE}/${DEM_ZOOM}/${cx}/${cy}.png`,
+      { cache: 'no-store' });
+    if (r && r.ok) return { base: LOCAL_DEM_BASE, local: true };
+  } catch (e) { /* local 無し → online へ */ }
+  return { base: GSI_DEM_ONLINE, local: false };
+}
+
 // DEM タイル 1 枚を decode して標高グリッド (Float32Array) を返す。 欠損は null。
-async function loadDemGrid(tx, ty) {
-  const img = await loadImage(`${GSI_DEM}/${DEM_ZOOM}/${tx}/${ty}.png`);
+async function loadDemGrid(demBase, tx, ty) {
+  const img = await loadImage(`${demBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
   if (!img) return null;
   const c = document.createElement('canvas');
   c.width = TILE_PX; c.height = TILE_PX;
@@ -270,13 +290,17 @@ async function main() {
     `${range.count} 枚 (${range.tilesX}×${range.tilesY}, z${DEM_ZOOM})`;
 
   // 2. DEM タイル群を取得・decode し、 範囲全体の標高グリッドへ連結。
+  //    取得元は local tile DB (= bridge 配信) 優先、 無ければ GSI online。
+  const demSrc = await resolveDemBase(range);
+  document.getElementById('m-demsrc').textContent =
+    demSrc.local ? 'ローカル DB (bridge)' : 'GSI online';
   const tileCoords = [];
   for (let ty = range.yMin; ty <= range.yMax; ty++) {
     for (let tx = range.xMin; tx <= range.xMax; tx++) tileCoords.push({ tx, ty });
   }
   let demDone = 0;
   const demGrids = await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    const g = await loadDemGrid(tx, ty);
+    const g = await loadDemGrid(demSrc.base, tx, ty);
     return { tx, ty, grid: g };
   }, () => status(`DEM タイル取得中… ${++demDone}/${tileCoords.length}`));
 
