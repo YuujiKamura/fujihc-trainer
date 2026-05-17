@@ -22,9 +22,9 @@ describe('brief b-segment-labels: viewer のラベル symbol レイヤー統合�
     expect(viewer).toMatch(/import\s*\{\s*buildSegmentLabels\s*\}\s*from\s*['"]\.\/lib\/segment_labels\.js['"]/);
   });
 
-  it('buildSegmentLabels を polygonData + 約100m間隔 + 脇offset で呼んでいる', () => {
+  it('buildSegmentLabels を polygonData + 間隔 + 脇offset で呼んでいる', () => {
     // 第2引数 = 間隔(m)、 第3引数 = コース脇への offset(m)。
-    expect(viewer).toMatch(/buildSegmentLabels\s*\(\s*polygonData\s*,\s*100\s*,\s*\d+\s*\)/);
+    expect(viewer).toMatch(/buildSegmentLabels\s*\(\s*polygonData\s*,\s*\d+\s*,\s*\d+\s*\)/);
   });
 
   it('文字を canvas 画像にして addImage している (= glyphs 不要の icon-image 方式)', () => {

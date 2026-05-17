@@ -15,6 +15,10 @@
 const RING_COLOR = '#00ffff';
 const FLOAT_M = 0.15;        // 地面からの浮き (m) ── 路面 polygon との z-fighting 回避 + 視認性
 const RING_THICK_M = 0.08;   // リング / 三角の厚み (m) ── ほぼ平面
+// rider マーカーの大きさ倍率。 路面 (幅 5m) に対して埋もれず見えるよう拡大。
+const RIDER_SCALE = 1.8;
+const RING_OUTER_M = 1.20 * RIDER_SCALE;  // リング外円の半径 (m)
+const RING_INNER_M = 1.02 * RIDER_SCALE;  // リング内円の半径 (m)
 
 /**
  * rider 中心の局所平面座標 (メートル, +y = 進行方向) を [lng, lat] に変換する関数を返す.
@@ -64,10 +68,10 @@ function circlePts(cx, cy, r, n = 36) {
 export function buildRiderFeatures(lat, lon, heading /* , spin */) {
   const proj = makeProjector(lat, lon, heading);
 
-  // リング: 外円 1.20m / 内円 1.02m ── 幅 0.18m の細い輪。 外円 + 内円の穴を持つ
+  // リング: 外円 RING_OUTER_M / 内円 RING_INNER_M の細い輪。 外円 + 内円の穴を持つ
   // annulus polygon (= 2 リング目が穴、 fill で輪になる)。 地面から少し浮かせる。
-  const outer = circlePts(0, 0, 1.20);
-  const inner = circlePts(0, 0, 1.02);
+  const outer = circlePts(0, 0, RING_OUTER_M);
+  const inner = circlePts(0, 0, RING_INNER_M);
   const ringFeature = {
     type: 'Feature',
     properties: { color: RING_COLOR, base: FLOAT_M, height: FLOAT_M + RING_THICK_M },
@@ -80,11 +84,12 @@ export function buildRiderFeatures(lat, lon, heading /* , spin */) {
     },
   };
 
-  // 進行方向の三角形: 頂点が +y (= heading 方向)、 底辺が後方。 内円 (1.02m) いっぱいまで
+  // 進行方向の三角形: 頂点が +y (= heading 方向)、 底辺が後方。 内円いっぱいまで
   // 広げた大きい三角形でリングの中をほぼ埋める。 リングと同じだけ地面から浮かせる。
+  // 基準形 [[0,1.0],[-0.82,-0.52],[0.82,-0.52]] を RIDER_SCALE 倍する。
   const triangle = polyFeature(
     proj,
-    [[0, 1.0], [-0.82, -0.52], [0.82, -0.52]],
+    [[0, 1.0 * RIDER_SCALE], [-0.82 * RIDER_SCALE, -0.52 * RIDER_SCALE], [0.82 * RIDER_SCALE, -0.52 * RIDER_SCALE]],
     RING_COLOR, FLOAT_M, FLOAT_M + RING_THICK_M,
   );
 
