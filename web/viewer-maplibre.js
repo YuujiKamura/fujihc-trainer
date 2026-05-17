@@ -17,6 +17,11 @@ import {
   riderFrameChanged, parseTileCoord, terrainTileKey, terrainCacheKind,
   createTextWriter, minimapDirty,
 } from './lib/frame_diff.js';
+// Path B Phase 0: ライド HUD の表示更新を hud.js に集約 (= MapLibre/Three.js 非依存)。
+import {
+  createHud, formatPower, formatCadence, formatHr, formatAck,
+  ACK_OK_COLOR, ACK_NG_COLOR,
+} from './lib/hud.js';
 // brief 19b: WebSocket / ride state / camera を lib に集約
 import { createBridgeClient, createTestModeClient, createFakeStateGenerator } from './lib/ws_client.js';
 import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
@@ -31,6 +36,7 @@ import { createRider } from './lib/rider.js';
 import { integratePhysics } from './lib/bike_physics.js';
 import { buildRiderFeatures } from './lib/rider_styles.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
+import { computeTravelHeading } from './lib/heading.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
 import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
@@ -749,7 +755,13 @@ function setTerrainStatusUI(snap) {
 
 // brief b2 High-4: 値が変わらないフレームは textContent 代入を skip し layout
 // 無効化の連鎖を減らす。 判定ロジックは frame_diff.createTextWriter に切出し済。
+// HUD 以外 (BLE 状態 / ペアリングパネル / スライダー値 / debug-hud) 用。
 const setText = createTextWriter((id) => document.getElementById(id));
+
+// Path B Phase 0: ライド HUD (時間/距離/標高/勾配/速度/パワー/ケイデンス/心拍/応答)
+// の表示更新は hud.js に集約。 HUD の要素 id は専ら hud 経由で書く (= 上の setText と
+// writer を分けることで「変化時だけ書く」 skip 判定が id ごとに 1 本化する)。
+const hud = createHud((id) => document.getElementById(id));
 
 // === WebSocket === (既存 viewer.js と同じ contract)
 const WS_URL = 'ws://localhost:8765';
@@ -840,28 +852,27 @@ const wsHandlers = {
         rider.setSpeed(physicsSpeedMps);
       }
     }
-    const pw = (msg.power_w != null) ? String(msg.power_w) : '--';
-    const cd = (msg.cadence_rpm != null) ? msg.cadence_rpm.toFixed(0) : '--';
+    // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
+    // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
+    const pw = formatPower(msg.power_w);
+    const cd = formatCadence(msg.cadence_rpm);
+    const hr = formatHr(msg.hr_bpm);
     if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
     if (typeof msg.power_w === 'number') currentPower = msg.power_w;
     if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
     if (rider) rider.setSensors({ power: currentPower, cad: currentCadence, hr: currentHr });
     const sp = (msg.speed_mps != null && msg.speed_mps >= 0) ? (msg.speed_mps * 3.6).toFixed(1) : '--';
-    setText('power', pw); setText('cadence', cd);
-    // rider 追随 HUD (= 豆腐の下) にも同値を反映、 大きめ text で表示.
-    setText('r-power', pw); setText('r-cadence', cd); setText('r-hr', (msg.hr_bpm != null) ? String(msg.hr_bpm) : '--');
-    setText('r-speed', (msg.speed_mps != null && msg.speed_mps >= 0) ? `${(msg.speed_mps * 3.6).toFixed(1)} km/h` : '--');
-    setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp);
+    // HUD (#power/#cadence/#hr + #rider-hud の r-power/r-cadence/r-hr/r-speed)。
+    hud.trainer({ powerW: msg.power_w, cadenceRpm: msg.cadence_rpm, hrBpm: msg.hr_bpm, speedMps: msg.speed_mps });
+    // ペアリングパネル p-* は本石の対象外、 viewer 側で従来通り更新。
+    setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp); setText('p-hr', hr);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));
     if (msg.last_ack) {
-      const ok = msg.last_ack.includes('OK');
-      const text = `${ok ? '✓' : '✗'} ${msg.last_ack}`;
-      const color = ok ? '#7fff00' : '#ff5050';
-      const ackEl = document.getElementById('ack'); if (ackEl) { ackEl.textContent = text; ackEl.style.color = color; }
-      const pAck = document.getElementById('p-ack'); if (pAck) { pAck.textContent = text; pAck.style.color = color; }
+      hud.ack(msg.last_ack);  // #ack (= HUD)
+      const a = formatAck(msg.last_ack);  // p-ack も同じ整形 SoT で
+      const pAck = document.getElementById('p-ack');
+      if (pAck) { pAck.textContent = a.text; pAck.style.color = a.ok ? ACK_OK_COLOR : ACK_NG_COLOR; }
     }
-    const hr = (msg.hr_bpm != null) ? String(msg.hr_bpm) : '--';
-    setText('hr', hr); setText('p-hr', hr);
   },
   scan_status(msg) {
     if (msg.state === 'scanning') { setText('setup-status', 'BLE スキャン中... (7 秒)'); updateStepIndicator(0, -1); }
@@ -1929,7 +1940,7 @@ async function loadCourse() {
     if (!rideState.snapshot().active) rideState.start();
   }
   totalDist = course[course.length - 1].distance_m;
-  setText('total', totalDist.toFixed(0));
+  hud.total(totalDist);
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
 
   // brief 24 + 25: 各 segment を 5m 幅の polygon に展開、 勾配グレード別色分け.
@@ -1990,24 +2001,17 @@ async function loadCourse() {
       paint: { 'line-color': '#222', 'line-width': 0.5, 'line-opacity': 0.6 },
     });
 
-    // brief b-segment-labels: 勾配色セグメント上に距離+勾配のテキストラベルを載せる。
-    // MapLibre symbol レイヤーは style に glyphs URL が必須だが本プロジェクトに glyphs
-    // 配信 infra が無いため、 start/goal pin と同じ DOM の maplibregl.Marker で描く。
-    // buildSegmentLabels が 500m 間隔に間引いた点列 (≈ 48 個) を返す。 route polygon と
-    // 同じく「1 回だけ」生成 (= zoom 連動再生成は brief b2 で撤去済の GPU stall 要因)。
-    // brief b-segment-labels / b9: コースに沿って「距離+勾配」の標識を約 100m 間隔で
-    // 並べる。 buildSegmentLabels が約 100m 間隔のラベル点列 (≈ 240 個) を、 各点を
-    // コース路面の脇 (= 進行方向の右 20m) に逃がした位置で返す。 脇に置くので文字が
-    // 勾配色を一切隠さない。 各文字列を canvas 画像にして addImage、 point feature の
-    // icon-image にする。
+    // brief b-segment-labels / b9: コースに沿って「距離+勾配」の標識を約 50m 間隔で
+    // 並べる。 buildSegmentLabels が約 50m 間隔のラベル点列を、 各点をコース路面の
+    // すぐ脇 (= 進行方向の右 6m) に逃がした位置で返す。 脇に置くので文字が勾配色を
+    // 隠さない。 各文字列を canvas 画像にして addImage、 point feature の icon-image にする。
     //
     // 向き: billboard (icon-rotation/pitch-alignment=viewport)。 文字は常にカメラ正面を
     // 向いて立つ。 走行 camera は pitch 85° まで寝るため、 地面に寝かせた文字は地平に
     // 圧縮されて完全に見えなくなる (実画面で検証済)。 billboard なら pitch 85° でも
-    // 文字が潰れず大きく読め、 曲がりくねった道でも向きが安定する。 標識はコース路面の
-    // 脇 (= 進行方向の右 20m) に置くので勾配色を一切隠さない。 icon-anchor=left +
+    // 文字が潰れず大きく読め、 曲がりくねった道でも向きが安定する。 icon-anchor=left +
     // 文字左揃えで、 各標識がコース側の左端から揃って外へ伸びる。
-    const segLabels = buildSegmentLabels(polygonData, 100, 20);
+    const segLabels = buildSegmentLabels(polygonData, 50, 6);
     const segLabelFeatures = [];
     segLabels.forEach((lbl, i) => {
       const imageId = `seg-label-${i}`;
@@ -2450,8 +2454,12 @@ function tick(t) {
   const courseBearing = cam.bearing + bearingDiff * pos.fracInSegment;
   // user 横ドラッグ分を camera の旋回 offset として加算 (= rider 進行方向には足し込まない).
   const smoothBearing = (courseBearing + userBearingOffset + 360) % 360;
-  // 豆腐 (= rider polygon) の向きは進行方向で固定、 camera だけが offset を反映.
+  // camera 用 heading は lookAhead=5 先を見た滑らかな courseBearing。 minimap の矢印も同じ。
   const riderHeadingRad = (courseBearing + 360) % 360 * Math.PI / 180;
+  // rider マーカー (= リング+三角) は今いる道路タイルそのものに重なる。 lookAhead=5 の
+  // courseBearing だとカーブでタイルの向きとずれるため、 マーカーはタイルと同じ
+  // 「curIdx → curIdx+1 の局所セグメント方位」 で向ける (= マーカーがタイルに平行)。
+  const riderTileHeadingRad = computeTravelHeading(course, curIdx, 1) * Math.PI / 180;
 
   // rider 立体を rider 位置 + 進行方向 + スピン角で更新. spinAngle は rider.tick 内で
   // cadence rpm に応じて自動進行済 (= rider.spinAngle で取り出す、 viewer 側の累積管理 不要).
@@ -2460,9 +2468,9 @@ function tick(t) {
   // スピンが前フレームから動いた時だけ実行し、 停止中は丸ごと skip する。
   const ridSrc = map.getSource && map.getSource('rider');
   if (ridSrc) {
-    const riderFrame = { lat: rLat, lon: rLon, heading: riderHeadingRad, spin: snap.spinAngle };
+    const riderFrame = { lat: rLat, lon: rLon, heading: riderTileHeadingRad, spin: snap.spinAngle };
     if (riderFrameChanged(_lastRiderFrame, riderFrame)) {
-      ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, snap.spinAngle));
+      ridSrc.setData(buildRiderFeatures(rLat, rLon, riderTileHeadingRad, snap.spinAngle));
       _lastRiderFrame = riderFrame;
     }
   }
@@ -2475,13 +2483,12 @@ function tick(t) {
     map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
-  if (rideStartedAt !== null) {
-    const sec = Math.floor((performance.now() - rideStartedAt) / 1000);
-    setText('elapsed', `${String(Math.floor(sec/3600)).padStart(2,'0')}:${String(Math.floor((sec%3600)/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`);
-  } else setText('elapsed', '00:00:00');
-
-  setText('dist', curDist.toFixed(0));
-  setText('ele', rEle.toFixed(0));
+  // ライド HUD (時間/距離/標高/勾配) は hud に集約。 ride 未開始は elapsedSec=null
+  // → "00:00:00"。 rider 追随 HUD の slope は常時更新 (= Terrain 経由で取得)。
+  const elapsedSec = rideStartedAt !== null
+    ? Math.floor((performance.now() - rideStartedAt) / 1000)
+    : null;
+  hud.ride({ elapsedSec, dist: curDist, ele: rEle, slope: pos.slope_pct });
 
   // b9: 距離ラベルの表示窓を rider 現在地に追従させる。 50m 刻みの bucket が
   // 変わった時だけ setFilter (= 毎フレーム呼ばない、 軽量)。
@@ -2491,18 +2498,13 @@ function tick(t) {
     _riderDistForLabels = curDist;
     updateSegmentLabelFilter();
   }
-  // rider 追随 HUD の slope は常時更新 (= state push に依存せず Terrain 経由で取得).
-  setText('r-slope', pos.slope_pct.toFixed(1));
-  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project、
-  // body class が state-riding の時のみ表示。
-  const riderHud = document.getElementById('rider-hud');
-  if (riderHud && document.body.classList.contains('state-riding')) {
+  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project し、
+  // 画面座標を hud に渡す (= hud は座標系を知らない)。 state-riding の時だけ表示。
+  if (document.body.classList.contains('state-riding')) {
     const pt = map.project([rLon, rLat]);
-    riderHud.style.display = 'block';
-    riderHud.style.left = `${pt.x}px`;
-    riderHud.style.top = `${pt.y + 30}px`;  // 豆腐の下 30px (= polygon height + 余白)
-  } else if (riderHud) {
-    riderHud.style.display = 'none';
+    hud.riderHudAt(pt.x, pt.y + 30, true);  // 豆腐の下 30px (= polygon height + 余白)
+  } else {
+    hud.riderHudAt(0, 0, false);
   }
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   setText('cam-zoom', map.getZoom().toFixed(2));
@@ -2582,7 +2584,7 @@ function tick(t) {
   updateMinimap(curDist, rEle, rLat, rLon, riderHeadingRad);
   const dispKmh = snap.speed * speedMult * 3.6;
   const connected = !!(client && client.isOpen());
-  setText('speed', snap.paused ? (connected ? '待機中' : 'paused') : `${dispKmh.toFixed(1)} km/h${connected ? ' (bridge)' : ' (demo)'}`);
+  hud.speed(dispKmh, { paused: snap.paused, connected });
 
   if (!snap.paused) maybeSendSlope(pos.slope_pct);
   if (snap.active && !snap.paused && connected) {
