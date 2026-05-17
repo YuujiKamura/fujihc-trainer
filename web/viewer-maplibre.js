@@ -282,8 +282,22 @@ function bootMap(env) {
     // タイルのクロスフェード短縮、 GPU 負荷軽減
     fadeDuration: 0,
   });
-  map.on('load', () => {
-    map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 });
+  // 2026-05-17 fix: loadCourse() / rider 初期化を map の 'load' イベントに結線していたが、
+  // vector / pmtiles source の初期化が致命的に失敗する (= Range request 非対応サーバ等で
+  // byte-serving が落ちる) と MapLibre は 'load' を永遠に発火しない。 その結果 loadCourse が
+  // 一度も呼ばれず、 rideState が生成されず、 「描画準備中...」 overlay が永久に残り
+  // HUD の total が "?" のまま固まる (= 実画面で確認された起動不全)。
+  // 修正: load handler の本体を onMapLoad() に括り出し、 'load' 発火と 8 秒 fallback の
+  // 両方から呼べるようにする。 _mapLoadHandled で多重実行を防止。 course 描画 / rideState
+  // 生成は地図 tile の成否に依存しないので、 tile が落ちても rider は出て走れる。
+  let _mapLoadHandled = false;
+  function onMapLoad() {
+    if (_mapLoadHandled) return;
+    _mapLoadHandled = true;
+    // setTerrain は style 読込後でないと throw する。 style 未完なら try-catch で握り潰し、
+    // 地形なしでも course / rider 描画は続行する (= fail-open)。
+    try { map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 }); }
+    catch (e) { console.warn('setTerrain skipped:', e && e.message); }
     status('map loaded');
     // 2026-05-15 fix: 「地形 data が出揃うまでデモ走行ボタンを押せないようにしろ」反映。
     // probe ok だけでは「最低限の起動」、 実 viewport の地図全 tile 描画完了は別。
@@ -317,9 +331,21 @@ function bootMap(env) {
     // CSS で `display:none` にされたら OSM ODbL / 国土地理院 規約違反、 warning を出す
     // (= block はせず flag のみ、 harm 主体は inject した訪問者本人).
     requestAnimationFrame(() => verifyAttributionVisible());
-  });
+  }
+  map.on('load', onMapLoad);
+  // fallback: 8 秒待っても 'load' が来なければ強制で onMapLoad を実行 (= source 初期化失敗で
+  // 'load' が永遠に発火しない MapLibre の挙動への安全弁)。 多重実行は _mapLoadHandled で防ぐ。
+  setTimeout(() => {
+    if (!_mapLoadHandled) {
+      console.warn('[fujihill] map load イベント 8 秒未発火、 fallback で起動続行');
+      onMapLoad();
+    }
+  }, 8000);
   map.on('error', (e) => {
-    console.warn('maplibre error:', e && e.error);
+    // e.error の中身まで出す (= '[object Object]' だけだとデバッグ不能)。
+    const err = e && e.error;
+    const detail = err && (err.message || err.url) ? (err.message || err.url) : (err ?? e);
+    console.warn('maplibre error:', detail);
   });
   return map;
 }

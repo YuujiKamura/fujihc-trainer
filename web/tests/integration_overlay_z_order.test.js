@@ -94,8 +94,43 @@ describe('brief 34 ε-6: 帰属表示 (= attribution control) の動的消失監
     expect(m[0]).toMatch(/getElementById\(['"]status['"]\)/);
   });
 
-  it('map.on("load") 直後に verifyAttributionVisible を呼ぶ (= 起動 1 回限定)', () => {
-    expect(VIEWER).toMatch(/map\.on\(['"]load['"][\s\S]{0,2000}verifyAttributionVisible\(\)/);
+  it('map load ハンドラ (onMapLoad) 内で verifyAttributionVisible を呼ぶ (= 起動 1 回限定)', () => {
+    // 2026-05-17: load handler 本体を onMapLoad() に括り出した (= 'load' 永遠未発火時の
+    // fallback から再利用するため)。 verifyAttributionVisible は onMapLoad 内で呼ばれ、
+    // onMapLoad は map.on('load') に結線される。 起動 1 回限定の意図は不変。
+    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/verifyAttributionVisible\(\)/);
+    expect(VIEWER).toMatch(/map\.on\(['"]load['"]\s*,\s*onMapLoad\)/);
+  });
+});
+
+describe('2026-05-17: loadCourse 起動が map "load" イベント単独依存でない (= 起動不全 regression)', () => {
+  // バグ: loadCourse() が map.on('load') ハンドラ内でしか呼ばれず、 vector/pmtiles source の
+  // 致命的初期化失敗 (= Range request 非対応サーバで byte-serving 失敗) で 'load' が永遠に
+  // 発火しないと loadCourse が一度も走らず、 rideState 未生成 → 「描画準備中...」 overlay が
+  // 永久に残る。 修正は load handler を onMapLoad() に括り出し fallback timeout から再実行。
+  it('onMapLoad は 多重実行ガード (_mapLoadHandled) を持つ', () => {
+    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/_mapLoadHandled/);
+  });
+
+  it("'load' 未発火に備えた fallback timeout から onMapLoad を呼ぶ", () => {
+    // setTimeout(...) 内で _mapLoadHandled を見て onMapLoad() を呼ぶ fallback が存在する。
+    expect(VIEWER).toMatch(/setTimeout\(\s*\(\)\s*=>\s*\{[\s\S]{0,400}!_mapLoadHandled[\s\S]{0,200}onMapLoad\(\)/);
+  });
+
+  it('onMapLoad 内で loadCourse を呼ぶ (= course/rideState 生成は load イベント成否に非依存)', () => {
+    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/loadCourse\(\)/);
+  });
+
+  it('maplibre error ログは e.error の中身 (message/url) を出す (= [object Object] にしない)', () => {
+    expect(VIEWER).toMatch(/maplibre error:/);
+    // e.error.message / e.error.url を拾う detail 抽出が存在する。
+    expect(VIEWER).toMatch(/err\.message\s*\|\|\s*err\.url/);
   });
 });
 
