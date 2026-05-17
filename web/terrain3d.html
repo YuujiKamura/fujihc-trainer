@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<!--
+  brief b7: 富士ヒルコースの地形を Three.js の本物の 3D メッシュとして表示する
+  スタンドアロンページ (= Path B viewer の基礎石)。
+
+  MapLibre は使わない。 DEM (= 国土地理院 GSI dem_png 標高タイル) から標高グリッドを組み、
+  BufferGeometry の頂点格子へ直接変位させる。 inertia-sim.html と同じ独立ページで、
+  本番 viewer (index.html / viewer-maplibre.js) には一切触れない。
+
+  データ経路の純関数は web/lib/terrain3d.js (= node test で pin 済)。 本ファイルは
+  fetch + Canvas decode + Three.js mesh 化という I/O / 描画層だけを担う。
+
+  地図タイルの取得について (= GSI 地理院タイル利用規約への配慮):
+   - DEM / 地図画像とも国土地理院の地理院タイルを使う。 出典は画面下部に明記する。
+   - 「大量アクセスの自粛」規約に配慮し、 ページを開いた 1 回だけ、 コース外接矩形を
+     覆う数十枚のみを取得する (= 通常の地図 1 画面表示と同等)。 同時接続は GSI_FETCH_LIMIT
+     で 6 本に絞り、 取得枚数は MAX_TILES で上限を設ける。 自動再取得・ループ取得はしない。
+   - 参照: 地理院タイル一覧・利用規約 https://maps.gsi.go.jp/development/ichiran.html
+           標高タイル (dem_png) 仕様   https://maps.gsi.go.jp/development/demtile.html
+
+  Three.js は inertia-sim.html と同じ vendored r160 (./lib/vendor/three.module.js)。
+   - BufferGeometry:       https://threejs.org/docs/#api/en/core/BufferGeometry
+   - computeVertexNormals: https://threejs.org/docs/#api/en/core/BufferGeometry.computeVertexNormals
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>地形 3D — 富士ヒルトレーナー (Path B 基礎)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden;
+               font-family: -apple-system, "Segoe UI", sans-serif; color: #e6edf3; }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; }
+
+  .panel { position: absolute; background: rgba(20,26,34,0.92); border: 1px solid #30363d;
+           border-radius: 8px; padding: 10px 13px; font-size: 12px; line-height: 1.5; }
+  #info { left: 12px; top: 12px; width: 260px; }
+  #info h2 { margin: 0 0 6px; font-size: 13px; color: #58a6ff; font-weight: 600; }
+  #info .metric { display: flex; justify-content: space-between; }
+  #info .metric span { color: #8b949e; }
+  #info b { font-variant-numeric: tabular-nums; }
+  #status { left: 12px; bottom: 12px; right: 12px; max-width: 540px; }
+  #status.err { border-color: #f85149; color: #ffa198; }
+  #attrib { right: 12px; bottom: 12px; font-size: 10.5px; color: #8b949e;
+            background: rgba(13,17,23,0.78); padding: 4px 8px; border-radius: 5px; }
+  #attrib a { color: #8b949e; }
+  .hint { color: #8b949e; font-size: 10.5px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+
+<div id="info" class="panel">
+  <h2>富士ヒルコース 地形</h2>
+  <div class="metric"><span>頂点数</span><b id="m-verts">—</b></div>
+  <div class="metric"><span>標高レンジ</span><b id="m-ele">—</b></div>
+  <div class="metric"><span>範囲 (東西×南北)</span><b id="m-size">—</b></div>
+  <div class="metric"><span>DEM タイル</span><b id="m-tiles">—</b></div>
+  <div class="hint">ドラッグで回転、 ホイールで拡大縮小。</div>
+</div>
+
+<div id="status" class="panel">起動中…</div>
+<div id="attrib">地形・地図画像: <a href="https://maps.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a></div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {
+  courseBounds, tileRangeForBounds, decodeGsiHeightGrid,
+  stitchHeightGrid, buildTerrainGeometry,
+} from './lib/terrain3d.js';
+
+// === 定数 ===
+// GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
+const DEM_ZOOM = 14;
+// コース外接矩形に足す余白 (m)。 基礎ページは起伏が見えれば十分なので 500m。
+const BOUNDS_BUFFER_M = 500;
+// 取得タイル数の上限。 z=14 でコース bbox (約 8.8km × 6.2km + 余白) は概ね 5×9≒45 枚、
+// 余裕を見て 120 を上限とし、 超えたら地形を組まずエラー表示 (= 規約配慮の物理 gate)。
+const MAX_TILES = 120;
+// GSI への同時接続数 (= 大量アクセス自粛への配慮、 1 画面 1 回のみ取得)。
+const GSI_FETCH_LIMIT = 6;
+const TILE_PX = 256;
+// メッシュ頂点格子の片辺の目標上限。 数枚×256px を 1:1 頂点化すると数百万頂点になるため、
+// stitch 後のグリッドを step 間引きしてこの程度に収める。
+const TARGET_GRID_DIM = 400;
+const GSI_DEM = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png';
+const GSI_PHOTO = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto';
+
+const statusEl = document.getElementById('status');
+function status(msg, isErr) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle('err', !!isErr);
+}
+
+// === 並列数を絞った map ===
+async function mapLimit(items, limit, fn, onEach) {
+  const out = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      out[i] = await fn(items[i], i);
+      if (onEach) onEach();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+// crossOrigin 付きで画像を読む。 失敗 (= 404 等) は null で解決 (= reject しない)。
+function loadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+// DEM タイル 1 枚を decode して標高グリッド (Float32Array) を返す。 欠損は null。
+async function loadDemGrid(tx, ty) {
+  const img = await loadImage(`${GSI_DEM}/${DEM_ZOOM}/${tx}/${ty}.png`);
+  if (!img) return null;
+  const c = document.createElement('canvas');
+  c.width = TILE_PX; c.height = TILE_PX;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, TILE_PX, TILE_PX);
+  const rgba = ctx.getImageData(0, 0, TILE_PX, TILE_PX).data;
+  return decodeGsiHeightGrid(rgba, TILE_PX, TILE_PX);
+}
+
+// === メイン ===
+async function main() {
+  // 1. course.json からコース bounding box を出す。
+  status('コース読み込み中…');
+  const courseResp = await fetch('./course.json', { cache: 'no-store' });
+  if (!courseResp.ok) throw new Error(`course.json HTTP ${courseResp.status}`);
+  const course = await courseResp.json();
+  if (!Array.isArray(course) || course.length === 0) {
+    throw new Error('course.json が空です');
+  }
+  const bounds = courseBounds(course, BOUNDS_BUFFER_M);
+  const range = tileRangeForBounds(bounds, DEM_ZOOM);
+  if (range.count > MAX_TILES) {
+    throw new Error(`DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
+  }
+  document.getElementById('m-tiles').textContent =
+    `${range.count} 枚 (${range.tilesX}×${range.tilesY}, z${DEM_ZOOM})`;
+
+  // 2. DEM タイル群を取得・decode し、 範囲全体の標高グリッドへ連結。
+  const tileCoords = [];
+  for (let ty = range.yMin; ty <= range.yMax; ty++) {
+    for (let tx = range.xMin; tx <= range.xMax; tx++) tileCoords.push({ tx, ty });
+  }
+  let demDone = 0;
+  const demGrids = await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
+    const g = await loadDemGrid(tx, ty);
+    return { tx, ty, grid: g };
+  }, () => status(`DEM タイル取得中… ${++demDone}/${tileCoords.length}`));
+
+  const tileMap = new Map();
+  let missing = 0;
+  for (const d of demGrids) {
+    if (d.grid) tileMap.set(`${d.tx}/${d.ty}`, d.grid);
+    else missing++;
+  }
+  if (tileMap.size === 0) {
+    throw new Error('DEM タイルが 1 枚も取得できませんでした (= ネットワーク / CORS を確認)');
+  }
+  const stitched = stitchHeightGrid(tileMap, range, TILE_PX);
+
+  // 3. 標高グリッドから Three.js 地形メッシュの頂点配列を組む。
+  status('地形メッシュ生成中…');
+  const step = Math.max(1, Math.ceil(Math.max(stitched.width, stitched.height) / TARGET_GRID_DIM));
+  const geo = buildTerrainGeometry(stitched, range, { tileSize: TILE_PX, step });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(geo.positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(geo.uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(geo.indices, 1));
+  geometry.computeVertexNormals();
+
+  // 4. 地図画像 (GSI 写真タイル) を地形に貼るテクスチャを組む。
+  status('地図画像取得中…');
+  const texCanvas = document.createElement('canvas');
+  texCanvas.width = range.tilesX * TILE_PX;
+  texCanvas.height = range.tilesY * TILE_PX;
+  const texCtx = texCanvas.getContext('2d');
+  texCtx.fillStyle = '#3b424c';
+  texCtx.fillRect(0, 0, texCanvas.width, texCanvas.height);
+  let photoDone = 0;
+  await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
+    const img = await loadImage(`${GSI_PHOTO}/${DEM_ZOOM}/${tx}/${ty}.jpg`);
+    if (img) {
+      texCtx.drawImage(img, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
+        TILE_PX, TILE_PX);
+    }
+  }, () => status(`地図画像取得中… ${++photoDone}/${tileCoords.length}`));
+  const texture = new THREE.CanvasTexture(texCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+
+  const material = new THREE.MeshStandardMaterial({
+    map: texture, roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+
+  // === シーン構築 ===
+  const wrap = document.getElementById('canvas-wrap');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d1117);
+  const midH = (geo.minH + geo.maxH) / 2;
+  const span = Math.max(geo.sizeX, geo.sizeZ);
+  scene.fog = new THREE.Fog(0x0d1117, span * 0.9, span * 2.6);
+  scene.add(mesh);
+
+  // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
+  const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
+  sun.position.set(-span * 0.6, span * 0.8, span * 0.5);
+  scene.add(sun);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202820, 0.6));
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  wrap.appendChild(renderer.domElement);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 1, span * 6);
+  // 6. カメラ: 地形中心 (target) のまわりを球面で回す簡易オービット操作。
+  const target = new THREE.Vector3(0, midH, 0);
+  const orbit = { radius: span * 1.15, theta: Math.PI * 0.25, phi: Math.PI * 0.36 };
+  const PHI_MIN = 0.12, PHI_MAX = Math.PI * 0.49;
+  function applyCamera() {
+    orbit.phi = Math.min(PHI_MAX, Math.max(PHI_MIN, orbit.phi));
+    orbit.radius = Math.min(span * 3.5, Math.max(span * 0.18, orbit.radius));
+    camera.position.set(
+      target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+      target.y + orbit.radius * Math.cos(orbit.phi),
+      target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta),
+    );
+    camera.lookAt(target);
+  }
+
+  // マウス操作 (= ポインタ占有しない、 ドラッグとホイールのみ)。
+  let dragging = false, lastX = 0, lastY = 0;
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    orbit.theta -= (e.clientX - lastX) * 0.005;
+    orbit.phi -= (e.clientY - lastY) * 0.005;
+    lastX = e.clientX; lastY = e.clientY;
+    applyCamera();
+  });
+  renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbit.radius *= (e.deltaY > 0 ? 1.1 : 0.9);
+    applyCamera();
+  }, { passive: false });
+
+  function resize() {
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  applyCamera();
+
+  // HUD 更新。
+  document.getElementById('m-verts').textContent = geo.vertexCount.toLocaleString();
+  document.getElementById('m-ele').textContent =
+    `${Math.round(geo.minH)} – ${Math.round(geo.maxH)} m`;
+  document.getElementById('m-size').textContent =
+    `${(geo.sizeX / 1000).toFixed(1)} × ${(geo.sizeZ / 1000).toFixed(1)} km`;
+  const tileNote = missing > 0 ? ` (${missing} 枚欠損→0m補完)` : '';
+  status(`地形を表示中 — 富士ヒルコース ${course.length} 点の外接範囲${tileNote}`);
+
+  function loop() {
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+main().catch((e) => {
+  console.error(e);
+  status(`地形の表示に失敗: ${e && e.message || e}`, true);
+});
+</script>
+</body>
+</html>

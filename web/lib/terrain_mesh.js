@@ -66,6 +66,39 @@ export function bilinearUpsample(src, srcW, srcH, factor) {
 }
 
 /**
+ * GSI dem_png の RGBA を標高 (m) の grid に decode する純関数.
+ *
+ * GSI dem_png encoding: 各ピクセルの (R, G, B) を 24bit 整数 hVal = R*65536+G*256+B
+ * とみなし, 2's complement で符号付きに直して 1/100 した値が標高 m.
+ * 無効ピクセル (= R=128, G=0, B=0) は標高 0m として扱う (= 海域 / データ欠損).
+ *
+ * @param {Uint8ClampedArray} gsiRgba - GSI PNG の RGBA array (長さ = w*h*4)
+ * @param {number} w - 画像 width
+ * @param {number} h - 画像 height
+ * @returns {Float32Array} 標高 m の grid (長さ = w*h, row-major)
+ *
+ * brief b7: terrarium 再 encode を経由しない経路 (= Three.js 地形メッシュ) で
+ * decode 部分だけを再利用するため独立 export. gsiToTerrariumUpsampled も本関数を呼ぶ
+ * (= decode logic の SoT 一本化, 二重実装の排除).
+ */
+export function decodeGsiHeightGrid(gsiRgba, w, h) {
+  const heightGrid = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = gsiRgba[i * 4];
+    const g = gsiRgba[i * 4 + 1];
+    const b = gsiRgba[i * 4 + 2];
+    let height_m = 0;
+    if (!(r === 128 && g === 0 && b === 0)) {
+      let hVal = r * 65536 + g * 256 + b;
+      if (hVal >= 8388608) hVal -= 16777216;
+      height_m = hVal / 100;
+    }
+    heightGrid[i] = height_m;
+  }
+  return heightGrid;
+}
+
+/**
  * GSI dem_png (= R*65536+G*256+B encoding, R=128 で無効) を読んで
  * bilinear upsample してから terrarium 形式に再 encode.
  *
@@ -80,20 +113,8 @@ export function bilinearUpsample(src, srcW, srcH, factor) {
  * 無効ピクセル (R=128, G=B=0) は標高 0m として補間に参加.
  */
 export function gsiToTerrariumUpsampled(gsiRgba, w, h, factor) {
-  // 1. GSI decode: 標高 m の grid に変換
-  const heightGrid = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const r = gsiRgba[i * 4];
-    const g = gsiRgba[i * 4 + 1];
-    const b = gsiRgba[i * 4 + 2];
-    let height_m = 0;
-    if (!(r === 128 && g === 0 && b === 0)) {
-      let hVal = r * 65536 + g * 256 + b;
-      if (hVal >= 8388608) hVal -= 16777216;
-      height_m = hVal / 100;
-    }
-    heightGrid[i] = height_m;
-  }
+  // 1. GSI decode: 標高 m の grid に変換 (= decodeGsiHeightGrid に集約済)
+  const heightGrid = decodeGsiHeightGrid(gsiRgba, w, h);
   // 2. bilinear upsample on the height grid
   const dstW = w * factor;
   const dstH = h * factor;
