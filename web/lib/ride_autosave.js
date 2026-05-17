@@ -128,3 +128,40 @@ export async function hasPendingAutosave(opts = {}) {
   if (rec.ended === true) return false;
   return Array.isArray(rec.trkpts) && rec.trkpts.length > 0;
 }
+
+/**
+ * autosave record を rideState (= createRideState の戻り値 shim) に適用し、
+ * rider を復元距離・active 状態へ持ち上げる純粋関数.
+ *
+ * なぜ共有関数か: viewer-maplibre.js の applyPendingRestore が record→rideState 変換を
+ * 直書きしていたが、 (1) rider.distanceTraveled は getter-only accessor なので
+ * `_rider.distanceTraveled = ...` の直接代入は strict mode (= ES module) で TypeError を
+ * throw し復元が丸ごと abort していた、 (2) この経路を pin する test が無く嘘の緑のまま
+ * 残っていた。 変換を 1 本の export 関数に集約し、 viewer と test が同じ経路を叩く。
+ *
+ * record は IndexedDB という信頼境界外ストア由来なので型を検証する:
+ *   - distanceM が有限数でなければ復元しない (= null を返す)
+ *   - trkpts が配列でなければ空として扱う
+ * distance のセットは rider.placeAtDistance() 経由 (= clampDist でコース範囲に丸める).
+ *
+ * @param {{start:Function, appendTrkpt:Function, _rider:object}} rideState
+ * @param {{distanceM:number, trkpts?:Array}} rec
+ * @returns {{distanceM:number, trkptCount:number}|null} 適用不可なら null
+ */
+export function applyAutosaveToRideState(rideState, rec) {
+  if (!rideState || !rideState._rider
+      || typeof rideState.start !== 'function'
+      || typeof rideState.appendTrkpt !== 'function'
+      || typeof rideState._rider.placeAtDistance !== 'function') {
+    return null;
+  }
+  if (!rec || !Number.isFinite(rec.distanceM)) return null;
+  rideState.start();
+  rideState._rider.placeAtDistance(rec.distanceM);
+  const trkpts = Array.isArray(rec.trkpts) ? rec.trkpts : [];
+  for (const tp of trkpts) {
+    if (!tp || typeof tp !== 'object') continue;
+    rideState.appendTrkpt({ t: tp.t, power: tp.power, cad: tp.cad, hr: tp.hr });
+  }
+  return { distanceM: rideState._rider.distanceTraveled, trkptCount: trkpts.length };
+}

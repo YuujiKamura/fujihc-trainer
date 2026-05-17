@@ -53,6 +53,7 @@ import { buildSaveSummary, detectAnomalies, summaryToDisplay } from './lib/save_
 import { renderSaveSummary } from './lib/save_summary_panel.js';
 import {
   saveAutosave, loadAutosave, clearAutosave, hasPendingAutosave,
+  applyAutosaveToRideState,
 } from './lib/ride_autosave.js';
 // brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
@@ -1625,7 +1626,15 @@ function showRestoreDialog(rec) {
     btnYes.parentNode.replaceChild(nb, btnYes);
     nb.addEventListener('click', () => {
       if (ov) ov.classList.remove('visible');
-      _pendingRestore = rec;  // dispatch 後に rideState 準備済で呼ぶ
+      _pendingRestore = rec;
+      // 2026-05-17 fix (= 復元バグ root cause #1: timing desync):
+      // 旧コードは _pendingRestore をセットするだけで、 復元の適用 (applyPendingRestore) は
+      // loadCourse 末尾の 1 箇所からしか呼ばれなかった。 loadCourse は map 'load' で 1 度走り、
+      // それは通常 user がこの「復元」を押すより前。 つまり applyPendingRestore は
+      // _pendingRestore===null の状態で空振りし、 その後二度と呼ばれず復元が起きなかった。
+      // ここで直接呼ぶ: rideState 準備済なら即適用、 未準備なら早期 return して
+      // loadCourse 末尾の呼出が _pendingRestore を拾う (= どちらの順序でも復元される)。
+      applyPendingRestore();
       defaultDispatch();
     });
   }
@@ -1648,23 +1657,23 @@ function applyPendingRestore() {
   const rec = _pendingRestore;
   _pendingRestore = null;
   try {
-    rideState.start();
-    // trkpts を 1 件ずつ shim 内部 buffer に追加するため、 distanceM を直接代入する手段は
-    // shim API には無い。 ここは「復元時は trkpts を rideState 経由で再 append + distance は
-    // _rider.distanceTraveled に push」 する簡素な方式を採る。
-    // shim には setDistance API が無いので _rider に直接書く (= 過渡期の compromise).
-    if (rideState._rider && Number.isFinite(rec.distanceM)) {
-      rideState._rider.distanceTraveled = rec.distanceM;
-    }
-    for (const tp of (rec.trkpts || [])) {
-      const restoreExtras = { t: tp.t, power: tp.power, cad: tp.cad, hr: tp.hr };
-      rideState.appendTrkpt(restoreExtras);
+    // 2026-05-17 fix (= 復元バグ root cause #2: getter-only への代入):
+    // 旧コードは `rideState._rider.distanceTraveled = rec.distanceM` で距離を書いていたが、
+    // rider.distanceTraveled は getter-only accessor。 ES module は strict mode なので
+    // getter-only への代入は TypeError を throw し、 この try-catch に落ちて復元が丸ごと
+    // abort していた (= distance も trkpts も復元されない)。
+    // record→rideState 変換は ride_autosave.js の applyAutosaveToRideState に集約。
+    // 距離は rider.placeAtDistance() 経由でセットされる。
+    const applied = applyAutosaveToRideState(rideState, rec);
+    if (!applied) {
+      console.warn('applyPendingRestore: autosave record が不正のため復元を skip');
+      return;
     }
     rideStartedAt = performance.now();  // restore 後の経過時間は再起算 (= 旧 ride の wall-clock は autosave に保存済)
     rideStartedIso = rec.rideStartedAt || new Date().toISOString();
     lastTrkptT = performance.now();
     lastAutosaveT = performance.now();
-    status(`途中 ride を復元しました (${rec.trkpts?.length || 0} 点, ${(rec.distanceM / 1000).toFixed(2)} km)`);
+    status(`途中 ride を復元しました (${applied.trkptCount} 点, ${(applied.distanceM / 1000).toFixed(2)} km)`);
   } catch (err) {
     console.warn('applyPendingRestore failed:', err);
   }
