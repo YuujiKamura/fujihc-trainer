@@ -62,6 +62,8 @@ self.addEventListener('fetch', (event) => {
     // network-first: まず network から最新を取り、 成功したら cache を更新して返す。
     // network 失敗 (= オフライン) の時だけ cache に fallback。 これで「コードを変えたのに
     // 古い版が出続ける」 cache-first の罠が起きない。
+    // terrain3d.html / lib/terrain3d.js も .html/.js なのでここに入り network-first =
+    // 活発に変更中の Path B 実験ページも online の限り常に最新版が出る。
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         try {

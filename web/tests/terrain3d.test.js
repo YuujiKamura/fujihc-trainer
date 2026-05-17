@@ -14,6 +14,7 @@ import {
   sampleHeightBilinear,
   buildCoursePath,
   courseRingSlopes,
+  buildCourseRibbon,
 } from '../lib/terrain3d.js';
 import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
 
@@ -415,5 +416,79 @@ describe('courseRingSlopes', () => {
 
   it('空 course は RangeError', () => {
     expect(() => courseRingSlopes([], 5)).toThrow(RangeError);
+  });
+});
+
+// === buildCourseRibbon ===
+
+describe('buildCourseRibbon', () => {
+  const range = { zoom: 14, xMin: 14503, yMin: 6464 };
+  const TS = 16;
+  const stitched = { grid: new Float32Array(TS * TS).fill(1400), width: TS, height: TS };
+  const centerLat = 35.40, centerLon = 138.72;
+  const M = 111320;
+  const mPerLon = M * Math.cos(centerLat * Math.PI / 180);
+  // 曲がりのある 3 点コース (= 直線でない、 接線・直交計算を実際に走らせる)。
+  const course = [
+    { lat: 35.395, lon: 138.715, slope_pct: 3 },
+    { lat: 35.405, lon: 138.720, slope_pct: 6 },
+    { lat: 35.420, lon: 138.720, slope_pct: 9 },
+  ];
+
+  it('n 点 → positions 長 n*2*3 / indices 長 (n-1)*6 / vertexCount n*2 (= 配列形を pin)', () => {
+    const r = buildCourseRibbon(course, { range, stitched, centerLat, centerLon, tileSize: TS });
+    expect(r.positions.length).toBe(course.length * 2 * 3);
+    expect(r.indices.length).toBe((course.length - 1) * 6);
+    expect(r.vertexCount).toBe(course.length * 2);
+  });
+
+  it('左右頂点の中点が中心線に一致 (= リボンが中心線からずれて貼られるのを検出)', () => {
+    const r = buildCourseRibbon(course, {
+      range, stitched, centerLat, centerLon, tileSize: TS, widthM: 40 });
+    for (let i = 0; i < course.length; i++) {
+      const lx = r.positions[(i * 2) * 3], lz = r.positions[(i * 2) * 3 + 2];
+      const rx = r.positions[(i * 2 + 1) * 3], rz = r.positions[(i * 2 + 1) * 3 + 2];
+      const cx = (course[i].lon - centerLon) * mPerLon;
+      const cz = -(course[i].lat - centerLat) * M;
+      expect((lx + rx) / 2).toBeCloseTo(cx, 2);
+      expect((lz + rz) / 2).toBeCloseTo(cz, 2);
+    }
+  });
+
+  it('左右頂点間の XZ 距離 = 道幅 widthM (= 幅が効かない/二重スケールを検出)', () => {
+    const widthM = 50;
+    const r = buildCourseRibbon(course, {
+      range, stitched, centerLat, centerLon, tileSize: TS, widthM });
+    for (let i = 0; i < course.length; i++) {
+      const lx = r.positions[(i * 2) * 3], lz = r.positions[(i * 2) * 3 + 2];
+      const rx = r.positions[(i * 2 + 1) * 3], rz = r.positions[(i * 2 + 1) * 3 + 2];
+      expect(Math.hypot(lx - rx, lz - rz)).toBeCloseTo(widthM, 2);
+    }
+  });
+
+  it('頂点 Y = DEM 標高 + drapeOffset (= 地形に沿わず浮く/埋まるのを検出)', () => {
+    const r = buildCourseRibbon(course, {
+      range, stitched, centerLat, centerLon, tileSize: TS, drapeOffset: 20 });
+    // stitched は一様 1400m なので全頂点 Y = 1420。
+    for (let i = 1; i < r.positions.length; i += 3) {
+      expect(r.positions[i]).toBeCloseTo(1420, 3);
+    }
+  });
+
+  it('東の点ほど X が大きい (= リボンの東西もメッシュと揃う)', () => {
+    const r = buildCourseRibbon([
+      { lat: 35.40, lon: 138.70 }, { lat: 35.40, lon: 138.74 },
+    ], { range, stitched, centerLat, centerLon, tileSize: TS });
+    // course[0] (西) の左右中点 X < course[1] (東) の左右中点 X
+    const x0 = (r.positions[0] + r.positions[3]) / 2;
+    const x1 = (r.positions[6] + r.positions[9]) / 2;
+    expect(x1).toBeGreaterThan(x0);
+  });
+
+  it('2 点未満は RangeError (= リボンを張れない退化入力を弾く)', () => {
+    expect(() => buildCourseRibbon([{ lat: 35.4, lon: 138.7 }],
+      { range, stitched, centerLat, centerLon })).toThrow(RangeError);
+    expect(() => buildCourseRibbon([], { range, stitched, centerLat, centerLon }))
+      .toThrow(RangeError);
   });
 });

@@ -108,7 +108,7 @@
 import * as THREE from 'three';
 import {
   courseBounds, tileRangeForBounds, decodeGsiHeightGrid,
-  stitchHeightGrid, buildTerrainGeometry, buildCoursePath, courseRingSlopes,
+  stitchHeightGrid, buildTerrainGeometry, buildCoursePath, buildCourseRibbon,
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
 
@@ -353,37 +353,45 @@ async function main() {
   scene.fog = new THREE.Fog(0x0d1117, span * 0.9, span * 2.6);
   scene.add(mesh);
 
-  // コースを地形に重ねる: course.json (= GPX 由来) の点列を、 地形と同じ投影で 3D
-  // ライン化し、 DEM 標高をサンプルして地形に沿わせたチューブで描く。 チューブは
-  // 各点の slope_pct で勾配色分け (= 緑 平坦 → 紫 激坂)。 始点 (緑) / 5合目 終点 (橙)
-  // に球マーカーを置き、 コースの向きが一目で分かるようにする。
+  // コースを地形に重ねる: course.json (= GPX 由来) の点列を、 地形と同じ投影で
+  // 「地形表面に沿う平たいリボン (= 道路状の帯)」mesh として描く。 リボンの両端は
+  // DEM 標高でそれぞれ drape し起伏に沿わせる。 各頂点は属する course 点の slope_pct
+  // で勾配色分け (= 緑 平坦 → 紫 激坂)。 始点 (緑) / 5合目 終点 (橙) に球マーカー。
+  const ribbon = buildCourseRibbon(course, {
+    range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,
+    tileSize: TILE_PX,
+    // 道幅: 実コースは約 7-8m だが地形スケール (~10km) で見えるよう span 比例で誇張。
+    widthM: span * 0.0055,
+    drapeOffset: span * 0.0013,  // 地形表面のすぐ上 (= z-fighting 回避の最小持ち上げ)
+  });
+  const ribbonGeo = new THREE.BufferGeometry();
+  ribbonGeo.setAttribute('position', new THREE.BufferAttribute(ribbon.positions, 3));
+  ribbonGeo.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
+  // 勾配色分け: 頂点 v は course 点 floor(v/2) に属する。 既存 viewer と同じ
+  // gradeColorContinuous (route_styling.js の SoT パレット) で頂点色を塗る。
+  const ribbonColors = new Float32Array(ribbon.vertexCount * 3);
+  const _gc = new THREE.Color();
+  for (let v = 0; v < ribbon.vertexCount; v++) {
+    const p = course[Math.floor(v / 2)];
+    _gc.set(gradeColorContinuous(p ? p.slope_pct : 0));
+    ribbonColors[v * 3] = _gc.r;
+    ribbonColors[v * 3 + 1] = _gc.g;
+    ribbonColors[v * 3 + 2] = _gc.b;
+  }
+  ribbonGeo.setAttribute('color', new THREE.BufferAttribute(ribbonColors, 3));
+  // 陰影なしの頂点色 material (= 法線・winding 不問、 DoubleSide で裏面も描く)。
+  scene.add(new THREE.Mesh(ribbonGeo, new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.DoubleSide,
+  })));
+  // 始点 / 終点マーカー用にコース中心線の両端だけ投影する。
   const coursePath = buildCoursePath(course, {
     range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,
-    tileSize: TILE_PX, drapeOffset: span * 0.004,  // span 比例で地形に密着 (z-fighting 回避)
+    tileSize: TILE_PX, drapeOffset: span * 0.004,
   });
   const coursePts = [];
   for (let i = 0; i < coursePath.length; i += 3) {
     coursePts.push(new THREE.Vector3(coursePath[i], coursePath[i + 1], coursePath[i + 2]));
   }
-  const courseCurve = new THREE.CatmullRomCurve3(coursePts);
-  const COURSE_RADIAL = 8;
-  const tubularSegments = Math.min(4000, coursePts.length);
-  const courseTube = new THREE.TubeGeometry(
-    courseCurve, tubularSegments, span * 0.0028, COURSE_RADIAL, false);
-  // 勾配色分け: ring (= 曲線方向の輪) ごとに slope_pct を引き、 既存 viewer と同じ
-  // gradeColorContinuous (route_styling.js の SoT パレット) で頂点色を塗る。
-  const ringSlopes = courseRingSlopes(course, tubularSegments + 1);
-  const courseColors = new Float32Array(courseTube.attributes.position.count * 3);
-  const _gc = new THREE.Color();
-  for (let i = 0; i <= tubularSegments; i++) {
-    _gc.set(gradeColorContinuous(ringSlopes[i]));
-    for (let j = 0; j <= COURSE_RADIAL; j++) {
-      const vi = (i * (COURSE_RADIAL + 1) + j) * 3;
-      courseColors[vi] = _gc.r; courseColors[vi + 1] = _gc.g; courseColors[vi + 2] = _gc.b;
-    }
-  }
-  courseTube.setAttribute('color', new THREE.BufferAttribute(courseColors, 3));
-  scene.add(new THREE.Mesh(courseTube, new THREE.MeshBasicMaterial({ vertexColors: true })));
   const markerGeo = new THREE.SphereGeometry(span * 0.008, 16, 12);
   const startMark = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0x3fb950 }));
   startMark.position.copy(coursePts[0]);

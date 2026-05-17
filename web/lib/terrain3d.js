@@ -296,3 +296,77 @@ export function courseRingSlopes(course, ringCount) {
   }
   return out;
 }
+
+/**
+ * course を地形表面に沿う「リボン」(= 道路状の帯) mesh の頂点配列に変換する.
+ *
+ * 各 course 点で進行方向 (= 前後点の接線) を XZ 平面で求め、 その直交方向に道幅の
+ * 半分だけ左右へ振った 2 頂点を作る。 左右頂点はそれぞれ緯度経度へ戻して DEM 標高を
+ * sampleHeightBilinear で引き、 地形表面に沿わせる (= 中心線だけ沿わせると両端が
+ * 地形を突き抜ける / 浮くため、 端点ごとに drape する)。 1 区間 = 2 三角形。
+ *
+ * 投影は buildTerrainGeometry / buildCoursePath と同一 (= 同じ centerLat/centerLon、
+ * 東 +X、 北 -Z)。 法線は使わない (= 描画側は陰影なしの頂点色 material 想定)。
+ *
+ * @param {Array<{lat:number, lon:number}>} course
+ * @param {{range:object, stitched:object, centerLat:number, centerLon:number,
+ *          tileSize?:number, widthM?:number, drapeOffset?:number,
+ *          exaggeration?:number}} opts
+ * @returns {{positions:Float32Array, indices:Uint32Array, vertexCount:number}}
+ *   positions/indices は BufferGeometry 用。 頂点 2i=左, 2i+1=右 (course 点 i)。
+ */
+export function buildCourseRibbon(course, opts) {
+  if (!Array.isArray(course) || course.length < 2) {
+    throw new RangeError('buildCourseRibbon: course needs >= 2 points');
+  }
+  const { range, stitched, centerLat, centerLon } = opts;
+  const tileSize = opts.tileSize || 256;
+  // 道幅。 富士スバルラインは実幅 7-8m 程度だが、 地形スケール (~10km 角) では
+  // 細すぎて見えないため、 呼び出し側が span 比例で誇張値を渡す前提。 既定 24m。
+  const widthM = opts.widthM != null ? opts.widthM : 24;
+  const halfW = widthM / 2;
+  const drapeOffset = opts.drapeOffset != null ? opts.drapeOffset : 15;
+  const exaggeration = opts.exaggeration != null ? opts.exaggeration : 1.0;
+  const mPerDegLon = M_PER_DEG_LAT * Math.cos(centerLat * Math.PI / 180);
+  const n = course.length;
+
+  // 1. 中心線を XZ メートルへ投影。
+  const cx = new Float64Array(n), cz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    cx[i] = (course[i].lon - centerLon) * mPerDegLon;
+    cz[i] = -(course[i].lat - centerLat) * M_PER_DEG_LAT;
+  }
+
+  // 2. 各点で進行方向の直交に halfW 振った左右頂点。 左右とも DEM 標高で drape。
+  const positions = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++) {
+    const ia = Math.max(0, i - 1), ib = Math.min(n - 1, i + 1);
+    let tx = cx[ib] - cx[ia], tz = cz[ib] - cz[ia];
+    const tl = Math.hypot(tx, tz) || 1;
+    tx /= tl; tz /= tl;
+    const perpX = -tz, perpZ = tx;  // XZ 平面で接線を 90° 回した直交単位ベクトル
+    for (let s = 0; s < 2; s++) {
+      const sign = s === 0 ? 1 : -1;  // 0=左, 1=右
+      const ex = cx[i] + perpX * halfW * sign;
+      const ez = cz[i] + perpZ * halfW * sign;
+      // XZ → 緯度経度 (= 投影の逆) → DEM 標高サンプル。
+      const lat = centerLat - ez / M_PER_DEG_LAT;
+      const lon = centerLon + ex / mPerDegLon;
+      const h = sampleHeightBilinear(stitched, range, lat, lon, tileSize);
+      const vi = (i * 2 + s) * 3;
+      positions[vi] = ex;
+      positions[vi + 1] = h * exaggeration + drapeOffset;
+      positions[vi + 2] = ez;
+    }
+  }
+
+  // 3. index: 区間 (i → i+1) を 2 三角形。 頂点 2i=左, 2i+1=右。
+  const indices = new Uint32Array((n - 1) * 6);
+  let k = 0;
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    indices[k++] = a; indices[k++] = b; indices[k++] = c;
+    indices[k++] = b; indices[k++] = d; indices[k++] = c;
+  }
+  return { positions, indices, vertexCount: n * 2 };
+}
