@@ -381,7 +381,7 @@ const _lsNum = (k, d) => {
   catch { return d; }
 };
 let bikeMass = _lsNum('fujihill.mass', 88);    // kg (= rider + bike 総重量)
-let bikeCrr  = _lsNum('fujihill.crr', 0.005);  // 転がり抵抗係数
+let bikeCrr  = _lsNum('fujihill.crr', 0.001);  // 転がり抵抗係数 (= 既定 1‰、 競技寄り)
 let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
 // 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
 // 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
@@ -1888,18 +1888,20 @@ async function loadCourse() {
   ];
   updateStartGoalVisibility();
 
-  // rider マーカー: fill-extrusion で本物の 3D 立体 (豆腐型)、 高さ方向に押し出した polygon。
-  // rider 位置 + 進行方向で毎フレーム polygon coordinates を更新する。
+  // rider マーカー: fill-extrusion で 3D 立体。 buildRiderFeatures が複数 part
+  // (= 自転車車体 + rider) を返し、 各 part の色 / 高さ / base は feature property で持つ。
+  // 2026-05-17: 旧来は cyan 1m 角の豆腐 1 個。 慣性シミュの自転車に寄せ、 低く長い暗色の
+  // 車体 + その上に立つ cyan の rider のシルエットにした。 MapLibre は上方押し出しのみで
+  // スポーク等の 3D 詳細は描けないため、 シルエットで「自転車に乗った rider」 を表す。
   map.addSource('rider', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  // 豆腐: 1m 角の直方体 1 個、 cyan (2026-05-15: 0.5m → 1.0m に拡大、 視認性向上)
   map.addLayer({
     id: 'rider-body',
     type: 'fill-extrusion',
     source: 'rider',
     paint: {
-      'fill-extrusion-color': '#00ffff',
-      'fill-extrusion-height': 1.0,
-      'fill-extrusion-base': 0,
+      'fill-extrusion-color': ['get', 'color'],
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'base'],
       'fill-extrusion-opacity': 0.95,
     },
   });
@@ -2174,21 +2176,32 @@ function buildMinimapBottomBase() {
 // ride 中の再 fetch ゼロ。 prefetchTilesAlongCourse 復活は絶対 NG。
 
 // rider の 3D 豆腐 = 1m 角の正方形、 heading に合わせて 4 辺が進行方向の前後左右を向く。
+// rider を「自転車に乗った人」 のシルエットで返す (2026-05-17、 慣性シミュの自転車に寄せた)。
+// local 座標は x = 進行方向に直交、 y = 進行方向 (= 前が +y)。 heading で回転して lon/lat へ。
+// MapLibre fill-extrusion は地面からの上方押し出しのみ。 スポーク付き車輪のような縦の円盤は
+// 描けないため、 低く長い暗色の車体 + その上に立つ cyan の rider の 2 part でシルエットを作る。
+// 各 part は color / base / height を feature property で持ち、 rider-body layer が ['get'] で読む。
+// spin (= 車輪回転角) は fill-extrusion では表現不可、 signature 互換のため受けるが未使用。
 function buildRiderFeatures(lat, lon, heading, spin) {
   const M_LAT = 1 / 111320;
   const M_LON = 1 / (111320 * Math.cos(lat * Math.PI / 180));
-  const half = 0.5;
-  const corners = [[-half, -half], [half, -half], [half, half], [-half, half]];
   const sinH = Math.sin(heading), cosH = Math.cos(heading);
-  const verts = corners.map(([x, y]) => {
+  const toLngLat = (x, y) => {
     const rx = x * cosH + y * sinH;
     const ry = -x * sinH + y * cosH;
     return [lon + rx * M_LON, lat + ry * M_LAT];
-  });
-  verts.push(verts[0]);
+  };
+  const part = (x0, x1, y0, y1, color, base, height) => {
+    const ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => toLngLat(x, y));
+    ring.push(ring[0]);
+    return { type: 'Feature', properties: { color, height, base }, geometry: { type: 'Polygon', coordinates: [ring] } };
+  };
   return {
     type: 'FeatureCollection',
-    features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [verts] } }],
+    features: [
+      part(-0.22, 0.22, -0.95, 0.95, '#23272f', 0, 0.55),    // 車体: 低く長い暗色 (= 自転車)
+      part(-0.21, 0.21, -0.28, 0.34, '#00ffff', 0.55, 1.9),  // rider: cyan、 車体上に立つ
+    ],
   };
 }
 

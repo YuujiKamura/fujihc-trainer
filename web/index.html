@@ -423,7 +423,7 @@
        転がり抵抗 = タイヤ+ベアリングの常時抵抗 (‰)、 空気抵抗 = 前面 CdA (m²)。
        いずれも applyPhysicsStep に渡され速度積分に効く。 -->
   <div class="row"><label>質量</label><input id="rngMass" type="range" min="60" max="110" step="1" value="88"><span class="val"><span id="massVal">88</span>kg</span></div>
-  <div class="row"><label>転がり抵抗</label><input id="rngRr" type="range" min="1" max="25" step="1" value="5"><span class="val"><span id="rrVal">5</span>‰</span></div>
+  <div class="row"><label>転がり抵抗</label><input id="rngRr" type="range" min="1" max="25" step="1" value="1"><span class="val"><span id="rrVal">1</span>‰</span></div>
   <div class="row"><label>空気抵抗</label><input id="rngCda" type="range" min="18" max="60" step="1" value="35"><span class="val"><span id="cdaVal">0.35</span>m²</span></div>
   <!-- 光源 (hillshade) 調整: 方向 0..360° / 強度 0..100 (= MapLibre 0..1 を ×100) -->
   <div class="row"><label>光源方向</label><input id="rngLightDir" type="range" min="0" max="360" step="5" value="135"><span class="val"><span id="lightDirVal">135</span>°</span></div>
@@ -790,6 +790,6 @@
   <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
-<script type="module" src="viewer-maplibre.js?v=32"></script>
+<script type="module" src="viewer-maplibre.js?v=33"></script>
 </body>
 </html>
