@@ -112,6 +112,7 @@ import {
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
 import { buildRoadMarks, slopeAtDistance } from './lib/road_texture.js';
+import { riderStartPlacement } from './lib/rider_placement.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -302,6 +303,73 @@ function buildRoadTextureCanvas(course, marks) {
   return cv;
 }
 
+// brief b11-Phase3: rider の 3D 自転車 mesh を Three.js primitive で組む。
+// 単位モデル ── 全長 1.0 (Z 方向)、 前方 -Z、 車輪の接地点が group の y=0。
+// 配置側 (= riderStartPlacement の結果) が span 比例で scale / position / lookAt する。
+
+// from→to を結ぶ円柱 (= フレームチューブ) を group に足す。 CylinderGeometry は
+// +Y 軸なので、 quaternion で from→to 方向へ回す。
+function addBikeTube(group, material, from, to, radius) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, len, 10), material);
+  mesh.position.copy(from).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), dir.normalize());
+  group.add(mesh);
+}
+
+function buildBikeMesh() {
+  const group = new THREE.Group();
+  // 陰影で 3D の形が読めるよう StandardMaterial (= シーンの太陽光 + 環境光を受ける)。
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x18c8ff, roughness: 0.4, metalness: 0.3 });   // 明るいシアン (路面の暖色に映える)
+  const wheelMat = new THREE.MeshStandardMaterial({
+    color: 0x14181f, roughness: 0.75, metalness: 0.1 });  // ほぼ黒のタイヤ
+  const partMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2f3a, roughness: 0.6, metalness: 0.2 });   // サドル / ハンドル
+
+  // 全長 1.0 になる寸法: (rearZ + wheelR) - (frontZ - wheelR) = 0.56 + 0.44 = 1.0。
+  const wheelR = 0.22, tubeR = 0.04;
+  const frontZ = -0.28, rearZ = 0.28;
+  const hubY = wheelR;  // 車輪の接地点が group の y=0 になる高さ
+
+  // 車輪 2 枚 (トーラス)。 既定で XY 平面のリング (法線 Z) なので、 rotation.y=π/2 で
+  // 車軸を X 方向にし、 車輪の円盤が進行方向 (Z) を含む面に立つ。
+  for (const z of [frontZ, rearZ]) {
+    const wheel = new THREE.Mesh(
+      new THREE.TorusGeometry(wheelR, tubeR, 12, 28), wheelMat);
+    wheel.rotation.y = Math.PI / 2;
+    wheel.position.set(0, hubY, z);
+    group.add(wheel);
+  }
+
+  // フレーム: 前後ハブ・ボトムブラケット・サドル・ハンドルを円柱で繋ぐ。
+  const frontHub = new THREE.Vector3(0, hubY, frontZ);
+  const rearHub  = new THREE.Vector3(0, hubY, rearZ);
+  const bb       = new THREE.Vector3(0, hubY * 0.7, 0.05);  // ボトムブラケット
+  const saddle   = new THREE.Vector3(0, 0.60, 0.20);
+  const bar      = new THREE.Vector3(0, 0.54, -0.24);       // ハンドル付近
+  const ft = 0.038;
+  addBikeTube(group, frameMat, rearHub, bb, ft);     // チェーンステー
+  addBikeTube(group, frameMat, bb, saddle, ft);      // シートチューブ
+  addBikeTube(group, frameMat, rearHub, saddle, ft); // シートステー
+  addBikeTube(group, frameMat, bb, bar, ft);         // ダウンチューブ
+  addBikeTube(group, frameMat, saddle, bar, ft);     // トップチューブ
+  addBikeTube(group, frameMat, frontHub, bar, ft);   // フォーク
+
+  // サドル / ハンドルバー (= 自転車と読めるための小さな箱)。
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 0.18), partMat);
+  seat.position.copy(saddle);
+  group.add(seat);
+  const handlebar = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.05), partMat);
+  handlebar.position.copy(bar);
+  group.add(handlebar);
+
+  return group;
+}
+
 // DEM タイル取得元を解決する。 range 中央付近の z14 タイルを 1 枚 probe し、
 // 同一オリジンの local tile DB が応答すればそれを使う (= 既存コースタイルの再利用)。
 async function resolveDemBase(range) {
@@ -457,13 +525,30 @@ async function main() {
   for (let i = 0; i < coursePath.length; i += 3) {
     coursePts.push(new THREE.Vector3(coursePath[i], coursePath[i + 1], coursePath[i + 2]));
   }
-  const markerGeo = new THREE.SphereGeometry(span * 0.008, 16, 12);
-  const startMark = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0x3fb950 }));
-  startMark.position.copy(coursePts[0]);
-  scene.add(startMark);
-  const endMark = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0xf0883e }));
+  // 終点 (5合目) マーカーの球。 始点側は Phase 3 で rider の自転車 mesh を置くので
+  // 球マーカーは不要 (= 自転車自体が始点を示す。 球を残すと自転車に重なって隠す)。
+  const endMark = new THREE.Mesh(
+    new THREE.SphereGeometry(span * 0.008, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xf0883e }));
   endMark.position.copy(coursePts[coursePts.length - 1]);
   scene.add(endMark);
+
+  // brief b11-Phase3: rider の 3D 自転車 mesh をコース始点の路面に静止で置く。
+  // 配置 (位置・進行方向) は rider_placement.js の純関数がリボン頂点から出す。
+  // 自転車の全長は道路幅 (span*0.0055) の約 2 倍 ── 路面に明瞭に乗り、 マーカー
+  // 直径 (span*0.016) より一回り小さく rider が主役になり過ぎないサイズ。
+  const placement = riderStartPlacement(ribbon.positions, ribbon.vertexCount);
+  const bike = buildBikeMesh();
+  bike.scale.setScalar(span * 0.011);
+  bike.position.set(
+    placement.position[0], placement.position[1], placement.position[2]);
+  // mesh は -Z 前方なので、 forward を見る lookAt で進行方向へ向く (forward.Y=0
+  // なので路面に対し水平のまま)。
+  bike.lookAt(
+    placement.position[0] + placement.forward[0],
+    placement.position[1] + placement.forward[1],
+    placement.position[2] + placement.forward[2]);
+  scene.add(bike);
 
   // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
