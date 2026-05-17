@@ -111,6 +111,7 @@ import {
   stitchHeightGrid, buildTerrainGeometry, buildCoursePath, buildCourseRibbon,
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
+import { buildRoadMarks, slopeAtDistance } from './lib/road_texture.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -235,6 +236,72 @@ async function buildModeTexture(mode, tileCoords, range) {
   return tex;
 }
 
+// brief b11-Phase2: コース道路リボンに貼る「路面に焼いた距離・勾配」テクスチャを組む。
+// 数値ロジック (どこに何の数字を焼くか) は road_texture.js の純関数 buildRoadMarks /
+// slopeAtDistance が担い node test 済 ── 本関数は新しい数値ロジックを持たず、
+// その出力と gradeColorContinuous を canvas API で描くだけ (= 他の描画コードと同じ
+// 実画面目視で検証する層)。
+//   ROAD_TEX_W: u 軸 = 約 24km の進行方向。 GPU テクスチャ幅の一般的上限 16384 を採り、
+//     最も引き伸びる軸の解像度を上限まで上げる。 24000m/16384 ≒ 1.46 m/px。
+//   ROAD_TEX_H: v 軸 = 路面幅 24m。 勾配色は幅方向一様で解像度要求が低く、 数字の
+//     縦エッジが出れば足りるので 128 (= 24m/128 ≒ 0.19 m/px)。 全体 16384×128×4B = 8MB。
+const ROAD_TEX_W = 16384;
+const ROAD_TEX_H = 128;
+
+// 路面ペイント風の数字 1 行。 白字 + 暗い縁取りで勾配色 (緑〜紫) のどこでも視認可。
+function drawRoadText(ctx, text, x, y, fontPx) {
+  ctx.font = `bold ${fontPx}px -apple-system, "Segoe UI", sans-serif`;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(4, fontPx * 0.16);
+  ctx.strokeStyle = 'rgba(15,20,30,0.92)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, x, y);
+}
+
+function buildRoadTextureCanvas(course, marks) {
+  const W = ROAD_TEX_W, H = ROAD_TEX_H;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext('2d');
+  const total = marks.totalDistanceM;
+  // 1. 背景 = 距離方向に勾配色 (= 道路の色を全部テクスチャが持つ)。 列ごとに
+  //    slopeAtDistance → gradeColorContinuous。 slopeAtDistance が勾配の唯一の SoT。
+  for (let x = 0; x < W; x++) {
+    const d = (x / W) * total;
+    ctx.fillStyle = gradeColorContinuous(slopeAtDistance(course, d));
+    ctx.fillRect(x, 0, 1, H);
+  }
+  // 2. minor 刻み = 約 100m ごとの細い横線 (= 距離の目安、 数字なし)。
+  ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+  ctx.lineWidth = 2;
+  for (const mk of marks.minor) {
+    const x = mk.u * W;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  // 3. major 刻み = 約 1km ごとの太い横線 + 数字 (距離 km / 勾配 %)。
+  //    距離は major マークの実距離 (整数 km ちょうど)、 勾配は mk.slope_pct
+  //    (= slopeAtDistance の実値) を 1 桁。 切りの良い偽の丸め値は出さない。
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const mk of marks.major) {
+    const x = mk.u * W;
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+    drawRoadText(ctx, `${mk.distance_m / 1000}km`, x, H * 0.31, 58);
+    drawRoadText(ctx, `${mk.slope_pct.toFixed(1)}%`, x, H * 0.72, 46);
+  }
+  return cv;
+}
+
 // DEM タイル取得元を解決する。 range 中央付近の z14 タイルを 1 枚 probe し、
 // 同一オリジンの local tile DB が応答すればそれを使う (= 既存コースタイルの再利用)。
 async function resolveDemBase(range) {
@@ -355,8 +422,9 @@ async function main() {
 
   // コースを地形に重ねる: course.json (= GPX 由来) の点列を、 地形と同じ投影で
   // 「地形表面に沿う平たいリボン (= 道路状の帯)」mesh として描く。 リボンの両端は
-  // DEM 標高でそれぞれ drape し起伏に沿わせる。 各頂点は属する course 点の slope_pct
-  // で勾配色分け (= 緑 平坦 → 紫 激坂)。 始点 (緑) / 5合目 終点 (橙) に球マーカー。
+  // DEM 標高でそれぞれ drape し起伏に沿わせる。 路面の色 (勾配色) と距離・勾配の
+  // 数字は、 リボンの uv に貼る 1 枚のテクスチャに焼き込む (= brief b11-Phase2)。
+  // 始点 (緑) / 5合目 終点 (橙) に球マーカー。
   const ribbon = buildCourseRibbon(course, {
     range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,
     tileSize: TILE_PX,
@@ -366,25 +434,19 @@ async function main() {
   });
   const ribbonGeo = new THREE.BufferGeometry();
   ribbonGeo.setAttribute('position', new THREE.BufferAttribute(ribbon.positions, 3));
-  // uv は現状の頂点色 material では使わないが、 後続の石 (= 距離・勾配の数字を道路
-  // テクスチャに焼き込む) で texture を貼れるよう geometry に持たせておく。
+  // uv = u(距離 0..1) / v(幅 0..1)。 道路テクスチャをこの uv で路面に貼る。
   ribbonGeo.setAttribute('uv', new THREE.BufferAttribute(ribbon.uvs, 2));
   ribbonGeo.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
-  // 勾配色分け: 頂点 v は course 点 floor(v/2) に属する。 既存 viewer と同じ
-  // gradeColorContinuous (route_styling.js の SoT パレット) で頂点色を塗る。
-  const ribbonColors = new Float32Array(ribbon.vertexCount * 3);
-  const _gc = new THREE.Color();
-  for (let v = 0; v < ribbon.vertexCount; v++) {
-    const p = course[Math.floor(v / 2)];
-    _gc.set(gradeColorContinuous(p ? p.slope_pct : 0));
-    ribbonColors[v * 3] = _gc.r;
-    ribbonColors[v * 3 + 1] = _gc.g;
-    ribbonColors[v * 3 + 2] = _gc.b;
-  }
-  ribbonGeo.setAttribute('color', new THREE.BufferAttribute(ribbonColors, 3));
-  // 陰影なしの頂点色 material (= 法線・winding 不問、 DoubleSide で裏面も描く)。
+  // 道路テクスチャ: 距離マーク (約 1km の数字 / 約 100m の刻み) と勾配色を canvas に
+  // 焼き、 リボンの uv で路面に貼る。 数字・色は course の実値 (road_texture.js)。
+  const roadMarks = buildRoadMarks(course, { majorIntervalM: 1000, minorIntervalM: 100 });
+  const roadTexture = new THREE.CanvasTexture(buildRoadTextureCanvas(course, roadMarks));
+  roadTexture.colorSpace = THREE.SRGBColorSpace;
+  roadTexture.anisotropy = 8;  // 異方テクセル (進行方向に 1px≒1.46m) の滲み低減。
+  roadTexture.flipY = false;   // canvas の上 = uv v=0 (= 数字が上下反転しない)。
+  // 陰影なしの texture material (= 法線・winding 不問、 DoubleSide で裏面も描く)。
   scene.add(new THREE.Mesh(ribbonGeo, new THREE.MeshBasicMaterial({
-    vertexColors: true, side: THREE.DoubleSide,
+    map: roadTexture, side: THREE.DoubleSide,
   })));
   // 始点 / 終点マーカー用にコース中心線の両端だけ投影する。
   const coursePath = buildCoursePath(course, {
