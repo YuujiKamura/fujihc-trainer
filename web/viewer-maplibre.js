@@ -16,7 +16,7 @@ import {
   createTextWriter, minimapDirty,
 } from './lib/frame_diff.js';
 // brief 19b: WebSocket / ride state / camera を lib に集約
-import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
+import { createBridgeClient, createTestModeClient, createFakeStateGenerator } from './lib/ws_client.js';
 import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
 import { createRideState } from './lib/ride_state.js';
 // brief 35: Terrain + Rider 2 層モデル. viewer は terrain + rider を直接保持し、
@@ -819,6 +819,7 @@ const wsHandlers = {
   ride_status(msg) {
     if (msg.state === 'started') {
       if (rideState) rideState.start();
+      else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
       rideStartedAt = performance.now();
       hidePairing();
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = false;
@@ -1019,20 +1020,8 @@ function initTestMode() {
   setRideStartEnabled(true);
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
-    fakeStateGenerator: () => {
-      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
-      const moving = snap.active && !snap.paused;
-      const movingSpeed = moving ? (20 / 3.6) : 0;
-      return {
-        speed_mps: movingSpeed,
-        power_w: moving ? 150 : 0,
-        cadence_rpm: moving ? 80 : 0,
-        distance_m: snap.distance,
-        slope_sent_pct: 0,
-        hr_bpm: 120,
-        last_ack: 'OK (TEST MODE)',
-      };
-    },
+    fakeStateGenerator: createFakeStateGenerator(
+      () => (rideState ? rideState.snapshot() : null), 'OK (TEST MODE)'),
   });
   // 2026-05-16 fix: user 報告 「F5 すると HUD もなにもない画面で詰む」.
   // ?test=1 は元々「自動 ride start」 設計だったが、 担当 C の preflight 統合で
@@ -1400,19 +1389,8 @@ function initViewMode() {
   // fake state client (= TEST_MODE / MAP_MODE と同じ生成器). state-riding は section 選択後.
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
-    fakeStateGenerator: () => {
-      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
-      const moving = snap.active && !snap.paused;
-      return {
-        speed_mps: moving ? (20 / 3.6) : 0,
-        power_w: moving ? 150 : 0,
-        cadence_rpm: moving ? 80 : 0,
-        distance_m: snap.distance,
-        slope_sent_pct: 0,
-        hr_bpm: 120,
-        last_ack: 'OK (VIEW MODE)',
-      };
-    },
+    fakeStateGenerator: createFakeStateGenerator(
+      () => (rideState ? rideState.snapshot() : null), 'OK (VIEW MODE)'),
   });
 
   // 2026-05-15 fix: section-overlay 全画面 modal は撤回、 右上 persistent panel
@@ -1689,6 +1667,13 @@ function showRestoreDialog(rec) {
 }
 
 let _pendingRestore = null;
+// 2026-05-17 fix: ride 開始が rideState 生成より先に要求された時の保留フラグ.
+// TEST MODE の自動 ride 開始 (initTestMode の 500ms タイマー) は loadCourse が
+// rideState を生成し終わる前に startRideConfirmed を呼ぶことがあり、
+// `if (rideState) rideState.start()` が空振りして rider が active にならず
+// (= 既定の paused/inactive のまま) 永久に走り出さなかった。 開始要求をこのフラグに
+// 保留し、 loadCourse が rideState を生成した直後に消費して rider を start する。
+let _pendingRideStart = false;
 // rideState が初期化された後 (= bootMap → course load → createRideState 完了後) に呼ばれる.
 // 呼び出し点は course load 完了後の場所 (= 後段で hook を入れる)。 暫定 module-level 関数:
 function applyPendingRestore() {
@@ -1736,19 +1721,8 @@ function initMapMode() {
   // TEST_MODE と同じ fake client (= bridge / trainer 不要)
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
-    fakeStateGenerator: () => {
-      const snap = rideState ? rideState.snapshot() : { active: false, paused: true, distance: 0 };
-      const moving = snap.active && !snap.paused;
-      return {
-        speed_mps: moving ? (20 / 3.6) : 0,
-        power_w: moving ? 150 : 0,
-        cadence_rpm: moving ? 80 : 0,
-        distance_m: snap.distance,
-        slope_sent_pct: 0,
-        hr_bpm: 120,
-        last_ack: 'OK (MAP MODE)',
-      };
-    },
+    fakeStateGenerator: createFakeStateGenerator(
+      () => (rideState ? rideState.snapshot() : null), 'OK (MAP MODE)'),
   });
   // 描画完了まで ride を待機 (= user 指示: 「全体描画が終わるまでスタートせずに待機」).
   // ローディングインジケータを表示、 rideState 準備済 + map.idle (= 全 tile load + render flush)
@@ -1851,6 +1825,13 @@ async function loadCourse() {
   rider = rideState._rider;
   // 起動時の autosave 復元が pending なら、 ここで rideState を進めた状態に持ち上げる.
   applyPendingRestore();
+  // 2026-05-17 fix: ride 開始が rideState 生成前に要求されていた場合 (= TEST MODE の
+  // 自動 ride 開始が loadCourse を追い越す race)、 ここで保留分を消費して rider を start。
+  // restore が走った場合は rider が既に active なので二重 start しない (= 距離 0 リセット回避)。
+  if (_pendingRideStart) {
+    _pendingRideStart = false;
+    if (!rideState.snapshot().active) rideState.start();
+  }
   totalDist = course[course.length - 1].distance_m;
   setText('total', totalDist.toFixed(0));
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
@@ -2526,6 +2507,7 @@ document.getElementById('btnPause').addEventListener('click', () => { if (rideSt
 function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
   if (rideState) rideState.start();
+  else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
   lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
   lastAutosaveT = performance.now();  // autosave 30 秒 cadence をリセット
   rideStartedIso = new Date().toISOString();  // autosave に保存する ride 開始時刻

@@ -97,6 +97,35 @@ export function createBridgeClient(url, handlers, options = {}) {
 }
 
 /**
+ * TEST / VIEW / MAP MODE 共通の fake state 生成器.
+ *
+ * 旧来は initTestMode / initViewMode / initMapMode の 3 箇所に同一ロジックを直書きしていた
+ * (= SoT 三重複)。 fake trainer は ride が active (= 走行中かつ非 paused) の時だけ
+ * power / cadence / speed を出す。 ride 未開始・ rideState 未生成なら 0 を返す。
+ *
+ * @param {() => ({active?:boolean, paused?:boolean, distance?:number}|null)} getSnapshot
+ *   rideState.snapshot() を返す関数 (= rideState 未生成なら null を返してよい).
+ * @param {string} [ackLabel='OK (TEST MODE)'] last_ack に載せるモード名.
+ * @returns {() => object} createTestModeClient の fakeStateGenerator にそのまま渡せる関数.
+ */
+export function createFakeStateGenerator(getSnapshot, ackLabel = 'OK (TEST MODE)') {
+  return () => {
+    const snap = (typeof getSnapshot === 'function' && getSnapshot())
+      || { active: false, paused: true, distance: 0 };
+    const moving = !!snap.active && !snap.paused;
+    return {
+      speed_mps: moving ? (20 / 3.6) : 0,
+      power_w: moving ? 150 : 0,
+      cadence_rpm: moving ? 80 : 0,
+      distance_m: Number.isFinite(snap.distance) ? snap.distance : 0,
+      slope_sent_pct: 0,
+      hr_bpm: 120,
+      last_ack: ackLabel,
+    };
+  };
+}
+
+/**
  * テスト/開発モード用の fake client (= brief 22 ?test=1 で使う).
  * trainer / bridge 不要、 fake state を定期 push、 主要 send は handlers にループバック.
  *
