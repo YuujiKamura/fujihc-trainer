@@ -366,6 +366,9 @@ async function main() {
   });
   const ribbonGeo = new THREE.BufferGeometry();
   ribbonGeo.setAttribute('position', new THREE.BufferAttribute(ribbon.positions, 3));
+  // uv は現状の頂点色 material では使わないが、 後続の石 (= 距離・勾配の数字を道路
+  // テクスチャに焼き込む) で texture を貼れるよう geometry に持たせておく。
+  ribbonGeo.setAttribute('uv', new THREE.BufferAttribute(ribbon.uvs, 2));
   ribbonGeo.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
   // 勾配色分け: 頂点 v は course 点 floor(v/2) に属する。 既存 viewer と同じ
   // gradeColorContinuous (route_styling.js の SoT パレット) で頂点色を塗る。

@@ -491,4 +491,28 @@ describe('buildCourseRibbon', () => {
     expect(() => buildCourseRibbon([], { range, stitched, centerLat, centerLon }))
       .toThrow(RangeError);
   });
+
+  it('uv: u は距離正規化で端が 0/1、 v は左 0 右 1 (= 後続のテクスチャ焼き込み用)', () => {
+    const c = [
+      { lat: 35.40, lon: 138.71, distance_m: 0 },
+      { lat: 35.41, lon: 138.72, distance_m: 1000 },
+      { lat: 35.43, lon: 138.72, distance_m: 4000 },
+    ];
+    const r = buildCourseRibbon(c, { range, stitched, centerLat, centerLon, tileSize: TS });
+    expect(r.uvs.length).toBe(c.length * 2 * 2);
+    expect(r.uvs[0]).toBeCloseTo(0, 5);             // 点0 左 u
+    expect(r.uvs[2]).toBeCloseTo(0, 5);             // 点0 右 u (= 同じ u)
+    expect(r.uvs[4]).toBeCloseTo(1000 / 4000, 5);   // 点1 u = distance 比例
+    expect(r.uvs[8]).toBeCloseTo(1, 5);             // 点2 (終点) u
+    expect(r.uvs[1]).toBe(0);                       // 左頂点 v
+    expect(r.uvs[3]).toBe(1);                       // 右頂点 v
+  });
+
+  it('distance_m 欠損時は u を点 index 比で代用 (= 沈黙 NaN を防ぐ)', () => {
+    // この describe の course は distance_m なし → u = i/(n-1)。
+    const r = buildCourseRibbon(course, { range, stitched, centerLat, centerLon, tileSize: TS });
+    expect(r.uvs[0]).toBeCloseTo(0, 5);
+    expect(r.uvs[(course.length - 1) * 4]).toBeCloseTo(1, 5);
+    for (const v of r.uvs) expect(Number.isFinite(v)).toBe(true);
+  });
 });

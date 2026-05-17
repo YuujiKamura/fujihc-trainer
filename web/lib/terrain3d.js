@@ -308,12 +308,18 @@ export function courseRingSlopes(course, ringCount) {
  * 投影は buildTerrainGeometry / buildCoursePath と同一 (= 同じ centerLat/centerLon、
  * 東 +X、 北 -Z)。 法線は使わない (= 描画側は陰影なしの頂点色 material 想定)。
  *
- * @param {Array<{lat:number, lon:number}>} course
+ * uv も返す: u = コース始点からの距離 (distance_m) を 0..1 に正規化、 v = 0 (左端) /
+ * 1 (右端)。 現状は頂点色 material で使わないが、 後続の石 (= 距離・勾配の数字を道路
+ * テクスチャに焼き込む) で、 距離方向に数字を並べたテクスチャをこの uv で道路へ
+ * 貼れるようにするための仕込み。 distance_m 欠損時は点 index 比で代用。
+ *
+ * @param {Array<{lat:number, lon:number, distance_m?:number}>} course
  * @param {{range:object, stitched:object, centerLat:number, centerLon:number,
  *          tileSize?:number, widthM?:number, drapeOffset?:number,
  *          exaggeration?:number}} opts
- * @returns {{positions:Float32Array, indices:Uint32Array, vertexCount:number}}
- *   positions/indices は BufferGeometry 用。 頂点 2i=左, 2i+1=右 (course 点 i)。
+ * @returns {{positions:Float32Array, indices:Uint32Array, uvs:Float32Array,
+ *            vertexCount:number}}
+ *   positions/indices/uvs は BufferGeometry 用。 頂点 2i=左, 2i+1=右 (course 点 i)。
  */
 export function buildCourseRibbon(course, opts) {
   if (!Array.isArray(course) || course.length < 2) {
@@ -337,14 +343,23 @@ export function buildCourseRibbon(course, opts) {
     cz[i] = -(course[i].lat - centerLat) * M_PER_DEG_LAT;
   }
 
+  // u 軸 = コース始点からの距離を 0..1 に正規化 (= 後続のテクスチャ焼き込み用)。
+  const lastDist = Number.isFinite(course[n - 1].distance_m)
+    ? course[n - 1].distance_m : 0;
+
   // 2. 各点で進行方向の直交に halfW 振った左右頂点。 左右とも DEM 標高で drape。
   const positions = new Float32Array(n * 2 * 3);
+  const uvs = new Float32Array(n * 2 * 2);
   for (let i = 0; i < n; i++) {
     const ia = Math.max(0, i - 1), ib = Math.min(n - 1, i + 1);
     let tx = cx[ib] - cx[ia], tz = cz[ib] - cz[ia];
     const tl = Math.hypot(tx, tz) || 1;
     tx /= tl; tz /= tl;
     const perpX = -tz, perpZ = tx;  // XZ 平面で接線を 90° 回した直交単位ベクトル
+    // u = 距離正規化 (distance_m 欠損や総距離 0 なら点 index 比で代用)。
+    const u = (lastDist > 0 && Number.isFinite(course[i].distance_m))
+      ? course[i].distance_m / lastDist
+      : (n > 1 ? i / (n - 1) : 0);
     for (let s = 0; s < 2; s++) {
       const sign = s === 0 ? 1 : -1;  // 0=左, 1=右
       const ex = cx[i] + perpX * halfW * sign;
@@ -357,6 +372,9 @@ export function buildCourseRibbon(course, opts) {
       positions[vi] = ex;
       positions[vi + 1] = h * exaggeration + drapeOffset;
       positions[vi + 2] = ez;
+      const ui = (i * 2 + s) * 2;
+      uvs[ui] = u;
+      uvs[ui + 1] = s === 0 ? 0 : 1;  // 左端 v=0 / 右端 v=1
     }
   }
 
@@ -368,5 +386,5 @@ export function buildCourseRibbon(course, opts) {
     indices[k++] = a; indices[k++] = b; indices[k++] = c;
     indices[k++] = b; indices[k++] = d; indices[k++] = c;
   }
-  return { positions, indices, vertexCount: n * 2 };
+  return { positions, indices, uvs, vertexCount: n * 2 };
 }
