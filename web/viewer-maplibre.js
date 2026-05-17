@@ -27,6 +27,10 @@ import { createRideState } from './lib/ride_state.js';
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
 import { integratePhysics } from './lib/bike_physics.js';
+import {
+  buildRiderFeatures as buildRiderFeaturesByStyle,
+  RIDER_STYLES, DEFAULT_RIDER_STYLE, isValidRiderStyle,
+} from './lib/rider_styles.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
@@ -419,6 +423,14 @@ const _lsNum = (k, d) => {
 let bikeMass = _lsNum('fujihill.mass', 88);    // kg (= rider + bike 総重量)
 let bikeCrr  = _lsNum('fujihill.crr', 0.001);  // 転がり抵抗係数 (= 既定 1‰、 競技寄り)
 let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
+// rider 表示スタイル (= bike / gits / arrow)。 localStorage は信頼境界外なので
+// isValidRiderStyle で allowlist 照合し、 不正 / 空 / null / 未設定は DEFAULT にフォールバック。
+let riderStyle = (() => {
+  try {
+    const s = localStorage.getItem('fujihill.riderStyle');
+    return isValidRiderStyle(s) ? s : DEFAULT_RIDER_STYLE;
+  } catch { return DEFAULT_RIDER_STYLE; }
+})();
 // 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
 // 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
 // のみ、 distanceM も速度を持たない) seed できず 0 始動とする。 復元直後の 1 state メッセージ分
@@ -2191,34 +2203,11 @@ function buildMinimapBottomBase() {
 // brief 29: minimap だけ例外で OSM 直叩き (= 起動時 1-shot 9-16 タイル、 z=11)、
 // ride 中の再 fetch ゼロ。 prefetchTilesAlongCourse 復活は絶対 NG。
 
-// rider の 3D 豆腐 = 1m 角の正方形、 heading に合わせて 4 辺が進行方向の前後左右を向く。
-// rider を「自転車に乗った人」 のシルエットで返す (2026-05-17、 慣性シミュの自転車に寄せた)。
-// local 座標は x = 進行方向に直交、 y = 進行方向 (= 前が +y)。 heading で回転して lon/lat へ。
-// MapLibre fill-extrusion は地面からの上方押し出しのみ。 スポーク付き車輪のような縦の円盤は
-// 描けないため、 低く長い暗色の車体 + その上に立つ cyan の rider の 2 part でシルエットを作る。
-// 各 part は color / base / height を feature property で持ち、 rider-body layer が ['get'] で読む。
-// spin (= 車輪回転角) は fill-extrusion では表現不可、 signature 互換のため受けるが未使用。
+// rider マーカーの GeoJSON 生成は web/lib/rider_styles.js に切り出し済 (= スタイル別の
+// 純粋関数 + 単体テスト)。 viewer は選択中の riderStyle を渡して dispatch するだけ。
+// rider-body レイヤー (fill-extrusion) が各 feature の color / base / height を ['get'] で読む。
 function buildRiderFeatures(lat, lon, heading, spin) {
-  const M_LAT = 1 / 111320;
-  const M_LON = 1 / (111320 * Math.cos(lat * Math.PI / 180));
-  const sinH = Math.sin(heading), cosH = Math.cos(heading);
-  const toLngLat = (x, y) => {
-    const rx = x * cosH + y * sinH;
-    const ry = -x * sinH + y * cosH;
-    return [lon + rx * M_LON, lat + ry * M_LAT];
-  };
-  const part = (x0, x1, y0, y1, color, base, height) => {
-    const ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => toLngLat(x, y));
-    ring.push(ring[0]);
-    return { type: 'Feature', properties: { color, height, base }, geometry: { type: 'Polygon', coordinates: [ring] } };
-  };
-  return {
-    type: 'FeatureCollection',
-    features: [
-      part(-0.22, 0.22, -0.95, 0.95, '#23272f', 0, 0.55),    // 車体: 低く長い暗色 (= 自転車)
-      part(-0.21, 0.21, -0.28, 0.34, '#00ffff', 0.55, 1.9),  // rider: cyan、 車体上に立つ
-    ],
-  };
+  return buildRiderFeaturesByStyle(riderStyle, lat, lon, heading, spin);
 }
 
 // brief 29: 上下 2 canvas にそれぞれ base 画像を drawImage + rider 描画。
@@ -2683,6 +2672,32 @@ const rLightDir = document.getElementById('rngLightDir');
 if (rLightDir) rLightDir.addEventListener('input', () => applyLightDir(parseFloat(rLightDir.value)));
 const rLightStr = document.getElementById('rngLightStr');
 if (rLightStr) rLightStr.addEventListener('input', () => applyLightStr(parseFloat(rLightStr.value)));
+
+// ライダー表示スタイルのピッカー。 機器設定パネルの <select id="selRiderStyle"> に
+// RIDER_STYLES を単一の出所として option を populate (= HTML にベタ書きして drift させない)。
+function bindRiderStylePicker() {
+  const sel = document.getElementById('selRiderStyle');
+  if (!sel) return;
+  sel.textContent = '';  // label は textContent で入れる (= innerHTML 不使用、 XSS 経路を作らない)
+  for (const s of RIDER_STYLES) {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.label;
+    sel.appendChild(opt);
+  }
+  sel.value = riderStyle;
+  sel.addEventListener('change', () => {
+    const v = sel.value;
+    if (!isValidRiderStyle(v)) return;
+    riderStyle = v;
+    try { localStorage.setItem('fujihill.riderStyle', v); } catch {}
+    // b2 の per-frame 最適化: 通常 tick は位置 / 向き / spin が動いた時だけ rider を再構築する。
+    // スタイル切替は位置が動かなくても見た目を変える必要があるので、 _lastRiderFrame を
+    // null にして次フレームで 1 回だけ強制再構築させる (= 毎フレーム無条件再構築には戻さない)。
+    _lastRiderFrame = null;
+  });
+}
+bindRiderStylePicker();
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
