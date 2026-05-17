@@ -373,6 +373,16 @@ let inertiaKg = (() => {
   try { const v = parseFloat(localStorage.getItem('fujihill.inertiaKg')); return Number.isFinite(v) ? v : 800; }
   catch { return 800; }
 })();
+// 2026-05-17: 慣性シミュ (inertia-sim.html) と同じ自転車パラメータ。 applyPhysicsStep に渡す。
+// 旧来 wsHandlers.state にハードコードしていた値 (mass:88 / c_rr:0.005 / c_d:0.35) を slider 化、
+// localStorage に物理値で永続 (= mass kg / c_rr 係数 / cda m²)。
+const _lsNum = (k, d) => {
+  try { const v = parseFloat(localStorage.getItem(k)); return Number.isFinite(v) ? v : d; }
+  catch { return d; }
+};
+let bikeMass = _lsNum('fujihill.mass', 88);    // kg (= rider + bike 総重量)
+let bikeCrr  = _lsNum('fujihill.crr', 0.005);  // 転がり抵抗係数
+let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
 // 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
 // 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
 // のみ、 distanceM も速度を持たない) seed できず 0 始動とする。 復元直後の 1 state メッセージ分
@@ -693,7 +703,7 @@ const wsHandlers = {
       while (remain > 0) {
         const h = Math.min(SUB, remain);
         physicsSpeedMps = applyPhysicsStep(physicsSpeedMps, h, power, slopePct,
-          { mass: 88, c_rr: 0.005, c_d: 0.35, area: 1, inertia: inertiaKg });
+          { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
         remain -= h;
       }
       if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0) {
@@ -2547,6 +2557,29 @@ if (rIner) {
     }
   });
 }
+
+// 2026-05-17: 慣性シミュと同じ 質量 / 転がり抵抗 / 空気抵抗 slider。 slider 生値と物理値を
+// scale 変換し、 物理値を localStorage 保存。 wsHandlers.state の applyPhysicsStep opts に効く。
+function bindBikeSlider(rangeId, valId, storeKey, physToRaw, rawToPhys, fmt, setGlobal, phys) {
+  const r = document.getElementById(rangeId);
+  if (!r) return;
+  r.value = String(physToRaw(phys));
+  setText(valId, fmt(physToRaw(phys)));
+  r.addEventListener('input', () => {
+    const raw = parseFloat(r.value);
+    if (!Number.isFinite(raw)) return;
+    const p = rawToPhys(raw);
+    setGlobal(p);
+    setText(valId, fmt(raw));
+    try { localStorage.setItem(storeKey, String(p)); } catch {}
+  });
+}
+bindBikeSlider('rngMass', 'massVal', 'fujihill.mass',
+  (p) => Math.round(p), (r) => r, (r) => String(Math.round(r)), (p) => { bikeMass = p; }, bikeMass);
+bindBikeSlider('rngRr', 'rrVal', 'fujihill.crr',
+  (p) => Math.round(p * 1000), (r) => r / 1000, (r) => String(Math.round(r)), (p) => { bikeCrr = p; }, bikeCrr);
+bindBikeSlider('rngCda', 'cdaVal', 'fujihill.cda',
+  (p) => Math.round(p * 100), (r) => r / 100, (r) => (r / 100).toFixed(2), (p) => { bikeCda = p; }, bikeCda);
 
 // 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
 // setPaintProperty で live 更新、 デバッグ表示も同時。
