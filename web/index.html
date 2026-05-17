@@ -363,6 +363,9 @@
     font: bold 24px ui-monospace, monospace;
     pointer-events: none;
   }
+  /* brief b-segment-labels: 道路セグメントの距離+勾配ラベルは MapLibre の symbol
+     レイヤー (icon-image / canvas 画像) で地面平面に描く。 DOM 要素ではないため
+     ここに CSS は無い (= viewer-maplibre.js の makeSegLabelImage が canvas に描画)。 */
 </style>
 </head>
 <body class="state-checking">
@@ -428,6 +431,8 @@
   <!-- 光源 (hillshade) 調整: 方向 0..360° / 強度 0..100 (= MapLibre 0..1 を ×100) -->
   <div class="row"><label>光源方向</label><input id="rngLightDir" type="range" min="0" max="360" step="5" value="135"><span class="val"><span id="lightDirVal">135</span>°</span></div>
   <div class="row"><label>光源強度</label><input id="rngLightStr" type="range" min="0" max="100" step="5" value="100"><span class="val"><span id="lightStrVal">100</span>%</span></div>
+  <!-- b9: 距離+勾配ラベルの表示サイズ (= route-labels の icon-size 倍率)。 40..200 → 0.4..2.0x。 -->
+  <div class="row"><label>ラベルサイズ</label><input id="rngLabelSize" type="range" min="40" max="200" step="10" value="100"><span class="val"><span id="labelSizeVal">1.0</span>x</span></div>
   <div style="margin-top:0.4rem; font-size:13px; color:#aaa;">
     hillshade dbg:
     dir <span id="dbgLightDir">135</span>°,
@@ -790,6 +795,6 @@
   <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
-<script type="module" src="viewer-maplibre.js?v=36"></script>
+<script type="module" src="viewer-maplibre.js?v=37"></script>
 </body>
 </html>

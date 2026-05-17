@@ -8,6 +8,8 @@ import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
 import { smoothCourse } from './lib/gpx_smooth.js';
 // brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
 import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
+// brief b-segment-labels: 勾配色セグメント上に「距離 + 勾配」のテキストラベルを載せる
+import { buildSegmentLabels } from './lib/segment_labels.js';
 // brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist、 2 回目以降 skip.
 import { getMeshCache, setMeshCache, computeCourseHash } from './lib/mesh_cache.js';
 // brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
@@ -516,6 +518,85 @@ function updateStartGoalVisibility() {
     const el = m.getElement && m.getElement();
     if (el) el.style.display = hide ? 'none' : 'block';
   }
+}
+
+// brief b-segment-labels / b9: 道路セグメント上の「距離+勾配」ラベルを描く symbol
+// レイヤー用の文字画像を生成する。 MapLibre の symbol text-field は style に glyphs URL
+// が要るが本プロジェクトに glyphs 配信 infra が無いため、 文字を canvas に描いて
+// icon-image として使う。 symbol レイヤー側で icon-pitch-alignment /
+// icon-rotation-alignment を map にすると、 文字が billboard (カメラ正面の浮いた札)
+// ではなく地面平面に寝て道路の向きに沿う (= 路面ペイント風)。
+// b9: ベタ背景は使わない ── 透明背景 + 太い黒ハロー (縁取り) で読みやすさを確保し、
+//     文字の下のコース勾配色が透けて見えるようにする。 文字は左揃え (= コース側の
+//     左端から始まって揃う)。 基準サイズは canvas 固定、 画面表示倍率は symbol layer の
+//     icon-size (= labelSizeScale、 機器設定パネルの slider で調整) で変える。
+// 文字の基準サイズ (px)。 小さめ = billboard の衝突箱が小さく、 約100m間隔の標識が
+// 多く画面に並ぶ。 もっと大きく見たい時は機器設定の「ラベルサイズ」slider で拡大。
+const SEG_LABEL_FONT_PX = 22;
+// 1 つのラベル文字列を「透明背景 + 白文字 + 黒ハロー、 左揃え」の画像に描き、
+// MapLibre addImage 用の ImageData を返す。
+function makeSegLabelImage(text) {
+  const font = `bold ${SEG_LABEL_FONT_PX}px ui-monospace, "Courier New", monospace`;
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = font;
+  const haloW = Math.round(SEG_LABEL_FONT_PX * 0.16); // ハロー幅 (= 縁取りの太さ)
+  const pad = haloW + 4; // ハローが端で切れないための余白
+  const w = Math.ceil(measure.measureText(text).width) + pad * 2;
+  const h = Math.ceil(SEG_LABEL_FONT_PX * 1.35) + pad * 2;
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext('2d');
+  // 背景は塗らない (= 透明、 文字の下のコース勾配色が透ける)。
+  ctx.font = font;
+  // 左揃え: 各ラベルがコース側の左端から始まって揃う。
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  // 細い黒ハロー (縁取り) で勾配色のどの帯の上でも白文字が読めるようにする。
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = haloW;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+  ctx.strokeText(text, pad, h / 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, pad, h / 2);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+// b9: ラベル表示倍率 (= route-labels symbol layer の icon-size)。 機器設定パネルの
+// slider で調整、 localStorage 永続。 default 1.0。
+let labelSizeScale = 1;
+try {
+  const _ls = parseFloat(localStorage.getItem('fujihill.labelSize'));
+  if (Number.isFinite(_ls) && _ls > 0) labelSizeScale = _ls;
+} catch { /* localStorage 不可は default のまま */ }
+// ラベル倍率を route-labels layer に適用する (= layer 未生成なら次の生成時に反映)。
+function applyLabelSize(scale) {
+  labelSizeScale = scale;
+  if (map && map.getLayer && map.getLayer('route-labels')) {
+    map.setLayoutProperty('route-labels', 'icon-size', scale);
+  }
+}
+
+// b9: ラベルは rider 近傍の距離窓 (= 後方 LABEL_BACK_M 〜 前方 LABEL_AHEAD_M) だけ
+// 表示する。 約100m間隔で 240 個あり、 全部出すと地平線付近で重なって白い塊に潰れる。
+// billboard は遠近で縮まないため、 pitch 85° では前方 ~450m より先の 100m 間隔ラベルが
+// 画面上で重なる。 窓を手前 ~450m に絞ると標識 4〜5 個が約100m間隔できれいに並び、
+// 重なり潰れが完全に消える (= rider 前進に追従して窓が進む)。
+const LABEL_BACK_M = 150;
+const LABEL_AHEAD_M = 450;
+let _riderDistForLabels = 0;     // tick が書き込む rider 現在距離 (m)
+let _lastLabelDistBucket = -1;   // setFilter 呼出を 50m 刻みに間引く前回 bucket
+// route-labels layer の距離窓フィルタを rider 現在地に合わせて更新する。
+// setFilter は feature の再 tessellate を伴わない軽い操作 (= 50m 毎に呼んで十分軽い)。
+function updateSegmentLabelFilter() {
+  if (!map || !map.getLayer || !map.getLayer('route-labels')) return;
+  const lo = _riderDistForLabels - LABEL_BACK_M;
+  const hi = _riderDistForLabels + LABEL_AHEAD_M;
+  map.setFilter('route-labels', [
+    'all',
+    ['>=', ['get', 'distance_m'], lo],
+    ['<=', ['get', 'distance_m'], hi],
+  ]);
 }
 function setAppState(s) {
   // 2026-05-15 fix: 旧 `body.className = 'state-X'` は全クラス上書きで、 mode-view (= 観るモード)
@@ -1908,6 +1989,67 @@ async function loadCourse() {
       source: 'route',
       paint: { 'line-color': '#222', 'line-width': 0.5, 'line-opacity': 0.6 },
     });
+
+    // brief b-segment-labels: 勾配色セグメント上に距離+勾配のテキストラベルを載せる。
+    // MapLibre symbol レイヤーは style に glyphs URL が必須だが本プロジェクトに glyphs
+    // 配信 infra が無いため、 start/goal pin と同じ DOM の maplibregl.Marker で描く。
+    // buildSegmentLabels が 500m 間隔に間引いた点列 (≈ 48 個) を返す。 route polygon と
+    // 同じく「1 回だけ」生成 (= zoom 連動再生成は brief b2 で撤去済の GPU stall 要因)。
+    // brief b-segment-labels / b9: コースに沿って「距離+勾配」の標識を約 100m 間隔で
+    // 並べる。 buildSegmentLabels が約 100m 間隔のラベル点列 (≈ 240 個) を、 各点を
+    // コース路面の脇 (= 進行方向の右 20m) に逃がした位置で返す。 脇に置くので文字が
+    // 勾配色を一切隠さない。 各文字列を canvas 画像にして addImage、 point feature の
+    // icon-image にする。
+    //
+    // 向き: billboard (icon-rotation/pitch-alignment=viewport)。 文字は常にカメラ正面を
+    // 向いて立つ。 走行 camera は pitch 85° まで寝るため、 地面に寝かせた文字は地平に
+    // 圧縮されて完全に見えなくなる (実画面で検証済)。 billboard なら pitch 85° でも
+    // 文字が潰れず大きく読め、 曲がりくねった道でも向きが安定する。 標識はコース路面の
+    // 脇 (= 進行方向の右 20m) に置くので勾配色を一切隠さない。 icon-anchor=left +
+    // 文字左揃えで、 各標識がコース側の左端から揃って外へ伸びる。
+    const segLabels = buildSegmentLabels(polygonData, 100, 20);
+    const segLabelFeatures = [];
+    segLabels.forEach((lbl, i) => {
+      const imageId = `seg-label-${i}`;
+      if (!map.hasImage(imageId)) {
+        map.addImage(imageId, makeSegLabelImage(lbl.text));
+      }
+      segLabelFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lbl.lon, lbl.lat] },
+        properties: { icon: imageId, distance_m: lbl.distance_m },
+      });
+    });
+    map.addSource('route-labels', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: segLabelFeatures },
+    });
+    map.addLayer({
+      id: 'route-labels',
+      type: 'symbol',
+      source: 'route-labels',
+      minzoom: 13,
+      layout: {
+        'icon-image': ['get', 'icon'],
+        // billboard: viewport alignment ── 文字は常にカメラ正面を向いて立つ。
+        // 走行 camera が pitch 85° まで寝ても潰れず読める (地面に寝かせる方式は
+        // pitch 85° で地平に圧縮され完全に見えなくなるため不採用、 実画面で検証済)。
+        'icon-rotation-alignment': 'viewport',
+        'icon-pitch-alignment': 'viewport',
+        // icon-anchor=left: 標識の左端 (= コース側) を基準点に置き、 外へ伸ばす。
+        'icon-anchor': 'left',
+        // 表示倍率は slider 連動 (= labelSizeScale、 localStorage 永続)。
+        'icon-size': labelSizeScale,
+        // 近いラベルを優先的に残す (= sort-key 小さいほど優先、 distance 昇順)。
+        'symbol-sort-key': ['get', 'distance_m'],
+        // 距離窓フィルタ (updateSegmentLabelFilter / tick) で rider 近傍だけに絞るので、
+        // 窓内の標識は衝突回避せず全部出す (= 約100m間隔できれいに並べる)。
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    });
+    // rider 近傍の距離窓に初期フィルタを掛ける (= 以降 tick が rider 追従で更新)。
+    updateSegmentLabelFilter();
   }
   // start / goal markers
   // start (緑) / goal (赤) pin: pairing / dbinit 中は表示、 ride 中は hide
@@ -2340,6 +2482,15 @@ function tick(t) {
 
   setText('dist', curDist.toFixed(0));
   setText('ele', rEle.toFixed(0));
+
+  // b9: 距離ラベルの表示窓を rider 現在地に追従させる。 50m 刻みの bucket が
+  // 変わった時だけ setFilter (= 毎フレーム呼ばない、 軽量)。
+  const labelDistBucket = Math.floor(curDist / 50);
+  if (labelDistBucket !== _lastLabelDistBucket) {
+    _lastLabelDistBucket = labelDistBucket;
+    _riderDistForLabels = curDist;
+    updateSegmentLabelFilter();
+  }
   // rider 追随 HUD の slope は常時更新 (= state push に依存せず Terrain 経由で取得).
   setText('r-slope', pos.slope_pct.toFixed(1));
   // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project、
@@ -2672,6 +2823,22 @@ const rLightDir = document.getElementById('rngLightDir');
 if (rLightDir) rLightDir.addEventListener('input', () => applyLightDir(parseFloat(rLightDir.value)));
 const rLightStr = document.getElementById('rngLightStr');
 if (rLightStr) rLightStr.addEventListener('input', () => applyLightStr(parseFloat(rLightStr.value)));
+
+// b9: ラベルサイズ slider (= route-labels の icon-size 倍率)。 slider 生値 40..200 を
+// 0.4..2.0 倍に変換、 localStorage 'fujihill.labelSize' に永続。 現物を見ながら調整可。
+const rLabelSize = document.getElementById('rngLabelSize');
+if (rLabelSize) {
+  rLabelSize.value = String(Math.round(labelSizeScale * 100));
+  setText('labelSizeVal', labelSizeScale.toFixed(1));
+  rLabelSize.addEventListener('input', () => {
+    const pct = parseFloat(rLabelSize.value);
+    if (!Number.isFinite(pct)) return;
+    const scale = pct / 100;
+    applyLabelSize(scale);
+    setText('labelSizeVal', scale.toFixed(1));
+    try { localStorage.setItem('fujihill.labelSize', String(scale)); } catch {}
+  });
+}
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
