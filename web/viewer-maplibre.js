@@ -26,7 +26,7 @@ import { createRideState } from './lib/ride_state.js';
 // 内側に持つため二重 state にはならない).
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
-import { applyPhysicsStep } from './lib/bike_physics.js';
+import { integratePhysics } from './lib/bike_physics.js';
 import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
@@ -735,15 +735,11 @@ const wsHandlers = {
       const riderPos = rider.snapshot().position;
       const slopePct = (riderPos && Number.isFinite(riderPos.slope_pct)) ? riderPos.slope_pct : 0;
       // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定、 inertia-sim.html と同方式)。
-      // 空気抵抗は CdA を 1 本にまとめるため c_d=CdA / area=1 で渡す。
-      const SUB = 1 / 120;
-      let remain = dt;
-      while (remain > 0) {
-        const h = Math.min(SUB, remain);
-        physicsSpeedMps = applyPhysicsStep(physicsSpeedMps, h, power, slopePct,
-          { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
-        remain -= h;
-      }
+      // サブステップ積分ループは bike_physics.integratePhysics に集約済 (= SoT 三重複の解消)。
+      // dt は上の [0.1, 2.0] クランプ済を渡す。 空気抵抗は CdA を 1 本にまとめるため
+      // c_d=CdA / area=1 で渡す。
+      physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, power, slopePct,
+        { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
       if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0) {
         rider.setSpeed(physicsSpeedMps);
       }

@@ -117,7 +117,7 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { applyPhysicsStep } from './lib/bike_physics.js';
+import { integratePhysics } from './lib/bike_physics.js';
 
 // ---- 状態 -----------------------------------------------------------------
 const st = {
@@ -375,19 +375,16 @@ const hist = []; // {vp} 直近 12 秒ぶん
 
 function step(dt) {
   const power = st.coasting ? 0 : st.power;
-  // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定)
-  const SUB = 1 / 120;
-  let remain = Math.min(dt, 0.1);
+  // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定)。 サブステップ積分ループは
+  // bike_physics.integratePhysics に集約済 (= SoT 三重複の解消)。 dt のクランプは
+  // animation frame 由来のため floor 不要、 min(dt, 0.1) の cap のみ呼び出し側で行う。
+  // フライホイール慣性 (st.inertiaKg) を物理に直接渡す。 速度変化に抗う本物の慣性。
+  // 空気抵抗は CdA を 1 本のノブにするため c_d=CdA / area=1 として渡す。
+  const dtClamped = Math.min(dt, 0.1);
   const vBefore = st.vPhys;
-  while (remain > 0) {
-    const h = Math.min(SUB, remain);
-    // フライホイール慣性 (st.inertiaKg) を物理に直接渡す。 速度変化に抗う本物の慣性。
-    // 空気抵抗は CdA を 1 本のノブにするため c_d=CdA / area=1 として渡す。
-    st.vPhys = applyPhysicsStep(st.vPhys, h, power, st.slope,
-      { mass: st.mass, c_rr: st.c_rr, c_d: st.cda, area: 1, inertia: st.inertiaKg });
-    remain -= h;
-  }
-  st.accel = (st.vPhys - vBefore) / Math.min(dt, 0.1);
+  st.vPhys = integratePhysics(st.vPhys, dtClamped, power, st.slope,
+    { mass: st.mass, c_rr: st.c_rr, c_d: st.cda, area: 1, inertia: st.inertiaKg });
+  st.accel = (st.vPhys - vBefore) / dtClamped;
   // 走行距離は速度を積分
   st.dist += st.vPhys * dt;
   if (st.dist < 0) st.dist = 0;

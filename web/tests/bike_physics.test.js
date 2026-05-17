@@ -2,7 +2,7 @@
 // bike_physics.applyPhysicsStep が物理的に妥当な挙動 (= 下りで power=0 でも加速、 登りで減速、
 // 平地で速度依存 drag) を取ることを pin する。
 import { describe, it, expect } from 'vitest';
-import { applyPhysicsStep, PHYSICS_DEFAULTS } from '../lib/bike_physics.js';
+import { applyPhysicsStep, integratePhysics, PHYSICS_DEFAULTS } from '../lib/bike_physics.js';
 
 describe('bike_physics.applyPhysicsStep', () => {
   it('平地 + power 一定: v が収束値に向かう', () => {
@@ -159,5 +159,59 @@ describe('bike_physics.applyPhysicsStep', () => {
     const b = applyPhysicsStep(5, 0.1, 200, 3, { inertia: 0 });
     expect(a).toBe(b);
     expect(Number.isFinite(a)).toBe(true);
+  });
+});
+
+// 2026-05-17 redraft (b3): viewer / inertia-sim / テストに手コピーされていた
+// 「クランプ済 dt 区間を 1/120s サブステップ積分する」 段取りを共有関数 integratePhysics に
+// 集約。 物理の式は applyPhysicsStep のまま、 切り出しで挙動が drift しないことを下記が pin。
+describe('bike_physics.integratePhysics', () => {
+  // characterization: 共有関数の出力が手書きサブステップループと完全一致することを担保。
+  // この helper は切り出し前に viewer / sim / test が直書きしていたループの逐語再現。
+  function manualSubstep(v, dt, power, slope, opts) {
+    const SUB = 1 / 120;
+    let remain = dt;
+    while (remain > 0) {
+      const h = Math.min(SUB, remain);
+      v = applyPhysicsStep(v, h, power, slope, opts);
+      remain -= h;
+    }
+    return v;
+  }
+
+  it('手書きサブステップループと出力が一致する (= 切り出しで物理が drift しない)', () => {
+    const cases = [
+      [0, 1.0, 250, 8, { mass: 88 }],
+      [8, 2.0, 0, -7, { mass: 88, inertia: 800 }],
+      [5, 0.1, 200, 0, {}],
+      [3, 1.5, 400, 10, { mass: 60, c_rr: 0.005, c_d: 0.35, area: 1, inertia: 3000 }],
+    ];
+    for (const [v, dt, p, s, o] of cases) {
+      expect(integratePhysics(v, dt, p, s, o)).toBe(manualSubstep(v, dt, p, s, o));
+    }
+  });
+
+  it('dt <= 0: no-op (= v 不変、 サブステップループに入らない)', () => {
+    expect(integratePhysics(5, 0, 200, 0)).toBe(5);
+    expect(integratePhysics(5, -1, 200, 0)).toBe(5);
+  });
+
+  it('サブステップ分割境界に依存しない (= 2.0s 一括 = 1.0s×2 連続)', () => {
+    const opts = { mass: 88, inertia: 800 };
+    const oneShot = integratePhysics(0, 2.0, 250, -3, opts);
+    let split = integratePhysics(0, 1.0, 250, -3, opts);
+    split = integratePhysics(split, 1.0, 250, -3, opts);
+    expect(split).toBeCloseTo(oneShot, 10);
+  });
+
+  it('opts 既定 (省略時): applyPhysicsStep の DEFAULTS で積分する', () => {
+    const v = integratePhysics(5, 1.0, 200, 0);
+    expect(Number.isFinite(v)).toBe(true);
+    expect(v).toBeGreaterThan(0);
+  });
+
+  it('下り + power=0 で加速、 登り + power=0 で減速', () => {
+    expect(integratePhysics(8, 5.0, 0, -7, { mass: 88 })).toBeGreaterThan(8);
+    expect(integratePhysics(8, 3.0, 0, 8, { mass: 88 })).toBeLessThan(8);
   });
 });

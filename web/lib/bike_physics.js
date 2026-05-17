@@ -69,4 +69,35 @@ export function applyPhysicsStep(v, dt, power_w, slope_pct, opts = {}) {
   return new_v;
 }
 
+/**
+ * クランプ済 dt 区間を固定 1/120 秒サブステップで積分する。
+ *
+ * viewer の wsHandlers.state / inertia-sim.html の step() / テストが
+ * 同じ段取り (= 1 state メッセージ分の dt をサブステップ分割して applyPhysicsStep を
+ * 逐次適用) を 3 箇所に手コピーしていた SoT 三重複の解消。物理の式は持たず
+ * applyPhysicsStep を呼ぶだけ ── 挙動は切り出し前と 1bit も変わらない。
+ *
+ * dt のクランプは呼び出し側の責務 (= ここではしない)。viewer は state push が
+ * 約 1Hz なので [0.1, 2.0] に floor + cap、inertia-sim は animation frame 由来で
+ * floor 不要のため min(dt, 0.1) の cap のみ ── クランプ方針が呼び出し側で
+ * 異なるため、共有するのはサブステップ積分ループだけにとどめる。
+ *
+ * @param {number} v 現在速度 (m/s)
+ * @param {number} dt クランプ済経過秒数 (呼び出し側でクランプ済であること)
+ * @param {number} power_w 入力 power (W)
+ * @param {number} slope_pct 勾配 % (下り負 / 登り正)
+ * @param {object} [opts] applyPhysicsStep に渡す opts (mass / c_rr / c_d / area / inertia)
+ * @returns {number} 新速度 (m/s)
+ */
+export function integratePhysics(v, dt, power_w, slope_pct, opts = {}) {
+  const SUB = 1 / 120;
+  let remain = dt;
+  while (remain > 0) {
+    const h = Math.min(SUB, remain);
+    v = applyPhysicsStep(v, h, power_w, slope_pct, opts);
+    remain -= h;
+  }
+  return v;
+}
+
 export const PHYSICS_DEFAULTS = DEFAULTS;
