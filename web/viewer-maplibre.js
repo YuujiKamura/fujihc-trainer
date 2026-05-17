@@ -10,6 +10,11 @@ import { smoothCourse } from './lib/gpx_smooth.js';
 import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
 // brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist、 2 回目以降 skip.
 import { getMeshCache, setMeshCache, computeCourseHash } from './lib/mesh_cache.js';
+// brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
+import {
+  riderFrameChanged, parseTileCoord, terrainTileKey, terrainCacheKind,
+  createTextWriter, minimapDirty,
+} from './lib/frame_diff.js';
 // brief 19b: WebSocket / ride state / camera を lib に集約
 import { createBridgeClient, createTestModeClient } from './lib/ws_client.js';
 import { createBleClient, isWebBluetoothSupported } from './lib/ble_client.js';
@@ -90,35 +95,65 @@ const STATIC_TILE_BASE_URL = `${location.origin}${BASE_PATH}static`;
 maplibregl.addProtocol('gsidem', (params) => {
   const url = params.url.replace(/^gsidem:\/\//, '');
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const W = img.width, H = img.height;
-      const srcCanvas = document.createElement('canvas');
-      srcCanvas.width = W; srcCanvas.height = H;
-      const sctx = srcCanvas.getContext('2d');
-      sctx.drawImage(img, 0, 0);
-      let srcImage;
-      try { srcImage = sctx.getImageData(0, 0, W, H); }
-      catch (e) { reject(e); return; }
-      // 純関数で bilinear upsample + GSI -> terrarium 変換 (= brief 21).
-      const result = gsiToTerrariumUpsampled(srcImage.data, W, H, TERRAIN_UPSAMPLE_FACTOR);
-      const dstCanvas = document.createElement('canvas');
-      dstCanvas.width = result.width;
-      dstCanvas.height = result.height;
-      const dctx = dstCanvas.getContext('2d');
-      const dstImage = dctx.createImageData(result.width, result.height);
-      dstImage.data.set(result.data);
-      dctx.putImageData(dstImage, 0, 0);
-      dstCanvas.toBlob((blob) => {
-        if (!blob) { reject(new Error('toBlob failed')); return; }
-        blob.arrayBuffer().then((buf) => {
-          resolve({ data: new Uint8Array(buf) });
-        }).catch(reject);
-      }, 'image/png');
+    // brief b2 Critical-2: terrarium 変換結果 (= 重い CPU 処理) を mesh_cache に persist。
+    // key = z/x/y タイル座標、 kind = terrain-u<倍率> (= 倍率変更で旧 cache を物理的に
+    // hit させず stale を防ぐ)。 2 回目以降は DL + Canvas decode + upsample を完全 bypass。
+    const coord = parseTileCoord(url);
+    const cacheKind = terrainCacheKind(TERRAIN_UPSAMPLE_FACTOR);
+    const tileKey = coord ? terrainTileKey(coord.z, coord.x, coord.y) : null;
+
+    // 既存経路: タイル DL → Canvas decode → 純関数 upsample → PNG bytes。
+    // 成功時、 PNG bytes を mesh_cache へ fire-and-forget で書く (= 書き込み失敗で
+    // 起動を block しない、 次回 reload で再 attempt)。
+    const decodeAndUpsample = () => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const W = img.width, H = img.height;
+        const srcCanvas = document.createElement('canvas');
+        srcCanvas.width = W; srcCanvas.height = H;
+        const sctx = srcCanvas.getContext('2d');
+        sctx.drawImage(img, 0, 0);
+        let srcImage;
+        try { srcImage = sctx.getImageData(0, 0, W, H); }
+        catch (e) { reject(e); return; }
+        // 純関数で bilinear upsample + GSI -> terrarium 変換 (= brief 21).
+        const result = gsiToTerrariumUpsampled(srcImage.data, W, H, TERRAIN_UPSAMPLE_FACTOR);
+        const dstCanvas = document.createElement('canvas');
+        dstCanvas.width = result.width;
+        dstCanvas.height = result.height;
+        const dctx = dstCanvas.getContext('2d');
+        const dstImage = dctx.createImageData(result.width, result.height);
+        dstImage.data.set(result.data);
+        dctx.putImageData(dstImage, 0, 0);
+        dstCanvas.toBlob((blob) => {
+          if (!blob) { reject(new Error('toBlob failed')); return; }
+          blob.arrayBuffer().then((buf) => {
+            const bytes = new Uint8Array(buf);
+            if (tileKey) {
+              setMeshCache(tileKey, cacheKind, { png: bytes }).catch(() => {});
+            }
+            resolve({ data: bytes });
+          }).catch(reject);
+        }, 'image/png');
+      };
+      img.onerror = () => reject(new Error('GSI tile load failed: ' + url));
+      img.src = url;
     };
-    img.onerror = () => reject(new Error('GSI tile load failed: ' + url));
-    img.src = url;
+
+    if (tileKey) {
+      // cache lookup → hit で decode/upsample を bypass。 miss / 例外いずれも
+      // getMeshCache は null を返すので既存経路に fail-open する。
+      getMeshCache(tileKey, cacheKind).then((rec) => {
+        if (rec && rec.arrays && rec.arrays.png) {
+          resolve({ data: rec.arrays.png });
+        } else {
+          decodeAndUpsample();
+        }
+      }).catch(() => decodeAndUpsample());
+    } else {
+      decodeAndUpsample();
+    }
   });
 });
 
@@ -630,10 +665,9 @@ function setTerrainStatusUI(snap) {
   }
 }
 
-function setText(id, text) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = text;
-}
+// brief b2 High-4: 値が変わらないフレームは textContent 代入を skip し layout
+// 無効化の連鎖を減らす。 判定ロジックは frame_diff.createTextWriter に切出し済。
+const setText = createTextWriter((id) => document.getElementById(id));
 
 // === WebSocket === (既存 viewer.js と同じ contract)
 const WS_URL = 'ws://localhost:8765';
@@ -643,7 +677,10 @@ const WS_URL = 'ws://localhost:8765';
 const TEST_MODE = new URLSearchParams(location.search).has('test');
 // 2026-05-16: ?debug=1 で右上に debug HUD を表示 (= 座標 drift / camera 差分 / frame timing).
 // 走行中 user が「camera が rider 中心からズレる」「慣性力おかしい」 を数値で目視できる.
-if (new URLSearchParams(location.search).has('debug')) {
+// brief b2 High-4: debug HUD の有無を 1 回だけ確定。 tick() の debug 系
+// setText 30 件超は DEBUG_HUD が true の時だけ実行する (= 平時は丸ごと skip)。
+const DEBUG_HUD = new URLSearchParams(location.search).has('debug');
+if (DEBUG_HUD) {
   document.body.classList.add('debug-on');
 }
 // 2026-05-16: service worker 登録 (= 2 回目以降 fetch ゼロでオフライン起動可、
@@ -1845,25 +1882,12 @@ async function loadCourse() {
     const dt = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0;
     console.log(`[mesh_cache] polygon ${cacheHit ? 'HIT' : 'MISS'} ${dt.toFixed(1)}ms hash=${courseHash}`);
     map.addSource('route', { type: 'geojson', data: polygonData });
-    // 2026-05-16 user 「zoom out 時は今の 2 倍に広く、 zoom in 時は最大で今の 70% に狭く」.
-    // zoom 13 (= 最遠) で 2.0x、 zoom 21 (= default) で 1.0x、 zoom 24 (= 最近) で 0.7x.
-    // 折れ線で連動、 zoom 0.25 単位で throttle して再生成負荷を抑える.
-    const _routeMul = (zoom) => {
-      if (zoom <= 21) return Math.min(2.0, 1.0 + (21 - zoom) * 0.125);  // 21→1.0、 13→2.0
-      return Math.max(0.7, 1.0 - (zoom - 21) * 0.1);                    // 21→1.0、 24→0.7
-    };
-    let _lastZoomKey = null;
-    const _rebuildRoute = () => {
-      const z = map.getZoom();
-      const key = Math.round(z * 4) / 4;  // 0.25 step throttle
-      if (key === _lastZoomKey) return;
-      _lastZoomKey = key;
-      const widthM = 5 * _routeMul(z);
-      const src = map.getSource('route');
-      if (src) src.setData(buildGradeColoredRoadPolygons(course, widthM));
-    };
-    map.on('zoom', _rebuildRoute);
-    _rebuildRoute();  // 初回適用
+    // brief b2 High-3: 帯ポリゴン (1968 セグメント) の zoom 連動再生成を撤去。
+    // 旧実装は map.on('zoom') ごとに buildGradeColoredRoadPolygons を再実行し
+    // 全頂点を GPU に再アップロードしていた (= zoom 操作中 1 回 31〜63ms の stall)。
+    // polygonData は固定幅 5m で 1 回だけ生成済 (= 上の addSource / cache HIT 経路)。
+    // zoom による太さの可変が必要なら meter 幅の再生成ではなく route-line 側の
+    // line-width zoom 式で表現する (= 再 tessellate ゼロ)。
     // Fix2: 道路 polygon を **最前面** に挿入 (= beforeId 削除).
     // 旧仕様で beforeId='roads' にしていたが、 OSM roads-major (= 橙線) が
     // polygon を貫いて表示されてしまうため、 polygon を上に置いて道幅を露出させる.
@@ -2217,18 +2241,46 @@ function buildRiderFeatures(lat, lon, heading, spin) {
 // brief 29: 上下 2 canvas にそれぞれ base 画像を drawImage + rider 描画。
 // 上半分: 180度回転後の座標で rider 三角形を描く (= 進行方向を画面下向きに)。
 // 下半分: 標高プロファイル base 画像の上に rider 縦線 + dot。
+// brief b2 High-5: getContext は loop 外 (= lazy 1 回) でキャッシュ、 2D canvas の
+// 全 clear + drawImage は rider が pixel 単位で動いた時だけ実行する。 停止中は skip。
+let _minimapTopCtx = null;
+let _minimapBotCtx = null;
+let _minimapTopFrame = null;  // 前フレームの rider 位置/向き (= 上 canvas 再描画判定)
+let _minimapBotFrame = null;  // 前フレームの dot 位置 (= 下 canvas 再描画判定)
+
 function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   if (!minimapStats) return;
 
-  // 上半分: #minimap-top
   const topCanvas = document.getElementById('minimap-top');
-  if (topCanvas && minimapTopBase && minimapStats.projectLatLon) {
-    const tctx = topCanvas.getContext('2d');
+  const botCanvas = document.getElementById('minimap-bottom');
+  const hasTop = topCanvas && minimapTopBase && minimapStats.projectLatLon;
+  const hasBot = botCanvas && minimapBottomBase;
+  if (!hasTop && !hasBot) return;
+
+  const { minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY } = minimapStats;
+  // 上半分 rider 位置 (= 描画前に算出して変化検出に使う)
+  let rx = 0, ry = 0;
+  if (hasTop) { [rx, ry] = minimapStats.projectLatLon(curLat, curLon); }
+  // 下半分 dot 位置
+  const px = PAD + (curDistM / totalD) * botInnerW;
+  const py = botBaseY - ((curEleM - minE) / (maxE - minE)) * botInnerH;
+
+  // 上 rider (x,y,heading度) と下 dot (px,py) のいずれかが量子化単位で動いたら再描画。
+  const frame = { x: rx, y: ry, h: heading * 180 / Math.PI };
+  const botMoved = !_minimapBotFrame
+    || Math.round(_minimapBotFrame.px) !== Math.round(px)
+    || Math.round(_minimapBotFrame.py) !== Math.round(py);
+  if (!minimapDirty(_minimapTopFrame, frame) && !botMoved) return;
+  _minimapTopFrame = frame;
+  _minimapBotFrame = { px, py };
+
+  // 上半分: #minimap-top ── rider 三角形を 180度回転後の座標系で描画
+  // (= base 画像が既に 180度回転済なので、 rider 位置も同じ rotate を適用する)
+  if (hasTop) {
+    if (!_minimapTopCtx) _minimapTopCtx = topCanvas.getContext('2d');
+    const tctx = _minimapTopCtx;
     tctx.clearRect(0, 0, topCanvas.width, topCanvas.height);
     tctx.drawImage(minimapTopBase, 0, 0);
-    // rider 三角形を 180度回転後の座標系で描画
-    // (= base 画像が既に 180度回転済なので、 rider 位置も同じ rotate を適用する)
-    const [rx, ry] = minimapStats.projectLatLon(curLat, curLon);
     const { W, H } = minimapStats.rotateTop;
     tctx.save();
     tctx.translate(W / 2, H / 2);
@@ -2239,19 +2291,20 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   }
 
   // 下半分: #minimap-bottom
-  const botCanvas = document.getElementById('minimap-bottom');
-  if (!botCanvas || !minimapBottomBase) return;
-  const ctx = botCanvas.getContext('2d');
-  ctx.clearRect(0, 0, botCanvas.width, botCanvas.height);
-  ctx.drawImage(minimapBottomBase, 0, 0);
-  const { minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY } = minimapStats;
-  const px = PAD + (curDistM / totalD) * botInnerW;
-  const py = botBaseY - ((curEleM - minE) / (maxE - minE)) * botInnerH;
-  ctx.strokeStyle = 'rgba(0,220,220,0.5)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(px, botTopY); ctx.lineTo(px, botBaseY); ctx.stroke();
-  ctx.fillStyle = 'cyan'; ctx.strokeStyle = 'black'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  if (hasBot) {
+    if (!_minimapBotCtx) _minimapBotCtx = botCanvas.getContext('2d');
+    const ctx = _minimapBotCtx;
+    ctx.clearRect(0, 0, botCanvas.width, botCanvas.height);
+    ctx.drawImage(minimapBottomBase, 0, 0);
+    ctx.strokeStyle = 'rgba(0,220,220,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, botTopY); ctx.lineTo(px, botBaseY); ctx.stroke();
+    ctx.fillStyle = 'cyan'; ctx.strokeStyle = 'black'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  }
 }
+
+// brief b2: per-frame 差分検出の前フレーム state (= 無条件再構築の回避用)。
+let _lastRiderFrame = null;   // Critical-1: rider setData 差分
 
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
@@ -2288,9 +2341,16 @@ function tick(t) {
 
   // rider 立体を rider 位置 + 進行方向 + スピン角で更新. spinAngle は rider.tick 内で
   // cadence rpm に応じて自動進行済 (= rider.spinAngle で取り出す、 viewer 側の累積管理 不要).
+  // brief b2 Critical-1: rider GeoJSON の再構築 + GPU 再アップロード (setData) は
+  // source 全体を再パース・再 tessellate・再 buffer する重い処理。 位置 / 向き /
+  // スピンが前フレームから動いた時だけ実行し、 停止中は丸ごと skip する。
   const ridSrc = map.getSource && map.getSource('rider');
   if (ridSrc) {
-    ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, snap.spinAngle));
+    const riderFrame = { lat: rLat, lon: rLon, heading: riderHeadingRad, spin: snap.spinAngle };
+    if (riderFrameChanged(_lastRiderFrame, riderFrame)) {
+      ridSrc.setData(buildRiderFeatures(rLat, rLon, riderHeadingRad, snap.spinAngle));
+      _lastRiderFrame = riderFrame;
+    }
   }
 
   // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
@@ -2326,6 +2386,9 @@ function tick(t) {
   setText('cam-pitch', map.getPitch().toFixed(0));
   // 2026-05-16: ?debug=1 用の数値 dump (= body.debug-on で右上 panel に表示).
   // user 「座標が外れる」「慣性力おかしい」 を走行中に数値で目視できる. setText は要素無しでも noop.
+  // brief b2 High-4: ?debug=1 の時だけ実行 (= 平時は getElementById + textContent + trkpt
+  // 走査の毎フレーム 30 件超を丸ごと skip)。
+  if (DEBUG_HUD) {
   const mapCenter = map.getCenter();
   const EARTH_M_PER_DEG_DBG = 111000;
   const cosLatDbg = Math.cos(rLat * Math.PI / 180);
@@ -2389,6 +2452,7 @@ function tick(t) {
       setText('d-chk', '(ride 未開始)');
     }
   } catch (_e) { /* validation は best-effort、 落ちても ride を止めない */ }
+  }  // end if (DEBUG_HUD)
   // brief 35 同型 bug 修正: 旧 viewer は riderHeadingRad を計算しつつ updateMinimap に
   // `headingRad` (= 未定義) を渡していた、 runtime ReferenceError. jsdom test 環境で tick が
   // 走らないため source-grep が通り続けていた dead bug. minimap には rider 進行方向を渡す.
