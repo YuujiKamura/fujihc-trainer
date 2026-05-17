@@ -42,6 +42,23 @@
   #info b { font-variant-numeric: tabular-nums; }
   #status { left: 12px; bottom: 12px; right: 12px; max-width: 540px; }
   #status.err { border-color: #f85149; color: #ffa198; }
+  /* 表示モード切替 (= 航空写真 / 地図 / 地形 / ハイブリッド)。 */
+  #layers { right: 12px; top: 12px; width: 130px; }
+  #layers h2 { margin: 0 0 6px; font-size: 13px; color: #58a6ff; font-weight: 600; }
+  #layers button { display: block; width: 100%; margin: 4px 0; padding: 6px 8px;
+                   font-size: 12px; text-align: left; cursor: pointer;
+                   background: #21262d; color: #e6edf3;
+                   border: 1px solid #30363d; border-radius: 6px; }
+  #layers button:hover { background: #30363d; }
+  #layers button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  #layers button:disabled { opacity: 0.5; cursor: progress; }
+  /* コースの勾配色分け凡例。 */
+  #legend { left: 12px; bottom: 58px; width: 230px; }
+  #legend h2 { margin: 0 0 5px; font-size: 12px; color: #58a6ff; font-weight: 600; }
+  #legend-bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; }
+  #legend-bar div { flex: 1; }
+  #legend-ticks { display: flex; justify-content: space-between;
+                  font-size: 10px; color: #8b949e; margin-top: 3px; }
   /* 出典クレジット (= 地理院タイル利用規約の出典明記義務)。
      position:absolute が無いと right/bottom が効かず、 通常フローの静的ブロックとして
      ページ最上部に置かれ、 inset:0 の canvas の裏に隠れて画面に出ない (= 旧実装の不具合)。
@@ -66,6 +83,20 @@
   <div class="hint">ドラッグで回転、 ホイールで拡大縮小。</div>
 </div>
 
+<div id="layers" class="panel">
+  <h2>表示</h2>
+  <button data-mode="photo">航空写真</button>
+  <button data-mode="std">地図</button>
+  <button data-mode="relief">地形</button>
+  <button data-mode="hybrid">ハイブリッド</button>
+</div>
+
+<div id="legend" class="panel">
+  <h2>コースの勾配</h2>
+  <div id="legend-bar"></div>
+  <div id="legend-ticks"><span>0%</span><span>6%</span><span>12%</span><span>18%+</span></div>
+</div>
+
 <div id="status" class="panel">起動中…</div>
 <div id="attrib">地形・地図画像: <a href="https://maps.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a></div>
 
@@ -76,8 +107,9 @@
 import * as THREE from 'three';
 import {
   courseBounds, tileRangeForBounds, decodeGsiHeightGrid,
-  stitchHeightGrid, buildTerrainGeometry,
+  stitchHeightGrid, buildTerrainGeometry, buildCoursePath, courseRingSlopes,
 } from './lib/terrain3d.js';
+import { gradeColorContinuous } from './lib/route_styling.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -93,8 +125,17 @@ const TILE_PX = 256;
 // メッシュ頂点格子の片辺の目標上限。 数枚×256px を 1:1 頂点化すると数百万頂点になるため、
 // stitch 後のグリッドを step 間引きしてこの程度に収める。
 const TARGET_GRID_DIM = 400;
-const GSI_DEM = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png';
-const GSI_PHOTO = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto';
+const GSI_BASE = 'https://cyberjapandata.gsi.go.jp/xyz';
+const GSI_DEM = `${GSI_BASE}/dem_png`;
+// 地形に貼る表示モード。 GSI の各タイル種を切り替える (= 標高メッシュは共通、 skin だけ差替)。
+//   photo  = 航空写真 (seamlessphoto)、 std = 標準地図、 relief = 色別標高図、
+//   hybrid = 航空写真 + 地図の道路/注記/等高線を白背景透過で重ねた合成。
+const VIEW_LAYERS = {
+  photo:  { gsi: 'seamlessphoto', ext: 'jpg', label: '航空写真' },
+  std:    { gsi: 'std',           ext: 'png', label: '地図' },
+  relief: { gsi: 'relief',        ext: 'png', label: '地形' },
+};
+const MODE_LABELS = { photo: '航空写真', std: '地図', relief: '地形', hybrid: 'ハイブリッド' };
 
 const statusEl = document.getElementById('status');
 function status(msg, isErr) {
@@ -128,6 +169,65 @@ function loadImage(url) {
   });
 }
 
+// GSI の指定レイヤのタイル群を 1 枚の canvas に貼り合わせて返す (= 地形テクスチャ用)。
+async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label) {
+  const cv = document.createElement('canvas');
+  cv.width = range.tilesX * TILE_PX;
+  cv.height = range.tilesY * TILE_PX;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#3b424c';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  let done = 0;
+  await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
+    const img = await loadImage(`${GSI_BASE}/${gsiLayer}/${DEM_ZOOM}/${tx}/${ty}.${ext}`);
+    if (img) {
+      ctx.drawImage(img, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
+        TILE_PX, TILE_PX);
+    }
+  }, () => status(`${label} 取得中… ${++done}/${tileCoords.length}`));
+  return cv;
+}
+
+// 地図 (std) の白背景を透過させ、 道路/等高線/注記/水域だけを残す (= ハイブリッド合成用)。
+function whiteToTransparent(srcCanvas) {
+  const cv = document.createElement('canvas');
+  cv.width = srcCanvas.width;
+  cv.height = srcCanvas.height;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(srcCanvas, 0, 0);
+  const im = ctx.getImageData(0, 0, cv.width, cv.height);
+  const d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const m = Math.min(d[i], d[i + 1], d[i + 2]);  // 最も暗い channel = 白さの指標
+    if (m > 232) d[i + 3] = 0;                                     // ほぼ白 → 完全透過
+    else if (m > 200) d[i + 3] = Math.round(255 * (232 - m) / 32); // 薄い色 → 半透過
+  }
+  ctx.putImageData(im, 0, 0);
+  return cv;
+}
+
+// 表示モードに対応した CanvasTexture を組む。 hybrid は航空写真 + 地図の透過合成。
+async function buildModeTexture(mode, tileCoords, range) {
+  let canvas;
+  if (mode === 'hybrid') {
+    const photo = await fetchLayerCanvas('seamlessphoto', 'jpg', tileCoords, range, '航空写真');
+    const std = await fetchLayerCanvas('std', 'png', tileCoords, range, '地図');
+    canvas = document.createElement('canvas');
+    canvas.width = photo.width;
+    canvas.height = photo.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(photo, 0, 0);
+    ctx.drawImage(whiteToTransparent(std), 0, 0);
+  } else {
+    const L = VIEW_LAYERS[mode];
+    canvas = await fetchLayerCanvas(L.gsi, L.ext, tileCoords, range, L.label);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 // DEM タイル 1 枚を decode して標高グリッド (Float32Array) を返す。 欠損は null。
 async function loadDemGrid(tx, ty) {
   const img = await loadImage(`${GSI_DEM}/${DEM_ZOOM}/${tx}/${ty}.png`);
@@ -139,6 +239,17 @@ async function loadDemGrid(tx, ty) {
   const rgba = ctx.getImageData(0, 0, TILE_PX, TILE_PX).data;
   return decodeGsiHeightGrid(rgba, TILE_PX, TILE_PX);
 }
+
+// コース勾配の凡例バーを gradeColorContinuous で塗る (= チューブと同一パレット)。
+(function buildLegend() {
+  const bar = document.getElementById('legend-bar');
+  const N = 28, MAX_SLOPE = 18;
+  for (let i = 0; i < N; i++) {
+    const cell = document.createElement('div');
+    cell.style.background = gradeColorContinuous((i / (N - 1)) * MAX_SLOPE);
+    bar.appendChild(cell);
+  }
+})();
 
 // === メイン ===
 async function main() {
@@ -191,25 +302,18 @@ async function main() {
   geometry.setIndex(new THREE.BufferAttribute(geo.indices, 1));
   geometry.computeVertexNormals();
 
-  // 4. 地図画像 (GSI 写真タイル) を地形に貼るテクスチャを組む。
-  status('地図画像取得中…');
-  const texCanvas = document.createElement('canvas');
-  texCanvas.width = range.tilesX * TILE_PX;
-  texCanvas.height = range.tilesY * TILE_PX;
-  const texCtx = texCanvas.getContext('2d');
-  texCtx.fillStyle = '#3b424c';
-  texCtx.fillRect(0, 0, texCanvas.width, texCanvas.height);
-  let photoDone = 0;
-  await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    const img = await loadImage(`${GSI_PHOTO}/${DEM_ZOOM}/${tx}/${ty}.jpg`);
-    if (img) {
-      texCtx.drawImage(img, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
-        TILE_PX, TILE_PX);
+  // 4. 地形に貼るテクスチャ。 初期モードは ?mode= で指定可 (= 既定は航空写真)。
+  //    一度組んだ texture はモード別に cache し、 再選択時は再取得しない。
+  const texCache = new Map();
+  const modeParam = new URLSearchParams(location.search).get('mode');
+  let currentMode = MODE_LABELS[modeParam] ? modeParam : 'photo';
+  async function getModeTexture(mode) {
+    if (!texCache.has(mode)) {
+      texCache.set(mode, await buildModeTexture(mode, tileCoords, range));
     }
-  }, () => status(`地図画像取得中… ${++photoDone}/${tileCoords.length}`));
-  const texture = new THREE.CanvasTexture(texCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+    return texCache.get(mode);
+  }
+  const texture = await getModeTexture(currentMode);
 
   const material = new THREE.MeshStandardMaterial({
     map: texture, roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide,
@@ -225,6 +329,45 @@ async function main() {
   scene.fog = new THREE.Fog(0x0d1117, span * 0.9, span * 2.6);
   scene.add(mesh);
 
+  // コースを地形に重ねる: course.json (= GPX 由来) の点列を、 地形と同じ投影で 3D
+  // ライン化し、 DEM 標高をサンプルして地形に沿わせたチューブで描く。 チューブは
+  // 各点の slope_pct で勾配色分け (= 緑 平坦 → 紫 激坂)。 始点 (緑) / 5合目 終点 (橙)
+  // に球マーカーを置き、 コースの向きが一目で分かるようにする。
+  const coursePath = buildCoursePath(course, {
+    range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,
+    tileSize: TILE_PX, drapeOffset: span * 0.004,  // span 比例で地形に密着 (z-fighting 回避)
+  });
+  const coursePts = [];
+  for (let i = 0; i < coursePath.length; i += 3) {
+    coursePts.push(new THREE.Vector3(coursePath[i], coursePath[i + 1], coursePath[i + 2]));
+  }
+  const courseCurve = new THREE.CatmullRomCurve3(coursePts);
+  const COURSE_RADIAL = 8;
+  const tubularSegments = Math.min(4000, coursePts.length);
+  const courseTube = new THREE.TubeGeometry(
+    courseCurve, tubularSegments, span * 0.0028, COURSE_RADIAL, false);
+  // 勾配色分け: ring (= 曲線方向の輪) ごとに slope_pct を引き、 既存 viewer と同じ
+  // gradeColorContinuous (route_styling.js の SoT パレット) で頂点色を塗る。
+  const ringSlopes = courseRingSlopes(course, tubularSegments + 1);
+  const courseColors = new Float32Array(courseTube.attributes.position.count * 3);
+  const _gc = new THREE.Color();
+  for (let i = 0; i <= tubularSegments; i++) {
+    _gc.set(gradeColorContinuous(ringSlopes[i]));
+    for (let j = 0; j <= COURSE_RADIAL; j++) {
+      const vi = (i * (COURSE_RADIAL + 1) + j) * 3;
+      courseColors[vi] = _gc.r; courseColors[vi + 1] = _gc.g; courseColors[vi + 2] = _gc.b;
+    }
+  }
+  courseTube.setAttribute('color', new THREE.BufferAttribute(courseColors, 3));
+  scene.add(new THREE.Mesh(courseTube, new THREE.MeshBasicMaterial({ vertexColors: true })));
+  const markerGeo = new THREE.SphereGeometry(span * 0.008, 16, 12);
+  const startMark = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0x3fb950 }));
+  startMark.position.copy(coursePts[0]);
+  scene.add(startMark);
+  const endMark = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0xf0883e }));
+  endMark.position.copy(coursePts[coursePts.length - 1]);
+  scene.add(endMark);
+
   // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
   sun.position.set(-span * 0.6, span * 0.8, span * 0.5);
@@ -237,12 +380,11 @@ async function main() {
 
   const camera = new THREE.PerspectiveCamera(50, 1, 1, span * 6);
   // 6. カメラ: 地形中心 (target) のまわりを球面で回す簡易オービット操作。
-  // 初期向きは北上の俯瞰 (theta=0 = 地形の南上空から北を見下ろす)。
-  // buildTerrainGeometry が北を -Z に写しているので、 theta=0 では北が画面奥・
-  // 東が画面右になり、 地図と東西が揃う。 phi は浅め (= かなり俯瞰) にして
-  // 地図的な向きの分かりやすさと起伏の見えを両立する。
+  // 初期向きは北麓 (= 富士スバルライン側) の上空から南の山頂を見上げる構図。
+  // theta=π で地形の北 (-Z) 側にカメラを置き南を向くと、 富士山頂が画面奥=上に立ち、
+  // コースの載る北斜面が手前に広がる。 ?cam=top で真上俯瞰の検証ビューに切替可。
   const target = new THREE.Vector3(0, midH, 0);
-  const orbit = { radius: span * 1.35, theta: 0, phi: Math.PI * 0.21 };
+  const orbit = { radius: span * 1.3, theta: Math.PI, phi: Math.PI * 0.34 };
   const PHI_MIN = 0.12, PHI_MAX = Math.PI * 0.49;
   // ?cam=top で真上からの北上俯瞰 (= 地図と直接照合できる検証ビュー)。
   // camera.up を北 (-Z) に向けると、 北が画面上・東が画面右の正しい地図向きになる。
@@ -302,7 +444,35 @@ async function main() {
   document.getElementById('m-size').textContent =
     `${(geo.sizeX / 1000).toFixed(1)} × ${(geo.sizeZ / 1000).toFixed(1)} km`;
   const tileNote = missing > 0 ? ` (${missing} 枚欠損→0m補完)` : '';
-  status(`地形を表示中 — 富士ヒルコース ${course.length} 点の外接範囲${tileNote}`);
+  function showReady() {
+    status(`表示: ${MODE_LABELS[currentMode]} — 富士ヒルコース ${course.length} 点の` +
+      `外接範囲 + コースライン${tileNote}`);
+  }
+  showReady();
+
+  // 7. 表示モード切替 (= 航空写真 / 地図 / 地形 / ハイブリッド)。
+  const modeButtons = document.querySelectorAll('#layers button');
+  function updateModeButtons() {
+    modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === currentMode));
+  }
+  async function switchMode(mode) {
+    if (mode === currentMode) return;
+    status(`${MODE_LABELS[mode]} に切替中…`);
+    modeButtons.forEach((b) => { b.disabled = true; });
+    try {
+      const tex = await getModeTexture(mode);
+      material.map = tex;
+      material.needsUpdate = true;
+      currentMode = mode;
+    } catch (e) {
+      console.error(e);
+    }
+    modeButtons.forEach((b) => { b.disabled = false; });
+    updateModeButtons();
+    showReady();
+  }
+  modeButtons.forEach((b) => b.addEventListener('click', () => switchMode(b.dataset.mode)));
+  updateModeButtons();
 
   function loop() {
     renderer.render(scene, camera);

@@ -11,7 +11,11 @@ import {
   stitchHeightGrid,
   buildTerrainGeometry,
   courseBounds,
+  sampleHeightBilinear,
+  buildCoursePath,
+  courseRingSlopes,
 } from '../lib/terrain3d.js';
+import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
 
 // === helpers ===
 
@@ -298,5 +302,118 @@ describe('DEM → 標高グリッド → メッシュ頂点 のデータ経路',
     expect(geo.minH).toBeCloseTo(1200, 1);
     expect(geo.maxH).toBeCloseTo(1800, 1);
     expect(geo.vertexCount).toBe(geo.gw * geo.gh);
+  });
+});
+
+// === sampleHeightBilinear ===
+
+describe('sampleHeightBilinear', () => {
+  const range = { zoom: 14, xMin: 14503, yMin: 6464 };
+  const TS = 16;
+  // px に紐づく経度 / py に紐づく緯度 (= sampleHeightBilinear の逆写像)。
+  const lonAtPx = (px) => tileXToLon(range.xMin + px / TS, range.zoom);
+  const latAtPy = (py) => tileYToLat(range.yMin + py / TS, range.zoom);
+
+  it('一様グリッドはどの地点でも同じ標高を返す (= サンプリングの破綻を検出)', () => {
+    const stitched = { grid: new Float32Array(TS * TS).fill(1500), width: TS, height: TS };
+    expect(sampleHeightBilinear(stitched, range, latAtPy(7.5), lonAtPx(3.2), TS))
+      .toBeCloseTo(1500, 6);
+  });
+
+  it('画素ちょうどの緯度経度はその画素の標高を返す (= 画素写像のズレを検出)', () => {
+    // grid[py*W+px] = 100 + px + py*10。
+    const grid = new Float32Array(TS * TS);
+    for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) grid[y * TS + x] = 100 + x + y * 10;
+    const stitched = { grid, width: TS, height: TS };
+    expect(sampleHeightBilinear(stitched, range, latAtPy(5), lonAtPx(9), TS))
+      .toBeCloseTo(100 + 9 + 5 * 10, 3);
+  });
+
+  it('グリッド範囲外の緯度経度は端へ clamp して有限値 (= NaN/クラッシュを防ぐ)', () => {
+    const stitched = { grid: new Float32Array(TS * TS).fill(800), width: TS, height: TS };
+    const v = sampleHeightBilinear(stitched, range, 90, 200, TS);  // 明らかに範囲外
+    expect(Number.isFinite(v)).toBe(true);
+    expect(v).toBeCloseTo(800, 6);
+  });
+});
+
+// === buildCoursePath ===
+
+describe('buildCoursePath', () => {
+  const range = { zoom: 14, xMin: 14503, yMin: 6464 };
+  const TS = 16;
+  const stitched = { grid: new Float32Array(TS * TS).fill(1400), width: TS, height: TS };
+  const centerLat = 35.40, centerLon = 138.72;
+  const M = 111320;
+  const course = [
+    { lat: 35.395, lon: 138.715 },
+    { lat: 35.402, lon: 138.725 },
+    { lat: 35.410, lon: 138.735 },
+  ];
+
+  it('course n 点 → Float32Array 長さ n*3、 全要素有限 (= 配列形を pin)', () => {
+    const path = buildCoursePath(course, { range, stitched, centerLat, centerLon, tileSize: TS });
+    expect(path.length).toBe(course.length * 3);
+    for (const v of path) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it('XZ がメッシュと同じ投影 (東=+X / 北=-Z) で出る (= ライン位置がメッシュとズレるのを検出)', () => {
+    const path = buildCoursePath(course, { range, stitched, centerLat, centerLon, tileSize: TS });
+    const p = course[1];
+    const expX = (p.lon - centerLon) * M * Math.cos(centerLat * Math.PI / 180);
+    const expZ = -(p.lat - centerLat) * M;
+    expect(path[3]).toBeCloseTo(expX, 2);
+    expect(path[5]).toBeCloseTo(expZ, 2);
+  });
+
+  it('Y は DEM サンプル + drapeOffset (= 地形に沿わず宙に浮く/埋まるのを検出)', () => {
+    const path = buildCoursePath(course, {
+      range, stitched, centerLat, centerLon, tileSize: TS, drapeOffset: 30 });
+    // stitched は一様 1400m なので、 全点 Y = 1400 + 30。
+    for (let i = 1; i < path.length; i += 3) expect(path[i]).toBeCloseTo(1430, 3);
+  });
+
+  it('東の点ほど X が大きい (= コースラインの東西もメッシュと揃う)', () => {
+    const path = buildCoursePath(course, { range, stitched, centerLat, centerLon, tileSize: TS });
+    expect(path[6]).toBeGreaterThan(path[3]);  // course[2] (東) > course[1]
+    expect(path[3]).toBeGreaterThan(path[0]);  // course[1] > course[0] (西)
+  });
+
+  it('空 course は RangeError (= コース未ロードで沈黙破綻を防ぐ)', () => {
+    expect(() => buildCoursePath([], { range, stitched, centerLat, centerLon })).toThrow(RangeError);
+  });
+});
+
+// === courseRingSlopes ===
+
+describe('courseRingSlopes', () => {
+  const course = [
+    { slope_pct: 0 },
+    { slope_pct: 6 },
+    { slope_pct: 12 },
+  ];
+
+  it('ringCount 個の slope を返す (= 配列長を pin)', () => {
+    expect(courseRingSlopes(course, 9).length).toBe(9);
+  });
+
+  it('両端は course の始点 / 終点の slope (= ring→course 写像の端ズレを検出)', () => {
+    const s = courseRingSlopes(course, 9);
+    expect(s[0]).toBe(0);
+    expect(s[8]).toBe(12);
+  });
+
+  it('ringCount = course 長なら slope がそのまま並ぶ (= 中間の写像ズレを検出)', () => {
+    expect(Array.from(courseRingSlopes(course, 3))).toEqual([0, 6, 12]);
+  });
+
+  it('slope_pct 欠損は 0 扱い (= NaN が色計算に漏れるのを防ぐ)', () => {
+    const s = courseRingSlopes([{ slope_pct: 5 }, {}, { slope_pct: null }], 3);
+    expect(s[1]).toBe(0);
+    expect(s[2]).toBe(0);
+  });
+
+  it('空 course は RangeError', () => {
+    expect(() => courseRingSlopes([], 5)).toThrow(RangeError);
   });
 });

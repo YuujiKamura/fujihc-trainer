@@ -204,3 +204,95 @@ export function courseBounds(course, bufferM = 500) {
   const lonBuf = bufferM / (M_PER_DEG_LAT * Math.cos(midLat * Math.PI / 180));
   return [minLon - lonBuf, minLat - latBuf, maxLon + lonBuf, maxLat + latBuf];
 }
+
+/**
+ * 連結済み標高グリッドを緯度経度で bilinear サンプルして標高 (m) を返す.
+ *
+ * コースを地形に沿わせる (= drape) ために使う。 course の elevation_m は GPX 由来で
+ * DEM とは数十 m ずれることがあるため、 ライン高さは DEM をサンプルした値に統一する。
+ *
+ * @param {{grid:Float32Array, width:number, height:number}} stitched
+ * @param {{zoom:number, xMin:number, yMin:number}} range
+ * @param {number} lat
+ * @param {number} lon
+ * @param {number} [tileSize=256]
+ * @returns {number} 標高 m (= グリッド範囲外は端へ clamp)
+ */
+export function sampleHeightBilinear(stitched, range, lat, lon, tileSize = 256) {
+  const { grid, width, height } = stitched;
+  const { zoom, xMin, yMin } = range;
+  // 連続タイル画素座標 (= buildTerrainGeometry と同じ写像)。
+  const fx = (lonToTileX(lon, zoom) - xMin) * tileSize;
+  const fy = (latToTileY(lat, zoom) - yMin) * tileSize;
+  const cx = Math.max(0, Math.min(width - 1, fx));
+  const cy = Math.max(0, Math.min(height - 1, fy));
+  const x0 = Math.floor(cx), y0 = Math.floor(cy);
+  const x1 = Math.min(x0 + 1, width - 1);
+  const y1 = Math.min(y0 + 1, height - 1);
+  const tx = cx - x0, ty = cy - y0;
+  const h00 = grid[y0 * width + x0], h10 = grid[y0 * width + x1];
+  const h01 = grid[y1 * width + x0], h11 = grid[y1 * width + x1];
+  return h00 * (1 - tx) * (1 - ty) + h10 * tx * (1 - ty) +
+         h01 * (1 - tx) * ty + h11 * tx * ty;
+}
+
+/**
+ * course (lat/lon 点列) を地形メッシュ上の 3D ライン頂点列に変換する.
+ *
+ * 投影は buildTerrainGeometry と同一 (= 同じ centerLat/centerLon、 北 -Z)。 高さは
+ * DEM を sampleHeightBilinear でサンプルし、 drapeOffset だけ持ち上げて地形に密着
+ * させつつ z-fighting を避ける。
+ *
+ * @param {Array<{lat:number, lon:number}>} course
+ * @param {{range:object, stitched:object, centerLat:number, centerLon:number,
+ *          tileSize?:number, drapeOffset?:number, exaggeration?:number}} opts
+ *   centerLat/centerLon は buildTerrainGeometry の戻り値をそのまま渡す (= メッシュと一致)。
+ * @returns {Float32Array} course.length*3 の XYZ 頂点列
+ */
+export function buildCoursePath(course, opts) {
+  if (!Array.isArray(course) || course.length === 0) {
+    throw new RangeError('buildCoursePath: course must be a non-empty array');
+  }
+  const { range, stitched, centerLat, centerLon } = opts;
+  const tileSize = opts.tileSize || 256;
+  const drapeOffset = opts.drapeOffset != null ? opts.drapeOffset : 25;
+  const exaggeration = opts.exaggeration != null ? opts.exaggeration : 1.0;
+  const mPerDegLon = M_PER_DEG_LAT * Math.cos(centerLat * Math.PI / 180);
+  const out = new Float32Array(course.length * 3);
+  for (let i = 0; i < course.length; i++) {
+    const p = course[i];
+    const demH = sampleHeightBilinear(stitched, range, p.lat, p.lon, tileSize);
+    out[i * 3] = (p.lon - centerLon) * mPerDegLon;        // 東 = +X
+    out[i * 3 + 1] = demH * exaggeration + drapeOffset;   // 標高 + 持ち上げ
+    out[i * 3 + 2] = -(p.lat - centerLat) * M_PER_DEG_LAT; // 北 = -Z
+  }
+  return out;
+}
+
+/**
+ * コースチューブの ring ごとの勾配 (slope_pct) を返す.
+ *
+ * TubeGeometry は曲線に沿って ringCount 個の輪 (= ring) で頂点を生成する。 各 ring を
+ * course の slope_pct で塗り分ける (= GPX 由来の勾配色分け) ために、 ring index を
+ * course index へ写して slope を引く純関数。 slope 欠損は 0 扱い。
+ *
+ * @param {Array<{slope_pct?: number}>} course
+ * @param {number} ringCount - tubularSegments + 1
+ * @returns {Float32Array} 長さ ringCount の slope_pct 列
+ */
+export function courseRingSlopes(course, ringCount) {
+  if (!Array.isArray(course) || course.length === 0) {
+    throw new RangeError('courseRingSlopes: course must be a non-empty array');
+  }
+  const n = Math.max(1, Math.floor(ringCount));
+  const out = new Float32Array(n);
+  const last = course.length - 1;
+  for (let i = 0; i < n; i++) {
+    const t = n > 1 ? i / (n - 1) : 0;
+    const idx = Math.max(0, Math.min(last, Math.round(t * last)));
+    let s = course[idx].slope_pct;
+    if (s == null || Number.isNaN(s)) s = 0;
+    out[i] = s;
+  }
+  return out;
+}
