@@ -42,9 +42,15 @@
   #info b { font-variant-numeric: tabular-nums; }
   #status { left: 12px; bottom: 12px; right: 12px; max-width: 540px; }
   #status.err { border-color: #f85149; color: #ffa198; }
-  #attrib { right: 12px; bottom: 12px; font-size: 10.5px; color: #8b949e;
-            background: rgba(13,17,23,0.78); padding: 4px 8px; border-radius: 5px; }
-  #attrib a { color: #8b949e; }
+  /* 出典クレジット (= 地理院タイル利用規約の出典明記義務)。
+     position:absolute が無いと right/bottom が効かず、 通常フローの静的ブロックとして
+     ページ最上部に置かれ、 inset:0 の canvas の裏に隠れて画面に出ない (= 旧実装の不具合)。
+     暗い地形の上でも必ず視認できるよう、 明色テキスト + 不透明背景 + 枠でコントラスト確保。 */
+  #attrib { position: absolute; right: 12px; bottom: 12px;
+            font-size: 12.5px; color: #e6edf3;
+            background: rgba(13,17,23,0.94); border: 1px solid #30363d;
+            padding: 6px 10px; border-radius: 6px; }
+  #attrib a { color: #58a6ff; }
   .hint { color: #8b949e; font-size: 10.5px; margin-top: 6px; }
 </style>
 </head>
@@ -231,10 +237,24 @@ async function main() {
 
   const camera = new THREE.PerspectiveCamera(50, 1, 1, span * 6);
   // 6. カメラ: 地形中心 (target) のまわりを球面で回す簡易オービット操作。
+  // 初期向きは北上の俯瞰 (theta=0 = 地形の南上空から北を見下ろす)。
+  // buildTerrainGeometry が北を -Z に写しているので、 theta=0 では北が画面奥・
+  // 東が画面右になり、 地図と東西が揃う。 phi は浅め (= かなり俯瞰) にして
+  // 地図的な向きの分かりやすさと起伏の見えを両立する。
   const target = new THREE.Vector3(0, midH, 0);
-  const orbit = { radius: span * 1.15, theta: Math.PI * 0.25, phi: Math.PI * 0.36 };
+  const orbit = { radius: span * 1.35, theta: 0, phi: Math.PI * 0.21 };
   const PHI_MIN = 0.12, PHI_MAX = Math.PI * 0.49;
+  // ?cam=top で真上からの北上俯瞰 (= 地図と直接照合できる検証ビュー)。
+  // camera.up を北 (-Z) に向けると、 北が画面上・東が画面右の正しい地図向きになる。
+  const topMode = new URLSearchParams(location.search).get('cam') === 'top';
   function applyCamera() {
+    if (topMode) {
+      camera.up.set(0, 0, -1);  // 北 (= -Z) を画面上に
+      camera.position.set(target.x, target.y + orbit.radius, target.z);
+      camera.lookAt(target);
+      return;
+    }
+    camera.up.set(0, 1, 0);
     orbit.phi = Math.min(PHI_MAX, Math.max(PHI_MIN, orbit.phi));
     orbit.radius = Math.min(span * 3.5, Math.max(span * 0.18, orbit.radius));
     camera.position.set(

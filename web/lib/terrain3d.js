@@ -86,9 +86,13 @@ export function stitchHeightGrid(tileGrids, range, tileSize = 256) {
  * - グリッド画素 (px, py) を XYZ タイル座標経由で緯度経度に直し、 equirectangular
  *   近似 (= 緯度 1 度 ≒ 111320m, 経度は cos(中心緯度) 補正) で局所メートル平面へ投影。
  *   対象範囲は ~10km 角なので equirectangular 誤差は 0.1% 未満で十分。
- * - 軸: X = 東、 Y = 上 (標高 m)、 Z = 北 (= +Z が北)。
+ * - 軸: X = 東、 Y = 上 (標高 m)、 Z = 南 (= +Z が南、 北は -Z)。
+ *   緯度を +Z=北 に写すと (東,上,北) は実世界 ENU (東,北,上) の奇置換になり、
+ *   地形が東西鏡像で描画される (= 上空から見た地図が左右反転)。 北を -Z に写すと
+ *   (東,上,南) となり実世界と同じキラリティ ── 上空俯瞰で東が右、 北が上に揃う。
  * - step で間引く (= 256x256 タイル数枚を 1:1 で頂点化すると数百万頂点になるため)。
- * - 三角形は +Y 向き法線になる winding (= a,b,c / b,d,c) で index を張る。
+ * - 三角形は +Y 向き法線になる winding (= a,c,b / b,c,d) で index を張る
+ *   (北 -Z 化で頂点の並進向きが変わるため winding も対で決まる)。
  *
  * @param {{grid:Float32Array, width:number, height:number}} stitched - stitchHeightGrid の戻り
  * @param {{zoom:number, xMin:number, yMin:number}} range
@@ -124,7 +128,9 @@ export function buildTerrainGeometry(stitched, range, opts = {}) {
   for (let j = 0; j < gh; j++) {
     const py = Math.min(height - 1, j * step);
     const lat = tileYToLat(yMin + py / tileSize, zoom);
-    const z = (lat - centerLat) * M_PER_DEG_LAT;  // 北 = +Z
+    // 北を -Z に写す (= 南が +Z)。 こうすると (東=+X, 上=+Y, 南=+Z) が実世界と同じ
+    // キラリティになり、 地形が東西鏡像で描画されない (= 上空俯瞰で東が右に来る)。
+    const z = -(lat - centerLat) * M_PER_DEG_LAT;
     for (let i = 0; i < gw; i++) {
       const px = Math.min(width - 1, i * step);
       const lon = tileXToLon(xMin + px / tileSize, zoom);
@@ -148,7 +154,8 @@ export function buildTerrainGeometry(stitched, range, opts = {}) {
 
   // 三角形 index。 各セル (i,j) を 2 枚に分割、 法線が +Y を向く winding。
   //   a = (i,j)  b = (i+1,j)  c = (i,j+1)  d = (i+1,j+1)
-  //   tri1 = a,b,c   tri2 = b,d,c
+  //   tri1 = a,c,b   tri2 = b,c,d
+  //   (j が増える = py が増える = 南 = +Z 増加。 北 -Z 化に対応した winding。)
   const indices = new Uint32Array((gw - 1) * (gh - 1) * 6);
   let k = 0;
   for (let j = 0; j < gh - 1; j++) {
@@ -157,8 +164,8 @@ export function buildTerrainGeometry(stitched, range, opts = {}) {
       const b = a + 1;
       const c = a + gw;
       const d = c + 1;
-      indices[k++] = a; indices[k++] = b; indices[k++] = c;
-      indices[k++] = b; indices[k++] = d; indices[k++] = c;
+      indices[k++] = a; indices[k++] = c; indices[k++] = b;
+      indices[k++] = b; indices[k++] = c; indices[k++] = d;
     }
   }
 

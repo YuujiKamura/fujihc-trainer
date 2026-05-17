@@ -210,6 +210,46 @@ describe('buildTerrainGeometry', () => {
   });
 });
 
+// === buildTerrainGeometry: 東西・南北の向き (= 鏡像描画の防止) ===
+//
+// 北を +Z に写すと (東,上,北) は実世界 ENU (東,北,上) の奇置換になり、 上空から見た
+// 地形が東西鏡像で描画される。 ここはその回帰を物理 pin する ── 落ちたら「地形が
+// 左右反転して見える」状態に戻ったことを意味する。
+
+describe('buildTerrainGeometry の向き (= 鏡像描画の回帰検出)', () => {
+  const range = { zoom: 14, xMin: 14503, yMin: 6464 };
+  // grid 画素 (px,py): px は東に増加、 py は南に増加 (= XYZ タイル画素の標準)。
+  const stitched = { grid: new Float32Array(8 * 8).fill(1500), width: 8, height: 8 };
+
+  function vtx(geo, i, j) {
+    const k = (j * geo.gw + i) * 3;
+    return [geo.positions[k], geo.positions[k + 1], geo.positions[k + 2]];
+  }
+
+  it('東 (px 大) ほど頂点 X が大きい (= 経度→X 符号の取り違えを検出)', () => {
+    const geo = buildTerrainGeometry(stitched, range, { tileSize: 8 });
+    expect(vtx(geo, geo.gw - 1, 0)[0]).toBeGreaterThan(vtx(geo, 0, 0)[0]);
+  });
+
+  it('北 (py 小) ほど頂点 Z が小さい = 北は -Z (= 北を +Z に写す鏡像バグを検出)', () => {
+    const geo = buildTerrainGeometry(stitched, range, { tileSize: 8 });
+    // j=0 は py=0 = 北、 j=gh-1 は南。 北の Z < 南の Z でなければ鏡像。
+    expect(vtx(geo, 0, 0)[2]).toBeLessThan(vtx(geo, 0, geo.gh - 1)[2]);
+  });
+
+  it('東ベクトル × 北ベクトルが +Y (上) を向く = 実世界と同じキラリティ (= 鏡像描画を検出)', () => {
+    // 実世界では 東×北 = 上。 地形が東西鏡像なら 東×北 = 下 (-Y) になる。
+    const geo = buildTerrainGeometry(stitched, range, { tileSize: 8 });
+    const o = vtx(geo, 0, 1);          // 基準点
+    const e = vtx(geo, 1, 1);          // 東隣
+    const n = vtx(geo, 0, 0);          // 北隣 (j=0 は j=1 の北)
+    const east = [e[0] - o[0], e[1] - o[1], e[2] - o[2]];
+    const north = [n[0] - o[0], n[1] - o[1], n[2] - o[2]];
+    const crossY = east[2] * north[0] - east[0] * north[2];  // (east × north).y
+    expect(crossY).toBeGreaterThan(0);
+  });
+});
+
 // === courseBounds ===
 
 describe('courseBounds', () => {
