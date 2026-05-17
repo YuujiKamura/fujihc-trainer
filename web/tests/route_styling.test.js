@@ -257,4 +257,18 @@ describe('gradeColorContinuous (連続グレード色)', () => {
     expect(rgb(gradeColorContinuous(2))[1]).toBeGreaterThan(rgb(gradeColorContinuous(10))[1]);
     expect(rgb(gradeColorContinuous(10))[1]).toBeGreaterThan(rgb(gradeColorContinuous(16))[1]);
   });
+
+  it('富士ヒルの登坂域 (0〜10%) で色が多様 (= 隣接サンプルが互いに識別できる)', () => {
+    // 0,2,4,6,8,10% を 2% 刻みでサンプルし、 どの隣接ペアも肉眼で区別できる色差を持つこと。
+    // 旧 6 段階では 0〜10% が緑〜黄〜橙の狭い帯で隣接差が乏しかった ── 多色化の回帰 pin。
+    const samples = [0, 2, 4, 6, 8, 10].map((s) => rgb(gradeColorContinuous(s)));
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i], b = samples[i + 1];
+      const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      expect(dist).toBeGreaterThan(30);  // 隣接 2% 差が明確な色差として出る
+    }
+    // 6 サンプルすべてが相異なる色であること。
+    const uniq = new Set([0, 2, 4, 6, 8, 10].map((s) => gradeColorContinuous(s)));
+    expect(uniq.size).toBe(6);
+  });
 });
