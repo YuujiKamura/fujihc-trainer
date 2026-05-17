@@ -30,4 +30,12 @@ describe('Service Worker cache 版数の内部整合', () => {
   it('sw.js に CACHE_NAME が定義済 (= 版数 bump で旧 cache を捨てる入口)', () => {
     expect(sw).toMatch(/const\s+CACHE_NAME\s*=\s*['"]fujihill-v\d+['"]/);
   });
+
+  it('sw.js はアプリ本体 (html/js/css) を network-first で配る', () => {
+    // cache-first だけだと「コードを変えても古い版が出続ける」 罠になる。
+    // isAppShell で html/js/css を判定し、 network-first 経路に分岐していること。
+    expect(sw).toMatch(/isAppShell/);
+    expect(sw).toMatch(/\\.\(html\|js\|css\)\$/);  // 拡張子で app shell を判定
+    expect(sw).toMatch(/network-first/);           // network-first 戦略の明示
+  });
 });

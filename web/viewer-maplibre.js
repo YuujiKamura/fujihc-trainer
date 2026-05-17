@@ -684,14 +684,28 @@ const DEBUG_HUD = new URLSearchParams(location.search).has('debug');
 if (DEBUG_HUD) {
   document.body.classList.add('debug-on');
 }
-// 2026-05-16: service worker 登録 (= 2 回目以降 fetch ゼロでオフライン起動可、
-// user 「毎回タイルを並べる手間」 への対応). ?nosw=1 で skip (= dev 用).
-if ('serviceWorker' in navigator && !new URLSearchParams(location.search).has('nosw')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => {
-      console.warn('[fujihill] service worker register failed:', err);
+// 2026-05-16: service worker 登録 (= タイル等を永続 cache、 2 回目以降を速く / オフライン可、
+// user 「毎回タイルを並べる手間」 への対応).
+// ?nosw=1 (dev 用): 旧来は register を skip するだけだったが、 それでは既に install 済の
+// SW が古い cache を返し続け「新しい版に切り替わらない」。 ?nosw=1 では既存 SW を解除し
+// cache を全消しする (= 次回 reload から SW なし・常に network 直)。
+if ('serviceWorker' in navigator || window.caches) {
+  if (new URLSearchParams(location.search).has('nosw')) {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((regs) => regs.forEach((r) => r.unregister()))
+        .catch(() => {});
+    }
+    if (window.caches) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+    }
+  } else if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch((err) => {
+        console.warn('[fujihill] service worker register failed:', err);
+      });
     });
-  });
+  }
 }
 // ?map=1 で UI 操作なしの「地図表示だけ」モード. TEST_MODE と同じく client は
 // createTestModeClient、 加えて pairing overlay を即 hide + ride を自動 start.
