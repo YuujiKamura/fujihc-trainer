@@ -57,7 +57,7 @@ function buildBikeMesh(THREE) {
     color: 0x2a2f3a, roughness: 0.6, metalness: 0.2 });    // サドル / ハンドル
 
   const { wheelR, tubeR, frontZ, rearZ } = BIKE_DIMENSIONS;
-  const hubY = wheelR;  // 車輪の接地点が group の y=0 になる高さ
+  const hubY = wheelR + tubeR;  // トーラス最下点 (= hubY - (wheelR+tubeR) = 0) が group y=0 になる高さ
 
   // 車輪 2 枚 (トーラス)。 既定で XY 平面のリングなので rotation.y=π/2 で
   // 車軸を X 方向にし、 車輪の円盤が進行方向 (Z) を含む面に立つ。
