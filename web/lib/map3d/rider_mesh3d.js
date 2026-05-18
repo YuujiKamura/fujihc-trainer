@@ -97,8 +97,6 @@ function buildBikeMesh(THREE) {
 // rider_mesh3d を生成する。 戻り値 group を facade が scene に add する。
 export function createRiderMesh3d(THREE) {
   const group = buildBikeMesh(THREE);
-  // bike model の前方ベクトル (= -Z)。 進行方向 forward へ回す基準。
-  const MODEL_FORWARD = new THREE.Vector3(0, 0, -1);
 
   return {
     // facade が scene に追加する自転車 mesh (= THREE.Group)。
@@ -110,11 +108,13 @@ export function createRiderMesh3d(THREE) {
     updatePose(ribbonPositions, course, distanceM) {
       const pl = riderPlacementAtDistance(ribbonPositions, course, distanceM);
       group.position.set(pl.position[0], pl.position[1], pl.position[2]);
-      // bike model 前方 (-Z) を forward3d へ回す。 forward3d はピッチ (高低差) 込みの 3D 単位ベクトル。
+      // lookAt で −Z を forward3d 方向へ向け、up=+Y でロール 0 に固定。
+      // setFromUnitVectors の最短回転は坂+カーブで横傾き(ロール)が出るため置き換え。
       // カメラ追従は水平の pl.forward を引き続き使う。
-      group.quaternion.setFromUnitVectors(
-        MODEL_FORWARD,
-        new THREE.Vector3(pl.forward3d[0], pl.forward3d[1], pl.forward3d[2]));
+      group.lookAt(
+        group.position.x + pl.forward3d[0],
+        group.position.y + pl.forward3d[1],
+        group.position.z + pl.forward3d[2]);
       return pl;
     },
   };

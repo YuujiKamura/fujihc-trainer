@@ -42,8 +42,16 @@ function makeThreeStub() {
     setFromUnitVectors(a, b) { this.calls += 1; this.from = { ...a }; this.to = { ...b }; return this; }
   }
   class Group {
-    constructor() { this.children = []; this.position = new Vec3(); this.quaternion = new Quat(); }
+    constructor() {
+      this.children = []; this.position = new Vec3(); this.quaternion = new Quat();
+      this.lookAtCalls = [];
+    }
     add(o) { this.children.push(o); return this; }
+    lookAt(x, y, z) {
+      // THREE.lookAt は (Vector3) でも (x,y,z) でも受け付ける
+      if (typeof x === 'object') { this.lookAtCalls.push({ x: x.x, y: x.y, z: x.z }); }
+      else { this.lookAtCalls.push({ x, y, z }); }
+    }
   }
   class Mesh {
     constructor(geometry, material) {
@@ -96,16 +104,35 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     expect(r.group.position.z).toBeCloseTo(0, 6);
   });
 
-  it('東進コースでは forward が +X、 mesh の向きを setFromUnitVectors で更新する', () => {
+  it('東進コースでは forward が +X、 mesh の向きを lookAt で更新する', () => {
     const r = createRiderMesh3d(makeThreeStub());
     const { course, positions } = eastwardCourse();
     const pl = r.updatePose(positions, course, 120);
     expect(pl.forward[0]).toBeCloseTo(1, 6);
     expect(pl.forward[2]).toBeCloseTo(0, 6);
-    // bike model 前方 (-Z) を forward へ回す setFromUnitVectors が呼ばれている
-    expect(r.group.quaternion.calls).toBeGreaterThan(0);
-    expect(r.group.quaternion.from).toEqual({ x: 0, y: 0, z: -1 });
-    expect(r.group.quaternion.to.x).toBeCloseTo(1, 6);
+    // lookAt で向きを更新: target = position + forward3d 方向
+    expect(r.group.lookAtCalls.length).toBeGreaterThan(0);
+    const target = r.group.lookAtCalls[r.group.lookAtCalls.length - 1];
+    // 東進+平坦コース → target.x = group.position.x + 1、target.y = group.position.y
+    expect(target.x).toBeGreaterThan(r.group.position.x);
+    expect(target.y).toBeCloseTo(r.group.position.y, 6);
+  });
+
+  it('登り+カーブでも lookAt が呼ばれる (= up=+Y でロール 0 が保証される)', () => {
+    // setFromUnitVectors は坂+カーブで最短回転の軸が混合しロールが出る。
+    // lookAt は up=+Y でローカル X 軸（車軸）を常に水平に保つのでロールは構造的にゼロ。
+    const r = createRiderMesh3d(makeThreeStub());
+    // 北東に向かって登る区間 (ヨー + ピッチが両方入る)
+    const climbCurvePositions = new Float32Array([
+      0, 0, 0,     4, 0, 0,          // 点0: center (2,0,0)
+      100, 10, -100, 104, 10, -100,  // 点1: center (102,10,-100) 北東+登り
+    ]);
+    const climbCourse = [{ distance_m: 0 }, { distance_m: Math.hypot(100, 100) }];
+    r.updatePose(climbCurvePositions, climbCourse, 50);
+    expect(r.group.lookAtCalls.length).toBeGreaterThan(0);
+    const target = r.group.lookAtCalls[r.group.lookAtCalls.length - 1];
+    // target は position より高い (登り方向に lookAt している)
+    expect(target.y).toBeGreaterThan(r.group.position.y);
   });
 
   it('距離は [0, 総距離] に clamp される (= 範囲外でも mesh が飛ばない)', () => {
