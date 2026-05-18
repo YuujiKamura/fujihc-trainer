@@ -147,6 +147,22 @@ export async function loadDemStitched({ bounds, onProgress }) {
   return { stitched, range, missing };
 }
 
+// 取得済みの JPEG バイト列を ImageBitmap に decode する。
+// 旧実装は URL.createObjectURL で blob: URL を作り <img src=blob:...> で読んでいたが、
+// blob: URL の <img> は CSP の img-src に blob: を要求する。 viewer の CSP は
+// img-src に blob: を持たない設計 (= XSS 経路を絞る brief 33 の gate) で、 全タイルの
+// <img> が block され地形テクスチャが下地一色になる。 img 要素を経由しない
+// createImageBitmap ならバイト列を直接 decode でき、 img-src の管轄外。
+// decode は connect-src で許可済の fetch 結果を相手にするだけで新規取得を伴わない。
+// decode 失敗 (= 壊れたバイト列) は null を返し欠損扱いにする。
+async function bytesToBitmap(bytes) {
+  try {
+    return await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * DEM と同じタイル範囲の航空写真 (seamlessphoto) を 1 枚の Canvas に貼り合わせて返す.
  *
@@ -172,28 +188,26 @@ export async function loadPhotoCanvas({ range, tileCache, onProgress }) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   await mapLimit(coords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    let img = null;
+    // tileCache hit → GSI リクエスト 0。 miss → GSI online から fetch して cache.set。
     let bytes = tileCache ? await tileCache.get('seamlessphoto', DEM_ZOOM, tx, ty) : null;
-    if (bytes) {
-      const objUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-      img = await loadImage(objUrl);
-      URL.revokeObjectURL(objUrl);
-    } else {
+    if (!bytes) {
       const tileUrl = `${GSI_SEAMLESSPHOTO_BASE}/${DEM_ZOOM}/${tx}/${ty}.jpg`;
       try {
         const resp = await fetch(tileUrl);
         if (resp.ok) {
           bytes = new Uint8Array(await resp.arrayBuffer());
           if (tileCache) await tileCache.set('seamlessphoto', DEM_ZOOM, tx, ty, bytes);
-          const objUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-          img = await loadImage(objUrl);
-          URL.revokeObjectURL(objUrl);
         }
       } catch { /* fetch 失敗は欠損扱い (= 下地のまま) */ }
     }
-    if (img) {
-      ctx.drawImage(img, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
+    if (!bytes) return;
+    // バイト列 → ImageBitmap で decode (= <img src=blob:> を経由せず CSP img-src に
+    // 触れない)。 描いたら bitmap は閉じて GPU/メモリを早めに返す。
+    const bitmap = await bytesToBitmap(bytes);
+    if (bitmap) {
+      ctx.drawImage(bitmap, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
         TILE_PX, TILE_PX);
+      bitmap.close();
     }
   }, onProgress);
 
