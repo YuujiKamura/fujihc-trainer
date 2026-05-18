@@ -1,9 +1,10 @@
-// fujihill viewer - MapLibre GL JS 試験版
-// Cesium を廃止、 GSI 標高 + OSM raster で 3D 地形表示。
-// addProtocol で GSI dem_png を terrarium 形式に変換して MapLibre の terrain に食わせる。
-// b12 Phase 2: 地図描画は map_renderer.js に集約。 viewer 本体は map インスタンスを
-// 持たず、 createMapRenderer() の返す renderer 経由でしか地図を触らない (= 差し替え口)。
-import { createMapRenderer } from './lib/map_renderer.js';
+// fujihill viewer - 富士ヒルクライム / 任意ヒルクライム trainer。
+// b12 Phase 4: 地図描画エンジンを Three.js に差し替え。 地形は航空写真テクスチャを
+// 貼った 3D メッシュで描く。 viewer 本体は map インスタンスを持たず、 createMapRenderer()
+// の返す renderer の意味メソッド15個経由でしか地図を触らない (= 差し替え口)。
+// MapLibre 実装 (web/lib/map_renderer.js) も同じ差し替え口を満たすので、 import 行を
+// web/lib/map3d/index.js に差し替えるだけで描画エンジンが入れ替わる。
+import { createMapRenderer } from './lib/map3d/index.js';
 // b12 Phase 1: 富士ヒル固有値 (bounds / center / course file) は course 定義に集約.
 import { fujihill } from './courses/fujihill.js';
 // brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
@@ -1341,10 +1342,14 @@ if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
   try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihill] terrain probe init failed:', e); }
 }
 
-// 起動時に未完了 ride (= autosave 未クリア) があれば復元 dialog を出す。
-// dialog で「復元」→ dispatch 後に rideState 準備で applyPendingRestore、「破棄」→ clearAutosave して通常起動。
-// test 環境 (= window 不在 / IndexedDB 不在) や ?nopreflight=1 では skip.
-const SKIP_RESTORE = new URLSearchParams(location.search).get('nopreflight') === '1';
+// 起動時の未完了 ride 復元 dialog。
+// 2026-05-18 (ユーザー指示): 復元機能は中身が未完成で実質機能していないため、 起動時に
+// dialog を出さない。 checkRestoreThenDispatch は復元チェックを skip し、 通常起動
+// (= defaultDispatch → dispatchAfterIntro → トレーナー接続 pairing 画面) に直行する。
+// 下の autosave 検査コード・showRestoreDialog・applyPendingRestore は、 復元機能が
+// 完成した時に再有効化するため削除せず残す (= SKIP_RESTORE を false に戻せば復活)。
+// 復元有効時の旧条件: new URLSearchParams(location.search).get('nopreflight') === '1'
+const SKIP_RESTORE = true;
 function defaultDispatch() {
   if (introConsented()) {
     dispatchAfterIntro();
