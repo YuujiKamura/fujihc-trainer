@@ -2348,14 +2348,17 @@ bindPostRideButtons({
 });
 
 // brief 34 ε-3: Strava upload / save history button を consent flag で表示制御 (= 視覚的にも明示).
-// ride 開始時の consent で OFF を選んだ場合、 postride で混乱しないよう button を hide。
-// consent 未取得 (= setup-overlay 経由で未走) の場合は default で hide (= 安全寄り).
+// 2026-05-19 fix: addRide guard が「観るモードのみ block」に簡略化済 (2026-05-15) なのに、
+// ここだけ getRideConsent('history') を見ていた不整合を修正。
+// btnSaveHistory は view mode のみ hide (= 走行記録は view モード対象外)。
+// btnStravaUpload は strava consent (= OAuth client_id 設定) が前提なので変更なし。
 function updatePostrideButtonVisibility() {
-  const histOk = getRideConsent('history');
+  const ic = getIntroConsent();
+  const isViewMode = !!(ic && ic.mode === 'view');
   const stravaOk = getRideConsent('strava');
   const btnSave = document.getElementById('btnSaveHistory');
   const btnStrava = document.getElementById('btnStravaUpload');
-  if (btnSave) btnSave.hidden = !histOk;
+  if (btnSave) btnSave.hidden = isViewMode;
   if (btnStrava) btnStrava.hidden = !stravaOk;
 }
 updatePostrideButtonVisibility();
