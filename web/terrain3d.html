@@ -59,6 +59,25 @@
             padding: 6px 10px; border-radius: 6px; }
   #attrib a { color: #58a6ff; }
   .hint { color: #8b949e; font-size: 10.5px; margin-top: 6px; }
+
+  /* ライド HUD: MapLibre viewer の #hud と同じスタイル。 */
+  #hud {
+    position: absolute; left: 12px; bottom: 48px; z-index: 10;
+    background: rgba(0,0,0,0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
+    pointer-events: none; min-width: 13rem; font-size: 16px; line-height: 1.6;
+    font-family: ui-monospace, monospace;
+  }
+  #hud b { color: #ffd54a; font-size: 13px; }
+  /* rider 追随 HUD: 自転車の下に追随する走行数値 overlay。 */
+  #rider-hud {
+    position: absolute; left: 0; top: 0; z-index: 9;
+    background: rgba(0,0,0,0.7); padding: 0.5rem 0.8rem; border-radius: 6px;
+    pointer-events: none; font: 16px ui-monospace, monospace;
+    transform: translate(-50%, 0); min-width: 10rem; display: none;
+  }
+  #rider-hud .ride-row { display: flex; gap: 0.5rem; align-items: baseline; }
+  #rider-hud b { color: #ffd54a; font-size: 13px; flex: 0 0 4rem; }
+  #rider-hud span { font-size: 20px; font-weight: bold; color: #fff; }
 </style>
 </head>
 <body>
@@ -81,6 +100,20 @@
   <div id="legend-ticks"><span>0%</span><span>6%</span><span>12%</span><span>18%+</span></div>
 </div>
 
+<div id="hud">
+  <b>time</b>&nbsp; <span id="elapsed">00:00:00</span><br>
+  <b>dist</b>&nbsp; <span id="dist">0</span> / <span id="total">?</span> m<br>
+  <b>ele</b>&nbsp;&nbsp; <span id="ele">0</span> m
+</div>
+
+<div id="rider-hud">
+  <div class="ride-row"><b>slope</b> <span id="r-slope">0</span> %</div>
+  <div class="ride-row"><b>speed</b> <span id="r-speed">--</span></div>
+  <div class="ride-row"><b>power</b> <span id="r-power">--</span> W</div>
+  <div class="ride-row"><b>cad</b>&nbsp;&nbsp; <span id="r-cadence">--</span> rpm</div>
+  <div class="ride-row"><b>hr</b>&nbsp;&nbsp;&nbsp; <span id="r-hr">--</span> bpm</div>
+</div>
+
 <div id="status" class="panel">起動中…</div>
 <div id="attrib">© <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a></div>
 
@@ -92,15 +125,18 @@ import * as THREE from 'three';
 import {
   tileRangeForBounds, decodeGsiHeightGrid,
   stitchHeightGrid, buildTerrainGeometry, buildCoursePath, buildCourseRibbon,
-  courseBounds,
+  sampleHeightBilinear, courseBounds,
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
 import { buildRoadMarks, slopeAtDistance } from './lib/road_texture.js';
+import { computeMiterOffsets } from './lib/road_polygon.js';
 import { integratePhysics } from './lib/bike_physics.js';
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
 import { riderPlacementAtDistance } from './lib/rider_placement.js';
 import { openTileCache } from './lib/tile_cache.js';
+import { adjustPitch } from './lib/camera_controller.js';
+import { createHud } from './lib/hud.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -479,33 +515,51 @@ async function main() {
   scene.fog = new THREE.Fog(0x0d1117, span * 0.9, span * 2.6);
   scene.add(mesh);
 
-  // コースを地形に重ねる: course.json (= GPX 由来) の点列を、 地形と同じ投影で
-  // 「地形表面に沿う平たいリボン (= 道路状の帯)」mesh として描く。 リボンの両端は
-  // DEM 標高でそれぞれ drape し起伏に沿わせる。 路面の色 (勾配色) と距離・勾配の
-  // 数字は、 リボンの uv に貼る 1 枚のテクスチャに焼き込む (= brief b11-Phase2)。
-  // 始点 (緑) / 5合目 終点 (橙) に球マーカー。
-  const ribbon = buildCourseRibbon(course, {
-    range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,
-    tileSize: TILE_PX,
-    // 道幅: 実コースは約 7-8m だが地形スケール (~10km) で見えるよう span 比例で誇張。
-    widthM: span * 0.0055,
-    drapeOffset: span * 0.0013,  // 地形表面のすぐ上 (= z-fighting 回避の最小持ち上げ)
-  });
+  // コースリボン: MapLibre 版準拠のポリゴン生成。
+  //   - computeMiterOffsets (road_polygon.js) で miter 結合の左右 offset を算出。
+  //   - gradeColorContinuous で各点の slope_pct から頂点色 (MapLibre: a.slope_pct)。
+  //   - 左右端を DEM 標高で drape し地形表面に沿わせる。
+  //   - UV テクスチャは廃止し vertexColors で描く (= MapLibre fill layer と同じ色ロジック)。
+  const ROAD_WIDTH_M   = span * 0.0055;
+  const DRAPE_OFFSET_M = span * 0.0013;
+  const mPerDegLon = 111320 * Math.cos(geo.centerLat * Math.PI / 180);
+  const miterOffs = computeMiterOffsets(course, ROAD_WIDTH_M / 2);
+  const n = course.length;
+  const ribbonPos   = new Float32Array(n * 2 * 3);
+  const ribbonColor = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++) {
+    const off = miterOffs[i];
+    const slope = (course[i].slope_pct != null && !Number.isNaN(course[i].slope_pct))
+      ? course[i].slope_pct : 0;
+    const hex = gradeColorContinuous(slope);
+    const cr = parseInt(hex.slice(1, 3), 16) / 255;
+    const cg = parseInt(hex.slice(3, 5), 16) / 255;
+    const cb = parseInt(hex.slice(5, 7), 16) / 255;
+    for (let s = 0; s < 2; s++) {
+      const lon = s === 0 ? off.leftLon : off.rightLon;
+      const lat = s === 0 ? off.leftLat : off.rightLat;
+      const wx = (lon - geo.centerLon) * mPerDegLon;
+      const wz = -(lat - geo.centerLat) * 111320;
+      const wh = sampleHeightBilinear(stitched, range, lat, lon, TILE_PX) + DRAPE_OFFSET_M;
+      const vi = (i * 2 + s) * 3;
+      ribbonPos[vi] = wx; ribbonPos[vi + 1] = wh; ribbonPos[vi + 2] = wz;
+      ribbonColor[vi] = cr; ribbonColor[vi + 1] = cg; ribbonColor[vi + 2] = cb;
+    }
+  }
+  const ribbonIdx = new Uint32Array((n - 1) * 6);
+  for (let i = 0, k = 0; i < n - 1; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    ribbonIdx[k++] = a; ribbonIdx[k++] = b; ribbonIdx[k++] = c;
+    ribbonIdx[k++] = b; ribbonIdx[k++] = d; ribbonIdx[k++] = c;
+  }
+  // ribbon.positions は riderPlacementAtDistance が要求するレイアウト (左右交互) と同一。
+  const ribbon = { positions: ribbonPos };
   const ribbonGeo = new THREE.BufferGeometry();
-  ribbonGeo.setAttribute('position', new THREE.BufferAttribute(ribbon.positions, 3));
-  // uv = u(距離 0..1) / v(幅 0..1)。 道路テクスチャをこの uv で路面に貼る。
-  ribbonGeo.setAttribute('uv', new THREE.BufferAttribute(ribbon.uvs, 2));
-  ribbonGeo.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
-  // 道路テクスチャ: 距離マーク (約 1km の数字 / 約 100m の刻み) と勾配色を canvas に
-  // 焼き、 リボンの uv で路面に貼る。 数字・色は course の実値 (road_texture.js)。
-  const roadMarks = buildRoadMarks(course, { majorIntervalM: 1000, minorIntervalM: 100 });
-  const roadTexture = new THREE.CanvasTexture(buildRoadTextureCanvas(course, roadMarks));
-  roadTexture.colorSpace = THREE.SRGBColorSpace;
-  roadTexture.anisotropy = 8;  // 異方テクセル (進行方向に 1px≒1.46m) の滲み低減。
-  roadTexture.flipY = false;   // canvas の上 = uv v=0 (= 数字が上下反転しない)。
-  // 陰影なしの texture material (= 法線・winding 不問、 DoubleSide で裏面も描く)。
+  ribbonGeo.setAttribute('position', new THREE.Float32BufferAttribute(ribbonPos, 3));
+  ribbonGeo.setAttribute('color',    new THREE.Float32BufferAttribute(ribbonColor, 3));
+  ribbonGeo.setIndex(new THREE.BufferAttribute(ribbonIdx, 1));
   scene.add(new THREE.Mesh(ribbonGeo, new THREE.MeshBasicMaterial({
-    map: roadTexture, side: THREE.DoubleSide,
+    vertexColors: true, side: THREE.DoubleSide,
   })));
   // 始点 / 終点マーカー用にコース中心線の両端だけ投影する。
   const coursePath = buildCoursePath(course, {
@@ -551,8 +605,15 @@ async function main() {
   // theta=π で地形の北 (-Z) 側にカメラを置き南を向くと、 富士山頂が画面奥=上に立ち、
   // コースの載る北斜面が手前に広がる。 ?cam=top で真上俯瞰の検証ビューに切替可。
   const target = new THREE.Vector3(0, midH, 0);
-  const orbit = { radius: span * 1.3, theta: Math.PI, phi: Math.PI * 0.34 };
-  const PHI_MIN = 0.12, PHI_MAX = Math.PI * 0.49;
+  // MapLibre 準拠カメラ操作変数。
+  // camBearing: bearing オフセット (度, 初期=0 = 北を向く)
+  // camPitch:   pitch (度, 0=真上, 85=ほぼ水平)。 MapLibre の adjustPitch と同じ範囲。
+  // camRadius:  target からの距離 (m)。 wheel で倍率変化。
+  let camBearing = 0;
+  let camPitch   = 61;   // Math.PI * 0.34 rad ≈ 61.2° の初期仰角と揃える
+  let camRadius  = span * 1.3;
+  const CAM_RADIUS_MIN = span * 0.03;
+  const CAM_RADIUS_MAX = span * 3.5;
   // ?cam=top で真上からの北上俯瞰 (= 地図と直接照合できる検証ビュー)。
   // camera.up を北 (-Z) に向けると、 北が画面上・東が画面右の正しい地図向きになる。
   const topMode    = new URLSearchParams(location.search).get('cam') === 'top';
@@ -564,25 +625,26 @@ async function main() {
   function applyCamera() {
     if (topMode) {
       camera.up.set(0, 0, -1);  // 北 (= -Z) を画面上に
-      camera.position.set(target.x, target.y + orbit.radius, target.z);
+      camera.position.set(target.x, target.y + camRadius, target.z);
       camera.lookAt(target);
       return;
     }
     camera.up.set(0, 1, 0);
-    orbit.phi = Math.min(PHI_MAX, Math.max(PHI_MIN, orbit.phi));
-    // 最大拡大 (= 最小 radius) は span*0.03。 span は地形全体 (= 富士山外周まで
-    // 含む広域) のため、 旧 span*0.18 ではコース・rider に寄れない (= 拡大キャップが
-    // 狭すぎる)。 地形が広がっても rider 周辺まで寄れるよう係数を小さく取る。
-    orbit.radius = Math.min(span * 3.5, Math.max(span * 0.03, orbit.radius));
+    // pitch (度) → phi (ラジアン)。 MapLibre pitch 0=真上=phi 0、 85=水平=phi PI/2 に対応。
+    const phi   = Math.max(0.06, Math.min(Math.PI * 0.49,
+                    camPitch * Math.PI / 180));
+    // bearing オフセット (度) を初期方位 θ=PI (+Z 南側から北を向く) に積算。
+    const theta = Math.PI + camBearing * Math.PI / 180;
+    camRadius = Math.min(CAM_RADIUS_MAX, Math.max(CAM_RADIUS_MIN, camRadius));
     camera.position.set(
-      target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
-      target.y + orbit.radius * Math.cos(orbit.phi),
-      target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta),
+      target.x + camRadius * Math.sin(phi) * Math.sin(theta),
+      target.y + camRadius * Math.cos(phi),
+      target.z + camRadius * Math.sin(phi) * Math.cos(theta),
     );
     camera.lookAt(target);
   }
 
-  // マウス操作 (= ポインタ占有しない、 ドラッグとホイールのみ)。
+  // マウス操作: MapLibre 準拠 (水平ドラッグ=bearing、垂直ドラッグ=pitch、ホイール=zoom)。
   let dragging = false, lastX = 0, lastY = 0;
   renderer.domElement.addEventListener('mousedown', (e) => {
     dragging = true; lastX = e.clientX; lastY = e.clientY;
@@ -590,14 +652,18 @@ async function main() {
   window.addEventListener('mouseup', () => { dragging = false; });
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    orbit.theta -= (e.clientX - lastX) * 0.005;
-    orbit.phi -= (e.clientY - lastY) * 0.005;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
+    // 水平ドラッグ → bearing 回転 (MapLibre: dx * 0.5 deg/px)
+    camBearing = ((camBearing + dx * 0.5) % 360 + 360) % 360;
+    // 垂直ドラッグ → pitch (上ドラッグ=dy<0=pitch 増=より水平、MapLibre: -dy * 2.0 deg/px)
+    camPitch = adjustPitch(camPitch, -dy * 0.5);
     if (!followMode) applyCamera();
   });
   renderer.domElement.addEventListener('wheel', (e) => {
     e.preventDefault();
-    orbit.radius *= (e.deltaY > 0 ? 1.1 : 0.9);
+    camRadius *= (e.deltaY > 0 ? 1.1 : 0.9);
     if (!followMode) applyCamera();
   }, { passive: false });
 
@@ -612,7 +678,7 @@ async function main() {
   resize();
   applyCamera();
 
-  // HUD 更新。
+  // #info パネル更新 (メッシュ情報)。
   document.getElementById('m-verts').textContent = geo.vertexCount.toLocaleString();
   document.getElementById('m-ele').textContent =
     `${Math.round(geo.minH)} – ${Math.round(geo.maxH)} m`;
@@ -621,10 +687,18 @@ async function main() {
   const tileNote = missing > 0 ? ` (${missing} 枚欠損→0m補完)` : '';
   status(`航空写真 — 富士ヒルコース ${course.length} 点の外接範囲 + コースライン${tileNote}`);
 
+  // ライド HUD: hud.js の factory を初期化し、コース総距離を 1 回セット。
+  const hud = createHud((id) => document.getElementById(id));
+  const totalDist = course.length > 0
+    ? course[course.length - 1].distance_m ?? 0
+    : 0;
+  hud.total(totalDist);
+
   // 物理 state: physicsSpeedMps は integratePhysics の出力を引き継ぐ累積速度。
   // lastT は dt 計算の基準時刻。 dt は min(dt, 0.1) で cap (= タブ非アクティブ対策)。
   let physicsSpeedMps = 0;
   let lastT = performance.now();
+  const rideStartT = performance.now();
 
   function loop() {
     const now = performance.now();
@@ -660,6 +734,29 @@ async function main() {
         pl.position[2] + nz * LOOK_AHEAD,
       );
     }
+
+    // HUD 更新。
+    hud.ride({
+      elapsedSec: (now - rideStartT) / 1000,
+      dist: rider.distanceTraveled,
+      ele: pl.position[1],
+      slope,
+    });
+    hud.trainer({
+      powerW: RIDE_POWER_W,
+      cadenceRpm: null,
+      hrBpm: null,
+      speedMps: physicsSpeedMps,
+    });
+    // rider-hud を自転車の画面座標に追随させる。
+    const bikeVec = new THREE.Vector3(pl.position[0], pl.position[1], pl.position[2]);
+    bikeVec.project(camera);
+    const hw = renderer.domElement.clientWidth, hh = renderer.domElement.clientHeight;
+    const sx = (bikeVec.x * 0.5 + 0.5) * hw;
+    const sy = (-bikeVec.y * 0.5 + 0.5) * hh;
+    const behindCamera = bikeVec.z > 1;
+    hud.riderHudAt(sx, sy + 24, !behindCamera);
+
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
