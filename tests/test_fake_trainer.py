@@ -21,7 +21,13 @@ import websockets
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 
-BRIDGE_PORT = 18766   # メインの 8765 と衝突しない
+BRIDGE_PORT = 18766       # WebSocket port (メインの 8765 と衝突しない)
+# bridge は WebSocket と HTTP tile server の 2 本立てで、--port は WS だけを変える。
+# --http-port を渡さないと HTTP は default 8000 のまま。8765 で常駐する開発 bridge
+# (これも http-port 8000) が居ると fake bridge の 8000 bind が OSError 10048 で
+# 失敗し、bridge プロセスが即死 → fixture が "fake bridge did not start" で ERROR。
+# HTTP も衝突しないポートに固定する (2026-05-18 修正、34528)。
+BRIDGE_HTTP_PORT = 18767  # HTTP tile server port (default 8000 との衝突回避)
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +39,8 @@ def fake_bridge():
     # stdout を file に redirect (pipe buffer 詰まり防止)
     logf = open("/tmp/fake_bridge.log", "w", encoding="utf-8")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "fujihill.bridge", "--fake-trainer", "--port", str(BRIDGE_PORT)],
+        [sys.executable, "-m", "fujihill.bridge", "--fake-trainer",
+         "--port", str(BRIDGE_PORT), "--http-port", str(BRIDGE_HTTP_PORT)],
         env=env, cwd=str(ROOT),
         stdout=logf, stderr=subprocess.STDOUT,
     )

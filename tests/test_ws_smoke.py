@@ -91,9 +91,21 @@ async def test_scan_returns_status_and_result():
         assert saw_result, "scan_result も failed も来なかった"
 
 
+# 2026-05-18 調査 (34528): bridge は connect 失敗を WebSocket に通知しない設計。
+# bridge.py _handle_connect の docstring「ダメなら静かに待つだけ」、および L334
+# 「viewer に failure 通知は出さない (user 指示: タイムアウト/失敗表示は不要)」。
+# connect_status の state は connecting / handshaking / connected のみで failed は
+# どこからも送出されない。本テストは設計変更より前の旧契約 (connect_status:failed)
+# を pin しており、現 bridge では構造的に成立しない (flaky ではなく確定失敗、3 回実走で確認)。
+# bridge を user 指示に反して変更しないため xfail で可視化する。
+@pytest.mark.xfail(
+    reason="bridge は connect 失敗を WS 通知しない設計 (bridge.py L334, user 指示)。"
+           "本テストは旧契約 connect_status:failed を pin した時代遅れテスト。",
+    strict=False,
+)
 @pytest.mark.asyncio
 async def test_connect_with_bogus_address_returns_failed():
-    """存在しない MAC に connect → fail が返ることを契約 pin。"""
+    """存在しない MAC に connect → fail が返ることを契約 pin (※現 bridge は失敗を通知しない設計、上の xfail 参照)。"""
     async with websockets.connect(
         BRIDGE_URL, origin="http://localhost:8000"
     ) as ws:
