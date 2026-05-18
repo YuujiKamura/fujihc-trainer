@@ -5,7 +5,7 @@
 // ── 差し替え口15メソッドが揃うか、 距離補間の純関数 ── を検証する。 実描画 (boot 後の
 // シーン構築・カメラ・rider) は three / DOM が要るので Phase 4 の画面確認で見る。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { createMapRenderer, distanceAlongCourse } from '../lib/map3d/index.js';
 
 // map_renderer.js が定める意味メソッド15個。 Three.js 実装も同じ顔ぶれを満たす。
@@ -96,5 +96,51 @@ describe('distanceAlongCourse — curIdx + lat/lon から走行距離', () => {
 
   it('空コースは 0 を返す (= course load 前の事故耐性)', () => {
     expect(distanceAlongCourse([], 0, 0, 0)).toBe(0);
+  });
+});
+
+describe('boot() の再入ガード (b12 Phase4 フリーズ回帰の pin)', () => {
+  // boot() は container 引数を渡せば document に触れない。 渡した dbBounds では
+  // 非同期処理 (three の動的 import) が node 環境で失敗するが、 booted フラグが
+  // boot() の先頭で同期に立つことがこのテストの検証対象。 非同期失敗は catch される。
+  afterEach(async () => {
+    // boot() が仕込む 8 秒 fallback timer を、 非同期処理の決着 (= three import 失敗 →
+    // catch → finally の clearTimeout) まで待って後始末する。
+    await new Promise((res) => setTimeout(res, 60));
+  });
+
+  it('boot() を呼んだ直後に isBooted() が同期で true になる', () => {
+    const r = createMapRenderer();
+    expect(r.isBooted()).toBe(false);
+    r.boot({ mode: 'static' }, { container: {}, dbBounds: null, onLoaded() {} });
+    // 非同期完了を待たず、 同期で true。 ここが false のままだと viewer の再入が止まらない。
+    expect(r.isBooted()).toBe(true);
+  });
+
+  it('viewer の "if (!isBooted()) で再入" パターンが 1 回で抜ける', () => {
+    const r = createMapRenderer();
+    let reentries = 0;
+    let proceeded = false;
+    // initBleMode / initTestMode 等が持つ起動ガードの模写。 修正前は isBooted() が
+    // 非同期完了まで false のままで、 この関数が自分を呼び続け無限ループになった。
+    function initLike() {
+      if (!r.isBooted()) {
+        reentries++;
+        r.boot({}, { container: {}, onLoaded() {} });
+        initLike();
+        return;
+      }
+      proceeded = true;
+    }
+    initLike();
+    expect(reentries).toBe(1);   // boot を 1 回撃ったら、 次の判定では抜ける
+    expect(proceeded).toBe(true);
+  });
+
+  it('boot() の二重呼び出しは no-op (booted ガード)', () => {
+    const r = createMapRenderer();
+    r.boot({}, { container: {}, onLoaded() {} });
+    expect(() => r.boot({}, { container: {}, onLoaded() {} })).not.toThrow();
+    expect(r.isBooted()).toBe(true);
   });
 });

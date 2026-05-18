@@ -93,8 +93,11 @@ export function createMapRenderer() {
   let terrainSpan = 1000; // 地形の最大辺 (m)
 
   // --- ライフサイクル ---
-  let booting = false;
+  // booted: boot() が呼ばれたか。 boot() の先頭で同期に立てる ── viewer は isBooted() で
+  // 「起動済か」を判定して初期化関数を再入させる設計で、 ここが非同期完了まで false の
+  // ままだと再入が無限ループになりメインスレッドを固める (= b12 Phase4 フリーズ事故)。
   let booted = false;
+  // terrainReady: 地形 DEM + メッシュまで本当に組めたか。 idle 発火と renderCourse の gate。
   let terrainReady = false;
   let courseRendered = false;
   let idleFired = false;
@@ -172,11 +175,34 @@ export function createMapRenderer() {
     // 地図を生成する。 env からタイル取得経路を、 opts.dbBounds から地形範囲を決め、
     // DEM / 航空写真を取得して地形メッシュを組む。 準備完了で opts.onLoaded を呼ぶ。
     // three と three 依存部品はここで動的 import する (= node import 安全のため)。
+    //
+    // booted は boot() の先頭で同期に立てる。 viewer の初期化関数 (initBleMode 等) は
+    // 「if (!isBooted()) ensureMapBooted().then(initXxx)」 の再入で起動を待つ設計で、
+    // booted が非同期完了まで false だと再入が止まらずメインスレッドが固まる。
     boot(env, opts) {
       opts = opts || {};
-      if (booting || booted) return;
-      booting = true;
+      if (booted) return;
+      booted = true;
       container = opts.container || document.getElementById('map');
+
+      // onLoaded は最初の 1 回だけ呼ぶ (= 成功 / 例外 / 8 秒経過のいずれか早い方)。
+      let onLoadedCalled = false;
+      function fireOnLoaded() {
+        if (onLoadedCalled) return;
+        onLoadedCalled = true;
+        if (typeof opts.onLoaded === 'function') {
+          try { opts.onLoaded(); } catch (e) { console.warn('[map3d] onLoaded callback failed:', e); }
+        }
+      }
+      // 8 秒フォールバック: DEM 取得のハング等で非同期処理が onLoaded まで届かないとき、
+      // viewer をロード画面で止めないよう onLoaded を強制で呼ぶ (= 旧 map_renderer.js の安全弁)。
+      const fallbackTimer = setTimeout(() => {
+        if (!onLoadedCalled) {
+          console.warn('[map3d] boot が 8 秒以内に完了せず、 fallback で onLoaded を呼ぶ');
+          fireOnLoaded();
+        }
+      }, 8000);
+
       (async () => {
         try {
           THREE = await import('three');
@@ -218,12 +244,14 @@ export function createMapRenderer() {
           handleResize();
 
           terrainReady = true;
-          booted = true;
-          if (typeof opts.onLoaded === 'function') opts.onLoaded();
+          fireOnLoaded();
         } catch (e) {
+          // 例外時も viewer をロード画面で止めないよう onLoaded は呼ぶ。 terrainReady は
+          // false のまま ── idle 発火・renderCourse の gate は地形が本当に組めたかを見る。
           console.error('[map3d] boot failed:', e);
+          fireOnLoaded();
         } finally {
-          booting = false;
+          clearTimeout(fallbackTimer);
         }
       })();
     },
