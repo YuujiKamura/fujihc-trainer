@@ -117,9 +117,19 @@ export function createHud(getEl) {
     },
 
     /**
+     * #rider-hud の表示/非表示を切り替える。 CSS で固定した位置はそのまま (left/top に触れない)。
+     * 画面中央上部固定レイアウト用。
+     */
+    riderHudVisible(visible) {
+      const el = getEl('rider-hud');
+      if (!el) return;
+      el.style.display = visible ? 'block' : 'none';
+    },
+
+    /**
      * #rider-hud を画面座標 (x, y) に置く。 visible=false で非表示。
      * 座標は呼び出し側が projection (MapLibre map.project / Three.js) で算出して渡す
-     * ── hud は座標系を一切知らない。
+     * ── hud は座標系を一切知らない。 (terrain3d.html で使用中)
      */
     riderHudAt(x, y, visible) {
       const el = getEl('rider-hud');

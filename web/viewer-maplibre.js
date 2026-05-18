@@ -1986,14 +1986,8 @@ function tick(t) {
 
   // b9: 距離ラベルの表示窓を rider 現在地に追従させる (= 50m 刻みの間引きは renderer 内)。
   mapRenderer.updateLabelWindow(curDist);
-  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に投影し、
-  // 画面座標を hud に渡す (= hud は座標系を知らない)。 state-riding の時だけ表示。
-  if (document.body.classList.contains('state-riding')) {
-    const pt = mapRenderer.projectToScreen(rLon, rLat);
-    hud.riderHudAt(pt.x, pt.y + 30, true);  // 豆腐の下 30px (= polygon height + 余白)
-  } else {
-    hud.riderHudAt(0, 0, false);
-  }
+  // #rider-hud は CSS で画面中央上部に固定。 state-riding の時だけ表示。
+  hud.riderHudVisible(document.body.classList.contains('state-riding'));
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
   const camInfo = mapRenderer.getCameraInfo();
   setText('cam-zoom', camInfo.zoom.toFixed(2));

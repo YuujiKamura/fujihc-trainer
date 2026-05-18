@@ -148,15 +148,15 @@ describe('createHud', () => {
     expect(dom.getEl('ack').style.color).toBe(ACK_NG_COLOR);
   });
 
-  it('riderHudAt: visible で座標配置、 false で非表示', () => {
+  it('riderHudVisible: true で表示、 false で非表示 (CSS 固定位置は書き換えない)', () => {
     const dom = fakeDom();
     const hud = createHud(dom.getEl);
-    hud.riderHudAt(100, 220, true);
     const el = dom.getEl('rider-hud');
+    hud.riderHudVisible(true);
     expect(el.style.display).toBe('block');
-    expect(el.style.left).toBe('100px');
-    expect(el.style.top).toBe('220px');
-    hud.riderHudAt(0, 0, false);
+    expect(el.style.left).toBe('');
+    expect(el.style.top).toBe('');
+    hud.riderHudVisible(false);
     expect(el.style.display).toBe('none');
   });
 
@@ -166,7 +166,7 @@ describe('createHud', () => {
       hud.ride({ elapsedSec: 1, dist: 1, ele: 1, slope: 1 });
       hud.trainer({ powerW: 1, cadenceRpm: 1, hrBpm: 1, speedMps: 1 });
       hud.ack('OK');
-      hud.riderHudAt(1, 1, true);
+      hud.riderHudVisible(true);
       hud.speed(1, { paused: false, connected: false });
       hud.total(1);
     }).not.toThrow();
