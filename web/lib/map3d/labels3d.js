@@ -38,9 +38,11 @@ export const LABEL_WINDOW_FWD_M = 450;
 // 表示窓更新の間引き刻み (m)。 ライダーがこの刻みの bucket を跨いだ時だけ
 // 窓を再計算する (= 毎フレーム全 sprite を走査しない、 MapLibre 版の lastLabelBucket 相当)。
 export const LABEL_BUCKET_M = 50;
-// 倍率 1.0 のときの看板の高さ (m)。 地形スケール (~10km 角) で読める大きさ。
-// 実際の見え方は Phase4 の画面確認で詰める。
-export const LABEL_BASE_HEIGHT_M = 40;
+// 倍率 1.0 のときの看板の高さ (m)。 道路リボン (widthM 24m) の脇に立つ標識として、
+// ride 視点 (= カメラがコース上、 看板が前方数十 m) で読めて画面を覆わない大きさ。
+// 旧値 40m は地形俯瞰目線で決めた過大値で、 ride 視点では画面上部を覆う巨大文字に
+// なった (40324 の画面確認指摘)。 道路幅の約 1/3 の 8m に下げる。
+export const LABEL_BASE_HEIGHT_M = 8;
 
 /**
  * ライダー距離を表示窓更新の bucket index に量子化する純関数.
@@ -98,7 +100,10 @@ export function labelSpriteScale(labelScale, aspect, baseHeightM = LABEL_BASE_HE
 export function labelWorldPositions(labels, geo) {
   const { range, stitched, centerLat, centerLon } = geo;
   const tileSize = geo.tileSize || 256;
-  const heightOffset = geo.heightOffset != null ? geo.heightOffset : LABEL_BASE_HEIGHT_M;
+  // 看板中心の地面からの高さ。 既定は看板高さの半分 ── 看板の下端が地形に接して
+  // 「地面に立つ立て看板」に見える。 旧既定 LABEL_BASE_HEIGHT_M は看板高さ 1 個ぶん
+  // 持ち上げて宙に浮かせていた。
+  const heightOffset = geo.heightOffset != null ? geo.heightOffset : LABEL_BASE_HEIGHT_M / 2;
   const mPerDegLon = M_PER_DEG_LAT * Math.cos((centerLat * Math.PI) / 180);
   return labels.map((l) => {
     const x = (l.lon - centerLon) * mPerDegLon;          // 東 = +X
@@ -165,7 +170,10 @@ export function createLabels3d(THREE, opts) {
     const canvas = makeLabelCanvas(labels[i].text);
     const aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
     const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture });
+    // transparent: true が要る ── makeLabelCanvas は背景を塗らず文字以外を alpha 0
+    // (透明) にしている。 transparent を付けないと Three.js が alpha ブレンドせず、
+    // 透明部分が黒く描かれて看板が黒い四角になる。
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const sprite = new THREE.Sprite(material);
     sprite.position.set(positions[i][0], positions[i][1], positions[i][2]);
     group.add(sprite);

@@ -59,7 +59,11 @@ function mockThree() {
       dispose() { this.disposed = true; }
     },
     SpriteMaterial: class {
-      constructor(o) { this.map = o.map; this.disposed = false; }
+      constructor(o) {
+        this.map = o.map;
+        this.transparent = !!o.transparent;
+        this.disposed = false;
+      }
       dispose() { this.disposed = true; }
     },
     Sprite: class {
@@ -137,6 +141,12 @@ describe('labelSpriteScale', () => {
     expect(w2).toBeCloseTo(w1 * 2, 6);
     expect(h2).toBeCloseTo(h1 * 2, 6);
   });
+
+  it('LABEL_BASE_HEIGHT_M は道路リボン幅 24m 未満の常識的サイズ (= 巨大文字への回帰を検出)', () => {
+    // 旧値 40m は ride 視点で画面を覆う巨大文字になった。 道路幅を超えない値に保つ。
+    expect(LABEL_BASE_HEIGHT_M).toBeGreaterThan(0);
+    expect(LABEL_BASE_HEIGHT_M).toBeLessThan(24);
+  });
 });
 
 describe('labelWorldPositions', () => {
@@ -154,9 +164,9 @@ describe('labelWorldPositions', () => {
   });
 
   it('Y は DEM 標高 + heightOffset で地面から立つ (= 看板が地中に埋まるのを検出)', () => {
-    // stitched 一様 1400m + default heightOffset (LABEL_BASE_HEIGHT_M) → Y = 1440。
+    // stitched 一様 1400m + default heightOffset (= 看板高さの半分、 下端が地面に接する)。
     const pos = labelWorldPositions(labels, geo);
-    for (const p of pos) expect(p[1]).toBeCloseTo(1400 + LABEL_BASE_HEIGHT_M, 3);
+    for (const p of pos) expect(p[1]).toBeCloseTo(1400 + LABEL_BASE_HEIGHT_M / 2, 3);
   });
 
   it('labels と同じ個数の座標を返す', () => {
@@ -206,6 +216,13 @@ describe('createLabels3d', () => {
     // fixture の距離は 0..580m。 rider=5000m なら全ラベルが窓外。
     l.updateLabelWindow(5000);
     expect(l.group.children.every((sp) => sp.visible === false)).toBe(true);
+  });
+
+  it('sprite material は transparent (= 透明背景の文字 canvas が黒い四角にならない)', () => {
+    const l = createLabels3d(mockThree(), opts());
+    for (const sp of l.group.children) {
+      expect(sp.material.transparent).toBe(true);
+    }
   });
 
   it('dispose で全 texture / material を解放 (= course 再読込時の GPU leak を検出)', () => {
