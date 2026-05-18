@@ -10,14 +10,24 @@
      (b) connect-src を Strava 限定で attacker domain への exfil 経路を絞り済、
      (c) worker からの fetch は親 document の connect-src を継承するため worker 経由 surface も同制約下、
      (d) brief 33 §11.5 の 4 重 gate (script-src self / inline script ゼロ / vendoring / revokeLocalToken) は維持。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
-<title>fujihill viewer (MapLibre 試験版)</title>
+<!-- b12 Phase 4: CSP に下記 importmap (インライン要素 1 個) 分の sha256 ハッシュを追加。
+     内容ハッシュ固定なので、 注入された任意のインライン要素は引き続き block される。 -->
+<!-- b12 Phase 4: connect-src に国土地理院 (cyberjapandata.gsi.go.jp) を追加。
+     Three.js 版は地形に貼る航空写真 (seamlessphoto) を国土地理院から起動時 1 回だけ
+     取得する (= IndexedDB キャッシュ必須、 2 回目以降は再アクセスなし、 GSI 配慮の範囲内)。
+     CSP がこれを許可していないと航空写真 fetch が block される。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com https://cyberjapandata.gsi.go.jp; script-src 'self' 'sha256-ams4LJMCHZGQskrbmkRXJOLWiK7NRUBvM4eTtE/MsaQ='; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
+<title>fujihill viewer</title>
 <!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
      license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->
 <script src="./lib/vendor/maplibre-gl.js"></script>
 <link href="./lib/vendor/maplibre-gl.css" rel="stylesheet">
 <!-- brief 31: pmtiles.js v3.0.6 (= BSD-3-Clause, vendored, GitHub Pages 静的 mode 用) -->
 <script src="./lib/vendor/pmtiles.js"></script>
+<!-- b12 Phase 4: Three.js 描画モジュール (web/lib/map3d/) が bare specifier 'three' を
+     vendored three.module.js に解決するための importmap。 内容を変えたら CSP の
+     sha256 ハッシュも更新すること (= ハッシュ不一致だと CSP が importmap を block する)。 -->
+<script type="importmap">{"imports":{"three":"./lib/vendor/three.module.js"}}</script>
 <style>
   html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; font: 14px/1.5 ui-monospace, "Cascadia Code", monospace; color: #fff; }
   #map { position: fixed; inset: 0; }
@@ -795,6 +805,6 @@
   <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
-<script type="module" src="viewer-maplibre.js?v=38"></script>
+<script type="module" src="viewer-maplibre.js?v=39"></script>
 </body>
 </html>
