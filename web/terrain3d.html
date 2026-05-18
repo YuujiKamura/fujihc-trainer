@@ -82,7 +82,7 @@
 </div>
 
 <div id="status" class="panel">起動中…</div>
-<div id="attrib">地形・地図画像: <a href="https://maps.gsi.go.jp/" target="_blank" rel="noopener">国土地理院</a></div>
+<div id="attrib">© <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a></div>
 
 <script type="importmap">
 { "imports": { "three": "./lib/vendor/three.module.js" } }
@@ -100,6 +100,7 @@ import { integratePhysics } from './lib/bike_physics.js';
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
 import { riderPlacementAtDistance } from './lib/rider_placement.js';
+import { openTileCache } from './lib/tile_cache.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -162,7 +163,8 @@ function loadImage(url) {
 }
 
 // GSI の指定レイヤのタイル群を 1 枚の canvas に貼り合わせて返す (= 地形テクスチャ用)。
-async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label) {
+// tileCache hit → GSI リクエスト 0。miss → fetch して cache.set。
+async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label, tileCache) {
   const cv = document.createElement('canvas');
   cv.width = range.tilesX * TILE_PX;
   cv.height = range.tilesY * TILE_PX;
@@ -171,7 +173,25 @@ async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label) {
   ctx.fillRect(0, 0, cv.width, cv.height);
   let done = 0;
   await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    const img = await loadImage(`${GSI_BASE}/${gsiLayer}/${DEM_ZOOM}/${tx}/${ty}.${ext}`);
+    let img = null;
+    let bytes = tileCache ? await tileCache.get(gsiLayer, DEM_ZOOM, tx, ty) : null;
+    if (bytes) {
+      const objUrl = URL.createObjectURL(new Blob([bytes], { type: `image/${ext}` }));
+      img = await loadImage(objUrl);
+      URL.revokeObjectURL(objUrl);
+    } else {
+      const tileUrl = `${GSI_BASE}/${gsiLayer}/${DEM_ZOOM}/${tx}/${ty}.${ext}`;
+      try {
+        const resp = await fetch(tileUrl);
+        if (resp.ok) {
+          bytes = new Uint8Array(await resp.arrayBuffer());
+          if (tileCache) await tileCache.set(gsiLayer, DEM_ZOOM, tx, ty, bytes);
+          const objUrl = URL.createObjectURL(new Blob([bytes], { type: `image/${ext}` }));
+          img = await loadImage(objUrl);
+          URL.revokeObjectURL(objUrl);
+        }
+      } catch {}
+    }
     if (img) {
       ctx.drawImage(img, (tx - range.xMin) * TILE_PX, (ty - range.yMin) * TILE_PX,
         TILE_PX, TILE_PX);
@@ -181,8 +201,8 @@ async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label) {
 }
 
 // 航空写真テクスチャを組む。
-async function buildPhotoTexture(tileCoords, range) {
-  const canvas = await fetchLayerCanvas('seamlessphoto', 'jpg', tileCoords, range, '航空写真');
+async function buildPhotoTexture(tileCoords, range, tileCache) {
+  const canvas = await fetchLayerCanvas('seamlessphoto', 'jpg', tileCoords, range, '航空写真', tileCache);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -336,8 +356,32 @@ async function resolveDemBase(range) {
 }
 
 // DEM タイル 1 枚を decode して標高グリッド (Float32Array) を返す。 欠損は null。
-async function loadDemGrid(demBase, tx, ty) {
-  const img = await loadImage(`${demBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
+// local DB が使える場合は直接 loadImage (キャッシュ不要)。
+// GSI online の場合は tileCache 経由 (hit → 0 リクエスト)。
+async function loadDemGrid(demBase, tx, ty, tileCache) {
+  let img = null;
+  if (tileCache && demBase === GSI_DEM_ONLINE) {
+    let bytes = await tileCache.get('dem_png', DEM_ZOOM, tx, ty);
+    if (bytes) {
+      const objUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      img = await loadImage(objUrl);
+      URL.revokeObjectURL(objUrl);
+    } else {
+      const tileUrl = `${demBase}/${DEM_ZOOM}/${tx}/${ty}.png`;
+      try {
+        const resp = await fetch(tileUrl);
+        if (resp.ok) {
+          bytes = new Uint8Array(await resp.arrayBuffer());
+          await tileCache.set('dem_png', DEM_ZOOM, tx, ty, bytes);
+          const objUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+          img = await loadImage(objUrl);
+          URL.revokeObjectURL(objUrl);
+        }
+      } catch {}
+    }
+  } else {
+    img = await loadImage(`${demBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
+  }
   if (!img) return null;
   const c = document.createElement('canvas');
   c.width = TILE_PX; c.height = TILE_PX;
@@ -360,6 +404,10 @@ async function loadDemGrid(demBase, tx, ty) {
 
 // === メイン ===
 async function main() {
+  const tileCache = await openTileCache();
+  const evicted = await tileCache.evict();
+  if (evicted > 0) console.info(`[tile-cache] evicted ${evicted} stale entries`);
+
   // 1. course.json からコース bounding box を出す。
   status('コース読み込み中…');
   const courseResp = await fetch('./course.json', { cache: 'no-store' });
@@ -388,7 +436,7 @@ async function main() {
   }
   let demDone = 0;
   const demGrids = await mapLimit(tileCoords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    const g = await loadDemGrid(demSrc.base, tx, ty);
+    const g = await loadDemGrid(demSrc.base, tx, ty, tileCache);
     return { tx, ty, grid: g };
   }, () => status(`DEM タイル取得中… ${++demDone}/${tileCoords.length}`));
 
@@ -415,7 +463,7 @@ async function main() {
   geometry.computeVertexNormals();
 
   // 4. 地形に貼るテクスチャ。 航空写真 (seamlessphoto) 固定。
-  const texture = await buildPhotoTexture(tileCoords, range);
+  const texture = await buildPhotoTexture(tileCoords, range, tileCache);
 
   const material = new THREE.MeshStandardMaterial({
     map: texture, roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide,
