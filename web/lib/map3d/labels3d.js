@@ -99,6 +99,8 @@ export function labelSpriteScale(labelScale, aspect, baseHeightM = LABEL_BASE_HE
 export function labelWorldPositions(labels, geo) {
   const { range, stitched, centerLat, centerLon } = geo;
   const tileSize = geo.tileSize || 256;
+  // exaggeration を掛けて地形メッシュの頂点 Y と揃える (exaggeration≠1 でのズレを防ぐ)。
+  const exaggeration = geo.exaggeration != null ? geo.exaggeration : 1.0;
   // 看板中心の地面からの高さ。 既定は看板高さの半分 ── 看板の下端が地形に接して
   // 「地面に立つ立て看板」に見える。 旧既定 LABEL_BASE_HEIGHT_M は看板高さ 1 個ぶん
   // 持ち上げて宙に浮かせていた。
@@ -108,7 +110,7 @@ export function labelWorldPositions(labels, geo) {
     const x = (l.lon - centerLon) * mPerDegLon;          // 東 = +X
     const z = -(l.lat - centerLat) * M_PER_DEG_LAT;      // 北 = -Z
     const demH = sampleHeightBilinear(stitched, range, l.lat, l.lon, tileSize);
-    return [x, demH + heightOffset, z];
+    return [x, demH * exaggeration + heightOffset, z];
   });
 }
 

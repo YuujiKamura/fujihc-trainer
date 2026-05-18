@@ -20,7 +20,7 @@ const range = { zoom: 14, xMin: 14503, yMin: 6464 };
 const TS = 16;
 const stitched = { grid: new Float32Array(TS * TS).fill(1400), width: TS, height: TS };
 const centerLat = 35.40, centerLon = 138.72;
-const geo = { range, stitched, centerLat, centerLon, tileSize: TS };
+const geo = { range, stitched, centerLat, centerLon, tileSize: TS, exaggeration: 1 };
 
 // buildSegmentLabels が通る Polygon FeatureCollection を作る。
 // n セグメント、 distance_m_start = i*20m (= 20m 刻み)。
@@ -163,10 +163,16 @@ describe('labelWorldPositions', () => {
     expect(pos[0][2]).toBeCloseTo(-(labels[0].lat - centerLat) * M, 2);
   });
 
-  it('Y は DEM 標高 + heightOffset で地面から立つ (= 看板が地中に埋まるのを検出)', () => {
-    // stitched 一様 1400m + default heightOffset (= 看板高さの半分、 下端が地面に接する)。
+  it('Y は DEM 標高 * exaggeration + heightOffset で地面から立つ (= 看板が地中に埋まるのを検出)', () => {
+    // stitched 一様 1400m, exaggeration=1 + default heightOffset = 看板高さの半分。
     const pos = labelWorldPositions(labels, geo);
-    for (const p of pos) expect(p[1]).toBeCloseTo(1400 + LABEL_BASE_HEIGHT_M / 2, 3);
+    for (const p of pos) expect(p[1]).toBeCloseTo(1400 * 1 + LABEL_BASE_HEIGHT_M / 2, 3);
+  });
+
+  it('exaggeration≠1 のとき DEM 高さに exaggeration が掛かる (= 地形誇張時のラベルズレを検出)', () => {
+    const geoEx = { ...geo, exaggeration: 2 };
+    const pos = labelWorldPositions(labels, geoEx);
+    for (const p of pos) expect(p[1]).toBeCloseTo(1400 * 2 + LABEL_BASE_HEIGHT_M / 2, 3);
   });
 
   it('labels と同じ個数の座標を返す', () => {

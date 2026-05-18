@@ -16,6 +16,7 @@
 // 座標系 SoT: 東 = +X、 上 = +Y (標高 m)、 北 = -Z。 terrain3d.js と一致。
 
 import { buildCoursePath } from '../terrain3d.js';
+import { ROAD_OFFSET_M } from './terrain_surface.js';
 
 // MapLibre viewer の起点 / 終点 Marker 色に合わせる
 // (viewer-maplibre.js: 起点 = 緑 #7fff00 / 終点 = 赤 #ff3030)。
@@ -62,7 +63,9 @@ export function courseEndpoints(course, geo) {
  */
 export function createMarkers3d(THREE, course, geo, opts = {}) {
   const radiusM = opts.radiusM != null ? opts.radiusM : 60;
-  const { start, goal } = courseEndpoints(course, geo);
+  // drapeOffset を ROAD_OFFSET_M に統一 ── buildCoursePath のデフォルト 25m から変更。
+  const mergedGeo = { drapeOffset: ROAD_OFFSET_M, ...geo };
+  const { start, goal } = courseEndpoints(course, mergedGeo);
 
   const group = new THREE.Group();
   // 起点 / 終点で同じ球 geometry を共有する (= 半径が同じ、 位置だけ違う)。

@@ -11,6 +11,7 @@ import {
   courseEndpoints, createMarkers3d,
   START_MARKER_COLOR, GOAL_MARKER_COLOR,
 } from '../lib/map3d/markers3d.js';
+import { ROAD_OFFSET_M } from '../lib/map3d/terrain_surface.js';
 
 // terrain3d.test.js と同じ最小 fixture (= buildCoursePath が通る投影パラメータ)。
 const range = { zoom: 14, xMin: 14503, yMin: 6464 };
@@ -90,8 +91,9 @@ describe('createMarkers3d', () => {
     expect(m.group.children[1].material.color).toBe(GOAL_MARKER_COLOR);
   });
 
-  it('各 mesh の position が courseEndpoints の座標に一致 (= 端への配置ズレを検出)', () => {
-    const { start, goal } = courseEndpoints(course, geo);
+  it('各 mesh の position が courseEndpoints (drapeOffset=ROAD_OFFSET_M) の座標に一致 (= 端への配置ズレを検出)', () => {
+    // createMarkers3d は内部で drapeOffset: ROAD_OFFSET_M を使うので、比較側も合わせる。
+    const { start, goal } = courseEndpoints(course, { ...geo, drapeOffset: ROAD_OFFSET_M });
     const m = createMarkers3d(mockThree(), course, geo);
     const sp = m.group.children[0].position;
     const gp = m.group.children[1].position;

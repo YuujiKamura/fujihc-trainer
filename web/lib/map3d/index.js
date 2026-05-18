@@ -22,7 +22,8 @@ import { createCamera3d } from './camera3d.js';
 import { createRiderMesh3d } from './rider_mesh3d.js';
 import { createCourseRibbon } from './course_ribbon3d.js';
 import { createMarkers3d } from './markers3d.js';
-import { createLabels3d } from './labels3d.js';
+import { createLabels3d, LABEL_BASE_HEIGHT_M } from './labels3d.js';
+import { ROAD_OFFSET_M } from './terrain_surface.js';
 import { loadDemStitched, loadPhotoCanvas } from './tile_loader3d.js';
 import { sampleHeightBilinear } from '../terrain3d.js';
 import { buildGradeColoredRoadPolygons } from '../road_polygon.js';
@@ -385,7 +386,7 @@ export function createMapRenderer() {
 
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
-      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: 10, drapeOffset: 15 });
+      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: 10, drapeOffset: ROAD_OFFSET_M });
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
@@ -400,6 +401,8 @@ export function createMapRenderer() {
       labels3d = createLabels3d(THREE, {
         polygonFC,
         ...geoOpts,
+        exaggeration: 1.0,
+        heightOffset: ROAD_OFFSET_M + LABEL_BASE_HEIGHT_M / 2,
         labelScale: pending.labelScale != null ? pending.labelScale : 1,
       });
       scene.add(labels3d.group);
