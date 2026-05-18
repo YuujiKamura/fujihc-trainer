@@ -87,6 +87,11 @@ export function createMarkers3d(THREE, course, geo, opts = {}) {
     setStartGoalVisible(visible) {
       group.visible = !!visible;
     },
+    /** 起点 / 終点マーカーの Y 座標を deltaY だけシフトする (= setRoadHeight から呼ばれる)。 */
+    shiftY(deltaY) {
+      startMesh.position.y += deltaY;
+      goalMesh.position.y += deltaY;
+    },
     /** geometry / material を解放する (= course 再読込時の GPU リソース leak 防止)。 */
     dispose() {
       sphere.dispose();

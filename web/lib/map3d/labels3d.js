@@ -182,11 +182,12 @@ export function createLabels3d(THREE, opts) {
   }
 
   let labelScale = opts.labelScale != null ? opts.labelScale : 1;
+  let currentBaseHeightM = LABEL_BASE_HEIGHT_M;
   let lastBucket = null;
 
   function applyScale() {
     for (const e of entries) {
-      const [w, h] = labelSpriteScale(labelScale, e.aspect);
+      const [w, h] = labelSpriteScale(labelScale, e.aspect, currentBaseHeightM);
       e.sprite.scale.set(w, h, 1);
     }
   }
@@ -199,6 +200,21 @@ export function createLabels3d(THREE, opts) {
     setLabelScale(scale) {
       labelScale = scale;
       applyScale();
+    },
+    /** ラベル基準高さを変える。 全 sprite の scale と position を更新する。 */
+    setLabelHeight(heightM) {
+      const delta = (heightM - currentBaseHeightM) / 2;
+      for (const e of entries) {
+        e.sprite.position.y += delta;
+      }
+      currentBaseHeightM = heightM;
+      applyScale();
+    },
+    /** 全 sprite の Y 座標を deltaY だけシフトする (= setRoadHeight から呼ばれる)。 */
+    shiftY(deltaY) {
+      for (const e of entries) {
+        e.sprite.position.y += deltaY;
+      }
     },
     /**
      * 表示窓をライダー現在地に追従させる。 bucket (50m 刻み) が変わった時だけ

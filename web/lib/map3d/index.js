@@ -128,9 +128,17 @@ export function createMapRenderer() {
   let lastForward = null;         // 進行方向 (world {x,y,z})
   let lastLon = null;
   let lastLat = null;
+  let lastRiderDistM = 0;         // 直前フレームのライダー走行距離 (m)
+
+  // --- コース由来の動的状態 ---
+  let savedCourse = null;         // setCourseWidth / setRoadHeight 内で course を参照するため保持
+  let savedGeoOpts = null;        // 同上
+  let savedCourseWidth = 10;      // 現在のコース幅 (m)
+  let currentRoadOffset = ROAD_OFFSET_M; // 現在の路面高さオフセット (m)
 
   // boot / renderCourse 前に呼ばれた set 系の値を保留し、 部品生成時に流し込む。
-  const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null };
+  const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null,
+                    riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null };
 
   function fireIdle() {
     if (idleFired) return;
@@ -384,9 +392,15 @@ export function createMapRenderer() {
         tileSize: 256,
       };
 
+      // コース・地形オプション保存 (setCourseWidth / setRoadHeight から参照する)。
+      savedCourse = course;
+      savedGeoOpts = geoOpts;
+      if (pending.courseWidth != null) savedCourseWidth = pending.courseWidth;
+      if (pending.roadHeight != null) currentRoadOffset = pending.roadHeight;
+
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
-      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: 10, drapeOffset: ROAD_OFFSET_M });
+      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: savedCourseWidth, drapeOffset: currentRoadOffset });
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
@@ -402,17 +416,19 @@ export function createMapRenderer() {
         polygonFC,
         ...geoOpts,
         exaggeration: 1.0,
-        heightOffset: ROAD_OFFSET_M + LABEL_BASE_HEIGHT_M / 2,
+        heightOffset: currentRoadOffset + LABEL_BASE_HEIGHT_M / 2,
         labelScale: pending.labelScale != null ? pending.labelScale : 1,
       });
       scene.add(labels3d.group);
+      if (pending.labelHeight != null) labels3d.setLabelHeight(pending.labelHeight);
 
-      // ライダー 3D mesh。 2026-05-18: 実寸 1.8m では小さすぎると user 指摘、 2 倍の 3.6 に。
+      // ライダー 3D mesh。
       rider3d = createRiderMesh3d(THREE);
-      rider3d.group.scale.setScalar(3.6);
+      rider3d.group.scale.setScalar(pending.riderScale != null ? pending.riderScale : 3.6);
       scene.add(rider3d.group);
 
       // 初期配置: 起点にライダーを置き、 カメラをそこへ寄せる。
+      lastRiderDistM = 0;
       const pl = rider3d.updatePose(ribbonPositions, course, 0);
       lastRiderPlacement = pl;
       lastTarget = { x: pl.position[0], y: pl.position[1], z: pl.position[2] };
@@ -434,6 +450,7 @@ export function createMapRenderer() {
       if (lon != null) lastLon = lon;
       if (lat != null) lastLat = lat;
       const distanceM = distanceAlongCourse(course, curIdx, lat, lon);
+      lastRiderDistM = distanceM;
       lastRiderPlacement = rider3d.updatePose(ribbonPositions, course, distanceM);
     },
 
@@ -464,6 +481,59 @@ export function createMapRenderer() {
 
     setStartGoalVisible(visible) {
       if (markers3d) markers3d.setStartGoalVisible(visible);
+    },
+
+    // === 実行時調整 (b13-3) ===
+
+    setRiderScale(scale) {
+      if (rider3d) rider3d.group.scale.setScalar(scale);
+      else pending.riderScale = scale;
+    },
+
+    setCourseWidth(widthM) {
+      if (!ribbon3d || !scene || !THREE || !savedCourse || !savedGeoOpts) {
+        pending.courseWidth = widthM;
+        return;
+      }
+      savedCourseWidth = widthM;
+      scene.remove(ribbon3d.mesh);
+      ribbon3d = createCourseRibbon(THREE, savedCourse, savedGeoOpts, { widthM, drapeOffset: currentRoadOffset });
+      scene.add(ribbon3d.mesh);
+      ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
+      if (rider3d) {
+        lastRiderPlacement = rider3d.updatePose(ribbonPositions, savedCourse, lastRiderDistM);
+        if (lastRiderPlacement) {
+          lastTarget = { x: lastRiderPlacement.position[0], y: lastRiderPlacement.position[1], z: lastRiderPlacement.position[2] };
+          lastForward = { x: lastRiderPlacement.forward[0], y: lastRiderPlacement.forward[1], z: lastRiderPlacement.forward[2] };
+        }
+      }
+    },
+
+    setRoadHeight(offsetM) {
+      const delta = offsetM - currentRoadOffset;
+      currentRoadOffset = offsetM;
+      if (!ribbonPositions) {
+        pending.roadHeight = offsetM;
+        return;
+      }
+      for (let i = 1; i < ribbonPositions.length; i += 3) {
+        ribbonPositions[i] += delta;
+      }
+      ribbon3d.mesh.geometry.attributes.position.needsUpdate = true;
+      if (rider3d && savedCourse) {
+        lastRiderPlacement = rider3d.updatePose(ribbonPositions, savedCourse, lastRiderDistM);
+        if (lastRiderPlacement) {
+          lastTarget = { x: lastRiderPlacement.position[0], y: lastRiderPlacement.position[1], z: lastRiderPlacement.position[2] };
+          lastForward = { x: lastRiderPlacement.forward[0], y: lastRiderPlacement.forward[1], z: lastRiderPlacement.forward[2] };
+        }
+      }
+      if (labels3d) labels3d.shiftY(delta);
+      if (markers3d) markers3d.shiftY(delta);
+    },
+
+    setLabelHeight(heightM) {
+      if (labels3d) labels3d.setLabelHeight(heightM);
+      else pending.labelHeight = heightM;
     },
   };
 }
