@@ -1,42 +1,56 @@
 // E2E test: 履歴機能 (IndexedDB) の通しテスト
 //
 // 何を担保するか:
-//   1. IndexedDB にライドを注入 → 履歴 overlay を開く → 一覧に行が出る
-//   2. GPX ダウンロードボタンが download イベントを発火する (.gpx ファイル名)
-//   3. 削除ボタンを押すと行が消えて「空」メッセージが出る
+//   1. ライドモードでは「履歴に保存」ボタンが表示される
+//      (= 今回直したバグ本体: updatePostrideButtonVisibility の show 分岐)
+//   2. IndexedDB にライドを注入 → 履歴 overlay を開く → 一覧に行が出る
+//   3. GPX ダウンロードボタンが download イベントを発火する (.gpx ファイル名)
+//   4. 削除ボタンを押すと行が消えて「空」メッセージが出る
+//   5. 観るモードでは「履歴に保存」ボタンが hidden になる
+//      (= updatePostrideButtonVisibility の hide 分岐)
 //
 // 方式:
+//   - IndexedDB の DB 名・store 名・index 名・version は web/lib/ride_db.js の
+//     export 定数を import して使う (= スキーマ文字列を二重定義しない)。
+//     intro consent の key / hash も web/lib/consent.js から import する。
 //   - page.evaluate() で IndexedDB に直接 ride レコードを書き込む
-//     (= 完走まで待つと 80 分以上かかるため、保存経路のみ切り離してテスト)
-//   - btnViewHistoryFromSetup を JS click → showHistoryOverlay() を起動
-//     (= postride overlay 経由の btnViewHistory でも同じ関数が呼ばれる)
+//     (= 完走まで待つと 80 分以上かかるため、保存経路のみ切り離してテスト)。
+//   - btnViewHistoryFromSetup を JS click → showHistoryOverlay() を起動。
 //   - viewer-maplibre.js の実コードをブラウザで動かすため、
-//     shim 再実装とは異なり showHistoryOverlay / appendHistoryRow / deleteRide を
-//     壊せばこのテストが落ちる
+//     showHistoryOverlay / appendHistoryRow / deleteRide / updatePostrideButtonVisibility
+//     のいずれを壊してもこのテストが落ちる。
 import { test, expect } from '@playwright/test';
+import {
+  RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE, RIDE_INDEX_DATE,
+} from '../web/lib/ride_db.js';
+import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 
+const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&consent=dev';
+
+// ride_db.js の正規スキーマ定数を使って IndexedDB に ride を 1 件書き込む。
+// スキーマ名 (DB / store / index) は文字列直書きせず import 定数を page に渡す。
 async function injectRide(page, ride) {
-  await page.evaluate(async (rec) => {
+  await page.evaluate(async ({ rec, dbName, dbVersion, store, indexName }) => {
     const db = await new Promise((resolve, reject) => {
-      const req = indexedDB.open('fujihill-trainer', 1);
+      const req = indexedDB.open(dbName, dbVersion);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
       req.onupgradeneeded = () => {
         const d = req.result;
-        if (!d.objectStoreNames.contains('rides')) {
-          const store = d.createObjectStore('rides', { keyPath: 'id' });
-          store.createIndex('by_date', 'date', { unique: false });
+        if (!d.objectStoreNames.contains(store)) {
+          const os = d.createObjectStore(store, { keyPath: 'id' });
+          os.createIndex(indexName, 'date', { unique: false });
         }
       };
     });
     await new Promise((resolve, reject) => {
-      const tx = db.transaction('rides', 'readwrite');
-      tx.objectStore('rides').put(rec);
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(rec);
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
     db.close();
-  }, ride);
+  }, { rec: ride, dbName: RIDE_DB_NAME, dbVersion: RIDE_DB_VERSION, store: RIDE_STORE, indexName: RIDE_INDEX_DATE });
 }
 
 test('履歴: ride 注入 → 一覧表示 → GPX ダウンロード → 削除', async ({ page }) => {
@@ -45,8 +59,13 @@ test('履歴: ride 注入 → 一覧表示 → GPX ダウンロード → 削除
     if (msg.type() === 'error') consoleErrors.push(msg.text());
   });
 
-  await page.goto('http://127.0.0.1:8000/?test=1&consent=dev');
+  await page.goto(VIEWER_URL);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // 修正したバグ本体: ライドモード (= 観るモードでない) では「履歴に保存」が表示される。
+  // 旧コードは getRideConsent('history') を見ていて consent 未設定だと常時 hidden だった。
+  const saveHiddenInRideMode = await page.locator('#btnSaveHistory').evaluate(el => el.hidden);
+  expect(saveHiddenInRideMode).toBe(false);
 
   // IndexedDB にテスト用ライドを注入
   await injectRide(page, {
@@ -89,4 +108,21 @@ test('履歴: ride 注入 → 一覧表示 → GPX ダウンロード → 削除
     !e.includes('maplibre') && !e.includes('MapLibre')
   );
   expect(fatalErrors).toHaveLength(0);
+});
+
+test('履歴: 観るモードでは「履歴に保存」ボタンが hidden', async ({ page }) => {
+  // intro consent を観るモードで seed → updatePostrideButtonVisibility の hide 分岐を踏ませる。
+  // key / hash は consent.js の export 定数を使う (= 直書きしない)。
+  await page.addInitScript(({ key, hash }) => {
+    localStorage.setItem(key, JSON.stringify({
+      hash, accepted_at: '2026-01-01T00:00:00Z', mode: 'view',
+    }));
+  }, { key: INTRO_CONSENT_LS_KEY, hash: INTRO_CONSENT_HASH });
+
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // 観るモードでは履歴保存ボタンは hidden (= 走行記録は観るモード対象外)
+  const saveHiddenInViewMode = await page.locator('#btnSaveHistory').evaluate(el => el.hidden);
+  expect(saveHiddenInViewMode).toBe(true);
 });
