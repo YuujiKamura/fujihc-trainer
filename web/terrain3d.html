@@ -42,16 +42,6 @@
   #info b { font-variant-numeric: tabular-nums; }
   #status { left: 12px; bottom: 12px; right: 12px; max-width: 540px; }
   #status.err { border-color: #f85149; color: #ffa198; }
-  /* 表示モード切替 (= 航空写真 / 地図 / 地形 / ハイブリッド)。 */
-  #layers { right: 12px; top: 12px; width: 130px; }
-  #layers h2 { margin: 0 0 6px; font-size: 13px; color: #58a6ff; font-weight: 600; }
-  #layers button { display: block; width: 100%; margin: 4px 0; padding: 6px 8px;
-                   font-size: 12px; text-align: left; cursor: pointer;
-                   background: #21262d; color: #e6edf3;
-                   border: 1px solid #30363d; border-radius: 6px; }
-  #layers button:hover { background: #30363d; }
-  #layers button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
-  #layers button:disabled { opacity: 0.5; cursor: progress; }
   /* コースの勾配色分け凡例。 */
   #legend { left: 12px; bottom: 58px; width: 230px; }
   #legend h2 { margin: 0 0 5px; font-size: 12px; color: #58a6ff; font-weight: 600; }
@@ -84,13 +74,6 @@
   <div class="hint">ドラッグで回転、 ホイールで拡大縮小。</div>
 </div>
 
-<div id="layers" class="panel">
-  <h2>表示</h2>
-  <button data-mode="photo">航空写真</button>
-  <button data-mode="std">地図</button>
-  <button data-mode="relief">地形</button>
-  <button data-mode="hybrid">ハイブリッド</button>
-</div>
 
 <div id="legend" class="panel">
   <h2>コースの勾配</h2>
@@ -109,23 +92,26 @@ import * as THREE from 'three';
 import {
   tileRangeForBounds, decodeGsiHeightGrid,
   stitchHeightGrid, buildTerrainGeometry, buildCoursePath, buildCourseRibbon,
+  courseBounds,
 } from './lib/terrain3d.js';
 import { gradeColorContinuous } from './lib/route_styling.js';
 import { buildRoadMarks, slopeAtDistance } from './lib/road_texture.js';
-import { riderStartPlacement } from './lib/rider_placement.js';
+import { integratePhysics } from './lib/bike_physics.js';
+import { createTerrain } from './lib/terrain.js';
+import { createRider } from './lib/rider.js';
+import { riderPlacementAtDistance } from './lib/rider_placement.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
 const DEM_ZOOM = 14;
-// 地形メッシュが覆う bbox [W, S, E, N] (度)。 富士山頂中心 ~15km 角で、
-// 富士山の外周 (= 裾野) と course を内包する。 旧来は courseBounds(course, 500m)
-// = スバルライン沿いの細い帯しか覆わず、 肝心の富士山が地形メッシュ外だった。
-// src/fujihill/tile_constants.py の FUJI_TERRAIN_BBOX と同値 (= Python fetch と
-// JS viewer が同じタイル range を要求する。 片方だけ変えると 404 欠けが出る)。
-const FUJI_TERRAIN_BBOX = [138.562, 35.226, 138.893, 35.495];
-// 取得タイル数の上限。 z=14 で FUJI_TERRAIN_BBOX は概ね 16×15≒240 枚、
-// 余裕を見て 300 を上限とし、 超えたら地形を組まずエラー表示 (= 規約配慮の物理 gate)。
-const MAX_TILES = 300;
+// bbox は course から動的に算出 (= main() で courseBounds(course, TERRAIN_BUFFER_M) を呼ぶ)。
+// 固定 bbox 廃止の理由: コース長さに連動した最小範囲になり、
+// GSI タイル取得数を course 実データから最小化できる。
+// 1500m buffer で富士ヒルコースの実測: 5×7 = 35 tiles。
+const TERRAIN_BUFFER_M = 1500;
+// 取得タイル数の上限。 courseBounds 1500m で約 35 枚、
+// 余裕を見て 200 を上限とし、 超えたら地形を組まずエラー表示 (= 規約配慮の物理 gate)。
+const MAX_TILES = 200;
 // GSI への同時接続数 (= 大量アクセス自粛への配慮、 1 画面 1 回のみ取得)。
 const GSI_FETCH_LIMIT = 6;
 const TILE_PX = 256;
@@ -140,15 +126,8 @@ const GSI_BASE = 'https://cyberjapandata.gsi.go.jp/xyz';
 // なので decodeGsiHeightGrid がそのまま通る。
 const GSI_DEM_ONLINE = `${GSI_BASE}/dem_png`;
 const LOCAL_DEM_BASE = `${location.origin}/tiles/gsi_dem`;
-// 地形に貼る表示モード。 GSI の各タイル種を切り替える (= 標高メッシュは共通、 skin だけ差替)。
-//   photo  = 航空写真 (seamlessphoto)、 std = 標準地図、 relief = 色別標高図、
-//   hybrid = 航空写真 + 地図の道路/注記/等高線を白背景透過で重ねた合成。
-const VIEW_LAYERS = {
-  photo:  { gsi: 'seamlessphoto', ext: 'jpg', label: '航空写真' },
-  std:    { gsi: 'std',           ext: 'png', label: '地図' },
-  relief: { gsi: 'relief',        ext: 'png', label: '地形' },
-};
-const MODE_LABELS = { photo: '航空写真', std: '地図', relief: '地形', hybrid: 'ハイブリッド' };
+// テクスチャは航空写真 (seamlessphoto) 固定。 std/relief/hybrid は GSI サーバ負荷の
+// 観点から封印 (1 ユーザが複数レイヤを重ねるとリクエストが倍増するため)。
 
 const statusEl = document.getElementById('status');
 function status(msg, isErr) {
@@ -201,40 +180,9 @@ async function fetchLayerCanvas(gsiLayer, ext, tileCoords, range, label) {
   return cv;
 }
 
-// 地図 (std) の白背景を透過させ、 道路/等高線/注記/水域だけを残す (= ハイブリッド合成用)。
-function whiteToTransparent(srcCanvas) {
-  const cv = document.createElement('canvas');
-  cv.width = srcCanvas.width;
-  cv.height = srcCanvas.height;
-  const ctx = cv.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(srcCanvas, 0, 0);
-  const im = ctx.getImageData(0, 0, cv.width, cv.height);
-  const d = im.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const m = Math.min(d[i], d[i + 1], d[i + 2]);  // 最も暗い channel = 白さの指標
-    if (m > 232) d[i + 3] = 0;                                     // ほぼ白 → 完全透過
-    else if (m > 200) d[i + 3] = Math.round(255 * (232 - m) / 32); // 薄い色 → 半透過
-  }
-  ctx.putImageData(im, 0, 0);
-  return cv;
-}
-
-// 表示モードに対応した CanvasTexture を組む。 hybrid は航空写真 + 地図の透過合成。
-async function buildModeTexture(mode, tileCoords, range) {
-  let canvas;
-  if (mode === 'hybrid') {
-    const photo = await fetchLayerCanvas('seamlessphoto', 'jpg', tileCoords, range, '航空写真');
-    const std = await fetchLayerCanvas('std', 'png', tileCoords, range, '地図');
-    canvas = document.createElement('canvas');
-    canvas.width = photo.width;
-    canvas.height = photo.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(photo, 0, 0);
-    ctx.drawImage(whiteToTransparent(std), 0, 0);
-  } else {
-    const L = VIEW_LAYERS[mode];
-    canvas = await fetchLayerCanvas(L.gsi, L.ext, tileCoords, range, L.label);
-  }
+// 航空写真テクスチャを組む。
+async function buildPhotoTexture(tileCoords, range) {
+  const canvas = await fetchLayerCanvas('seamlessphoto', 'jpg', tileCoords, range, '航空写真');
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -421,7 +369,7 @@ async function main() {
     throw new Error('course.json が空です');
   }
   // 地形は富士山の外周まで覆う固定 bbox を使う (= course 沿いの細い帯ではなく)。
-  const bounds = FUJI_TERRAIN_BBOX;
+  const bounds = courseBounds(course, TERRAIN_BUFFER_M);
   const range = tileRangeForBounds(bounds, DEM_ZOOM);
   if (range.count > MAX_TILES) {
     throw new Error(`DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
@@ -466,18 +414,8 @@ async function main() {
   geometry.setIndex(new THREE.BufferAttribute(geo.indices, 1));
   geometry.computeVertexNormals();
 
-  // 4. 地形に貼るテクスチャ。 初期モードは ?mode= で指定可 (= 既定は航空写真)。
-  //    一度組んだ texture はモード別に cache し、 再選択時は再取得しない。
-  const texCache = new Map();
-  const modeParam = new URLSearchParams(location.search).get('mode');
-  let currentMode = MODE_LABELS[modeParam] ? modeParam : 'photo';
-  async function getModeTexture(mode) {
-    if (!texCache.has(mode)) {
-      texCache.set(mode, await buildModeTexture(mode, tileCoords, range));
-    }
-    return texCache.get(mode);
-  }
-  const texture = await getModeTexture(currentMode);
+  // 4. 地形に貼るテクスチャ。 航空写真 (seamlessphoto) 固定。
+  const texture = await buildPhotoTexture(tileCoords, range);
 
   const material = new THREE.MeshStandardMaterial({
     map: texture, roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide,
@@ -538,24 +476,15 @@ async function main() {
   endMark.position.copy(coursePts[coursePts.length - 1]);
   scene.add(endMark);
 
-  // brief b11-Phase3: rider の 3D 自転車 mesh をコース始点の路面に静止で置く。
-  // 配置 (位置・進行方向) は rider_placement.js の純関数がリボン頂点から出す。
-  // 自転車の全長は道路幅 (span*0.0055) の約 2 倍 ── 路面に明瞭に乗り、 マーカー
-  // 直径 (span*0.016) より一回り小さく rider が主役になり過ぎないサイズ。
-  const placement = riderStartPlacement(ribbon.positions, ribbon.vertexCount);
+  // brief b11-Phase4: terrain / rider を生成し、 固定パワー 250W で物理積分する。
+  // Phase 3 の静止配置は loop() 内の毎フレーム再配置に置き換える。
+  // BLE 実パワーは Phase 7 で integratePhysics の引数に差し替わる ── ループ形は不変。
+  const terrain = createTerrain({ course });
+  const rider = createRider({ terrain });
+  rider.start();
+  const RIDE_POWER_W = 250;
   const bike = buildBikeMesh();
   bike.scale.setScalar(span * 0.011);
-  bike.position.set(
-    placement.position[0], placement.position[1], placement.position[2]);
-  // bike mesh は -Z 前方。 Object3D.lookAt は camera 以外では +Z をターゲットへ
-  // 向ける (= 検証済) ため、 旧 lookAt(position+forward) では前方 (-Z) が forward の
-  // 逆 = 下り方向を向いてしまっていた。 model 前方ベクトル (0,0,-1) を forward へ
-  // 直接回す。 forward.Y=0 の単位ベクトルなので Y 軸まわりの回転のみ ── 路面に対し
-  // 水平を保つ。
-  bike.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(
-      placement.forward[0], placement.forward[1], placement.forward[2]));
   scene.add(bike);
 
   // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
@@ -637,37 +566,30 @@ async function main() {
   document.getElementById('m-size').textContent =
     `${(geo.sizeX / 1000).toFixed(1)} × ${(geo.sizeZ / 1000).toFixed(1)} km`;
   const tileNote = missing > 0 ? ` (${missing} 枚欠損→0m補完)` : '';
-  function showReady() {
-    status(`表示: ${MODE_LABELS[currentMode]} — 富士ヒルコース ${course.length} 点の` +
-      `外接範囲 + コースライン${tileNote}`);
-  }
-  showReady();
+  status(`航空写真 — 富士ヒルコース ${course.length} 点の外接範囲 + コースライン${tileNote}`);
 
-  // 7. 表示モード切替 (= 航空写真 / 地図 / 地形 / ハイブリッド)。
-  const modeButtons = document.querySelectorAll('#layers button');
-  function updateModeButtons() {
-    modeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === currentMode));
-  }
-  async function switchMode(mode) {
-    if (mode === currentMode) return;
-    status(`${MODE_LABELS[mode]} に切替中…`);
-    modeButtons.forEach((b) => { b.disabled = true; });
-    try {
-      const tex = await getModeTexture(mode);
-      material.map = tex;
-      material.needsUpdate = true;
-      currentMode = mode;
-    } catch (e) {
-      console.error(e);
-    }
-    modeButtons.forEach((b) => { b.disabled = false; });
-    updateModeButtons();
-    showReady();
-  }
-  modeButtons.forEach((b) => b.addEventListener('click', () => switchMode(b.dataset.mode)));
-  updateModeButtons();
+  // 物理 state: physicsSpeedMps は integratePhysics の出力を引き継ぐ累積速度。
+  // lastT は dt 計算の基準時刻。 dt は min(dt, 0.1) で cap (= タブ非アクティブ対策)。
+  let physicsSpeedMps = 0;
+  let lastT = performance.now();
 
   function loop() {
+    const now = performance.now();
+    const dt = Math.min((now - lastT) / 1000, 0.1);
+    lastT = now;
+
+    const slope = terrain.getPositionAtDistance(rider.distanceTraveled).slope_pct;
+    physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, RIDE_POWER_W, slope);
+    rider.setSpeed(physicsSpeedMps);
+    rider.tick(dt);
+
+    // bike mesh は -Z 前方。 model 前方ベクトル (0,0,-1) を forward へ直接回す。
+    const pl = riderPlacementAtDistance(ribbon.positions, course, rider.distanceTraveled);
+    bike.position.set(pl.position[0], pl.position[1], pl.position[2]);
+    bike.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(pl.forward[0], pl.forward[1], pl.forward[2]));
+
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }

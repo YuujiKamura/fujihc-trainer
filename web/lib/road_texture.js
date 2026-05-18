@@ -7,8 +7,10 @@
 // だけを担う ── canvas 描画 (DOM) は呼び出し側 (= terrain3d.html) の責務。
 // DOM / Three.js / fetch には依存しない (= node test 容易、 terrain3d.js と同じ規律)。
 //
-// slopeAtDistance が勾配値の唯一の SoT: テクスチャ背景の勾配色も、 マークに焼く
-// 勾配数字も、 全てこの 1 関数を通す ── 算出式が 1 つなので両者は必ず一致する。
+// slopeAtDistance は道路テクスチャ描画用の勾配 source (線形補間)。 ride 物理が
+// 使う勾配は terrain.js の getPositionAtDistance ── 別レイヤ。 テクスチャ内では
+// 背景の勾配色もマークの数字も全てこの 1 関数を通す ── 算出式が 1 つなので両者は
+// 必ず一致する。
 //
 // 参照:
 //   - CanvasTexture:        https://threejs.org/docs/#api/en/textures/CanvasTexture
