@@ -8,15 +8,11 @@ import { createMapRenderer } from './lib/map_renderer.js';
 import { fujihill } from './courses/fujihill.js';
 // brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
 import { smoothCourse } from './lib/gpx_smooth.js';
-// brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
-import { buildGradeColoredRoadPolygons } from './lib/road_polygon.js';
-// brief b-segment-labels: 勾配色セグメント上に「距離 + 勾配」のテキストラベルを載せる
-import { buildSegmentLabels } from './lib/segment_labels.js';
-// brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist、 2 回目以降 skip.
-import { getMeshCache, setMeshCache, computeCourseHash } from './lib/mesh_cache.js';
 // brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
+// b12 Phase 2.5: コース polygon / セグメントラベル / ライダー geometry / カメラ計算 /
+// 勾配色 / mesh cache は地図描画モジュール (map_renderer.js) の中へ集約済。
 import {
-  riderFrameChanged, createTextWriter, minimapDirty,
+  createTextWriter, minimapDirty,
 } from './lib/frame_diff.js';
 // Path B Phase 0: ライド HUD の表示更新を hud.js に集約 (= MapLibre/Three.js 非依存)。
 import {
@@ -35,9 +31,6 @@ import { createRideState } from './lib/ride_state.js';
 import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
 import { integratePhysics } from './lib/bike_physics.js';
-import { buildRiderFeatures } from './lib/rider_styles.js';
-import { computeCameraParams, adjustZoom, adjustPitch } from './lib/camera_controller.js';
-import { computeTravelHeading } from './lib/heading.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
 import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
@@ -169,8 +162,7 @@ function onMapLoaded() {
       updateActionButtonsForTerrain();
     }
   }, 5000);
-  setupWheelZoom();
-  setupPitchDrag();
+  // ホイール / ドラッグのカメラ操作は map_renderer が boot 時に自前で結線済。
   loadCourse();
   // brief 34 ε-6: 帰属表示 (= attribution control) の display を 1 度 assert。
   // CSS で `display:none` にされたら OSM ODbL / 国土地理院 規約違反、 warning を出す。
@@ -231,12 +223,8 @@ let riderMarker = null;
 let minimapTopBase = null;
 let minimapBottomBase = null;
 let minimapStats = null;
-// user が操作した zoom / pitch を覚えておく、 tick の jumpTo はこの値を使う
-// 2026-05-15 user 判断 (= 視認確認後の決め値): zoom 21 / pitch 85 を default に.
-// pitch 85 はほぼ水平で前方道路が遠くまで見える、 zoom 21 は道路 polygon の
-// 道幅が画面 1/4 程度に収まる感覚 (= 走行視点として親密、 遠景も視認可).
-let userZoom = 21;
-let userPitch = 85;
+// b12 Phase 2.5: カメラ状態 (zoom/pitch/bearing offset) と ホイール/ドラッグ操作は
+// map_renderer.js が保持・処理する。 viewer は setCameraDefaults / updateCamera 経由で頼む。
 // brief 35: 旧 spinAngle / currentCadence / currentPower / currentHr は rider 内部に集約.
 // 互換のため symbol を残す (= brief 33 grep gate / 既存 source 経路の名前互換). 値は
 // wsHandlers.state で rider.setSensors を呼ぶ際の経由口で、 単一 source of truth は rider.
@@ -250,47 +238,6 @@ let lastTrkptT = 0;
 let lastAutosaveT = 0;
 let rideStartedIso = null;  // ride 開始時の ISO 文字列 (= autosave に保存する rideStartedAt)
 
-function setupWheelZoom() {
-  const mapEl = mapRenderer.getContainerEl();
-  mapEl.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    // wheel 1 回 = zoom ±0.5 (= 元の感度 5 倍相当)、 center は触らない (次フレームで rider に戻る)
-    const delta = -Math.sign(e.deltaY) * 0.5;
-    userZoom = adjustZoom(userZoom, delta);
-    mapRenderer.setZoom(userZoom);
-  }, { passive: false });
-}
-
-// 2026-05-15 user 指示「マウスの横移動でカメラを横にも旋回できるようにしよう」:
-// 横ドラッグ分を userBearingOffset に蓄積し、 tick で進行方向 + offset の bearing を適用。
-// 縦ドラッグは既存通り pitch を変える。
-let userBearingOffset = 0;
-
-function setupPitchDrag() {
-  const mapEl = mapRenderer.getContainerEl();
-  let drag = null;
-  mapEl.addEventListener('mousedown', (e) => {
-    drag = { x: e.clientX, y: e.clientY, pitch: mapRenderer.getPitch(), bearingOffset: userBearingOffset };
-    e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!drag) return;
-    const dy = e.clientY - drag.y;
-    const dx = e.clientX - drag.x;
-    // マウスを下にドラッグで水平に近づける、 上にドラッグで真上へ。 感度は user 指示で 5 倍
-    // 既存式: newPitch = drag.pitch - dy * 2.0、 adjustPitch(currentPitch, delta) で同じ結果に: delta = -dy * 2.0
-    const newPitch = adjustPitch(drag.pitch, -dy * 2.0);
-    userPitch = newPitch;
-    mapRenderer.setPitch(newPitch);
-    // 横移動で bearing offset を加算 (= 1 pixel = 0.5 度、 360 で正規化).
-    // 進行方向に対する相対視線として持つので、 tick で smoothBearing に足し込んで適用.
-    userBearingOffset = ((drag.bearingOffset + dx * 0.5) % 360 + 360) % 360;
-  });
-  window.addEventListener('mouseup', () => { drag = null; });
-  // 右クリックメニュー抑止
-  mapEl.addEventListener('contextmenu', (e) => e.preventDefault());
-}
-
 // brief 26b: state 種は checking / dbinit / pairing / riding の 4 値。
 // - checking: 起動直後、 /tiles/_setup_status を fetch 中、 UI は最小
 // - dbinit: DB 不足、 #dbinit-overlay で GSI fetch / OSM extract / skip を user に提示
@@ -299,86 +246,21 @@ function setupPitchDrag() {
 // start/goal マーカーの実体は map_renderer が保持。 ride 中はメイン map から hide する。
 function updateStartGoalVisibility() {
   const hide = document.body.classList.contains('state-riding');
-  mapRenderer.setStartGoalMarkersVisible(!hide);
+  mapRenderer.setStartGoalVisible(!hide);
 }
 
-// brief b-segment-labels / b9: 道路セグメント上の「距離+勾配」ラベルを描く symbol
-// レイヤー用の文字画像を生成する。 MapLibre の symbol text-field は style に glyphs URL
-// が要るが本プロジェクトに glyphs 配信 infra が無いため、 文字を canvas に描いて
-// icon-image として使う。 symbol レイヤー側で icon-pitch-alignment /
-// icon-rotation-alignment を map にすると、 文字が billboard (カメラ正面の浮いた札)
-// ではなく地面平面に寝て道路の向きに沿う (= 路面ペイント風)。
-// b9: ベタ背景は使わない ── 透明背景 + 太い黒ハロー (縁取り) で読みやすさを確保し、
-//     文字の下のコース勾配色が透けて見えるようにする。 文字は左揃え (= コース側の
-//     左端から始まって揃う)。 基準サイズは canvas 固定、 画面表示倍率は symbol layer の
-//     icon-size (= labelSizeScale、 機器設定パネルの slider で調整) で変える。
-// 文字の基準サイズ (px)。 小さめ = billboard の衝突箱が小さく、 約100m間隔の標識が
-// 多く画面に並ぶ。 もっと大きく見たい時は機器設定の「ラベルサイズ」slider で拡大。
-const SEG_LABEL_FONT_PX = 22;
-// 1 つのラベル文字列を「透明背景 + 白文字 + 黒ハロー、 左揃え」の画像に描き、
-// MapLibre addImage 用の ImageData を返す。
-function makeSegLabelImage(text) {
-  const font = `bold ${SEG_LABEL_FONT_PX}px ui-monospace, "Courier New", monospace`;
-  const measure = document.createElement('canvas').getContext('2d');
-  measure.font = font;
-  const haloW = Math.round(SEG_LABEL_FONT_PX * 0.16); // ハロー幅 (= 縁取りの太さ)
-  const pad = haloW + 4; // ハローが端で切れないための余白
-  const w = Math.ceil(measure.measureText(text).width) + pad * 2;
-  const h = Math.ceil(SEG_LABEL_FONT_PX * 1.35) + pad * 2;
-  const cv = document.createElement('canvas');
-  cv.width = w;
-  cv.height = h;
-  const ctx = cv.getContext('2d');
-  // 背景は塗らない (= 透明、 文字の下のコース勾配色が透ける)。
-  ctx.font = font;
-  // 左揃え: 各ラベルがコース側の左端から始まって揃う。
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  // 細い黒ハロー (縁取り) で勾配色のどの帯の上でも白文字が読めるようにする。
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = haloW;
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
-  ctx.strokeText(text, pad, h / 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, pad, h / 2);
-  return ctx.getImageData(0, 0, w, h);
-}
-
-// b9: ラベル表示倍率 (= route-labels symbol layer の icon-size)。 機器設定パネルの
-// slider で調整、 localStorage 永続。 default 1.0。
+// b12 Phase 2.5: 距離ラベルの文字画像生成・symbol レイヤー・距離窓フィルタは
+// map_renderer.js が持つ。 viewer は機器設定 slider から setLabelScale を頼むだけ。
+// ラベル表示倍率の起動時 default は localStorage 永続値 (= slider 表示の初期化用に読む)。
 let labelSizeScale = 1;
 try {
   const _ls = parseFloat(localStorage.getItem('fujihill.labelSize'));
   if (Number.isFinite(_ls) && _ls > 0) labelSizeScale = _ls;
 } catch { /* localStorage 不可は default のまま */ }
-// ラベル倍率を route-labels layer に適用する (= layer 未生成なら次の生成時に反映)。
+// ラベル倍率を地図に適用する (= 機器設定パネルの slider 連動)。
 function applyLabelSize(scale) {
   labelSizeScale = scale;
-  if (mapRenderer.hasLayer('route-labels')) {
-    mapRenderer.setLayoutProperty('route-labels', 'icon-size', scale);
-  }
-}
-
-// b9: ラベルは rider 近傍の距離窓 (= 後方 LABEL_BACK_M 〜 前方 LABEL_AHEAD_M) だけ
-// 表示する。 約100m間隔で 240 個あり、 全部出すと地平線付近で重なって白い塊に潰れる。
-// billboard は遠近で縮まないため、 pitch 85° では前方 ~450m より先の 100m 間隔ラベルが
-// 画面上で重なる。 窓を手前 ~450m に絞ると標識 4〜5 個が約100m間隔できれいに並び、
-// 重なり潰れが完全に消える (= rider 前進に追従して窓が進む)。
-const LABEL_BACK_M = 150;
-const LABEL_AHEAD_M = 450;
-let _riderDistForLabels = 0;     // tick が書き込む rider 現在距離 (m)
-let _lastLabelDistBucket = -1;   // setFilter 呼出を 50m 刻みに間引く前回 bucket
-// route-labels layer の距離窓フィルタを rider 現在地に合わせて更新する。
-// setFilter は feature の再 tessellate を伴わない軽い操作 (= 50m 毎に呼んで十分軽い)。
-function updateSegmentLabelFilter() {
-  if (!mapRenderer.hasLayer('route-labels')) return;
-  const lo = _riderDistForLabels - LABEL_BACK_M;
-  const hi = _riderDistForLabels + LABEL_AHEAD_M;
-  mapRenderer.setFilter('route-labels', [
-    'all',
-    ['>=', ['get', 'distance_m'], lo],
-    ['<=', ['get', 'distance_m'], hi],
-  ]);
+  mapRenderer.setLabelScale(scale);
 }
 function setAppState(s) {
   // 2026-05-15 fix: 旧 `body.className = 'state-X'` は全クラス上書きで、 mode-view (= 観るモード)
@@ -1599,8 +1481,10 @@ function initMapMode() {
   const params = new URLSearchParams(location.search);
   const zParam = parseFloat(params.get('z'));
   const pitchParam = parseFloat(params.get('pitch'));
-  if (Number.isFinite(zParam) && zParam >= 13 && zParam <= 24) userZoom = zParam;
-  if (Number.isFinite(pitchParam) && pitchParam >= 0 && pitchParam <= 85) userPitch = pitchParam;
+  const camDefaults = {};
+  if (Number.isFinite(zParam) && zParam >= 13 && zParam <= 24) camDefaults.zoom = zParam;
+  if (Number.isFinite(pitchParam) && pitchParam >= 0 && pitchParam <= 85) camDefaults.pitch = pitchParam;
+  mapRenderer.setCameraDefaults(camDefaults);
   // TEST_MODE と同じ fake client (= bridge / trainer 不要)
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
@@ -1719,169 +1603,23 @@ async function loadCourse() {
   hud.total(totalDist);
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
 
-  // brief 24 + 25: 各 segment を 5m 幅の polygon に展開、 勾配グレード別色分け.
-  // Zwift Climb Portal 風: flat=緑 / gentle=黄緑 / moderate=黄 / hard=橙 / very_hard=赤 / extreme=紫.
-  // brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist。 2 回目以降の
-  // 起動では既存 cache を読み戻し、 buildGradeColoredRoadPolygons (= 全 segment の expansion +
-  // 勾配 grade 計算) を完全 skip。 cache miss / IDB 不在は既存経路に fallback (= no-op fail-open).
-  if (!mapRenderer.hasSource('route')) {
-    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const courseHash = computeCourseHash(course);
-    let polygonData = null;
-    let cacheHit = false;
-    if (courseHash) {
-      try {
-        const rec = await getMeshCache(courseHash, 'polygon');
-        if (rec && rec.arrays && rec.arrays.geojson) {
-          polygonData = rec.arrays.geojson;
-          cacheHit = true;
-        }
-      } catch { /* fail-open: 既存経路に倒す */ }
-    }
-    if (!polygonData) {
-      polygonData = buildGradeColoredRoadPolygons(course, 5);
-      if (courseHash) {
-        // fire-and-forget: 書き込み失敗で起動を block しない (= 次回 reload で再 attempt)
-        setMeshCache(courseHash, 'polygon', { geojson: polygonData }).catch(() => {});
-      }
-    }
-    const dt = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0;
-    console.log(`[mesh_cache] polygon ${cacheHit ? 'HIT' : 'MISS'} ${dt.toFixed(1)}ms hash=${courseHash}`);
-    mapRenderer.addSource('route', { type: 'geojson', data: polygonData });
-    // brief b2 High-3: 帯ポリゴン (1968 セグメント) の zoom 連動再生成を撤去。
-    // 旧実装は map.on('zoom') ごとに buildGradeColoredRoadPolygons を再実行し
-    // 全頂点を GPU に再アップロードしていた (= zoom 操作中 1 回 31〜63ms の stall)。
-    // polygonData は固定幅 5m で 1 回だけ生成済 (= 上の addSource / cache HIT 経路)。
-    // zoom による太さの可変が必要なら meter 幅の再生成ではなく route-line 側の
-    // line-width zoom 式で表現する (= 再 tessellate ゼロ)。
-    // Fix2: 道路 polygon を **最前面** に挿入 (= beforeId 削除).
-    // 旧仕様で beforeId='roads' にしていたが、 OSM roads-major (= 橙線) が
-    // polygon を貫いて表示されてしまうため、 polygon を上に置いて道幅を露出させる.
-    mapRenderer.addLayer({
-      id: 'route-fill',
-      type: 'fill',
-      source: 'route',
-      paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.95,
-        // audit Round 2: anti-alias を切ると隣接 polygon 縁の半透明 compositing が消え、
-        // 共有 edge での白隙 (= 背景 #e8e8e8 漏れ) が出なくなる。
-        'fill-antialias': false,
-      },
-    });
-    // 細い線で polygon の縁取り (= zoom out 時の視認性確保)
-    mapRenderer.addLayer({
-      id: 'route-line',
-      type: 'line',
-      source: 'route',
-      paint: { 'line-color': '#222', 'line-width': 0.5, 'line-opacity': 0.6 },
-    });
-
-    // brief b-segment-labels / b9: コースに沿って「距離+勾配」の標識を約 50m 間隔で
-    // 並べる。 buildSegmentLabels が約 50m 間隔のラベル点列を、 各点をコース路面の
-    // すぐ脇 (= 進行方向の右 6m) に逃がした位置で返す。 脇に置くので文字が勾配色を
-    // 隠さない。 各文字列を canvas 画像にして addImage、 point feature の icon-image にする。
-    //
-    // 向き: billboard (icon-rotation/pitch-alignment=viewport)。 文字は常にカメラ正面を
-    // 向いて立つ。 走行 camera は pitch 85° まで寝るため、 地面に寝かせた文字は地平に
-    // 圧縮されて完全に見えなくなる (実画面で検証済)。 billboard なら pitch 85° でも
-    // 文字が潰れず大きく読め、 曲がりくねった道でも向きが安定する。 icon-anchor=left +
-    // 文字左揃えで、 各標識がコース側の左端から揃って外へ伸びる。
-    const segLabels = buildSegmentLabels(polygonData, 50, 6);
-    const segLabelFeatures = [];
-    segLabels.forEach((lbl, i) => {
-      const imageId = `seg-label-${i}`;
-      if (!mapRenderer.hasImage(imageId)) {
-        mapRenderer.addImage(imageId, makeSegLabelImage(lbl.text));
-      }
-      segLabelFeatures.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [lbl.lon, lbl.lat] },
-        properties: { icon: imageId, distance_m: lbl.distance_m },
-      });
-    });
-    mapRenderer.addSource('route-labels', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: segLabelFeatures },
-    });
-    mapRenderer.addLayer({
-      id: 'route-labels',
-      type: 'symbol',
-      source: 'route-labels',
-      minzoom: 13,
-      layout: {
-        'icon-image': ['get', 'icon'],
-        // billboard: viewport alignment ── 文字は常にカメラ正面を向いて立つ。
-        // 走行 camera が pitch 85° まで寝ても潰れず読める (地面に寝かせる方式は
-        // pitch 85° で地平に圧縮され完全に見えなくなるため不採用、 実画面で検証済)。
-        'icon-rotation-alignment': 'viewport',
-        'icon-pitch-alignment': 'viewport',
-        // icon-anchor=left: 標識の左端 (= コース側) を基準点に置き、 外へ伸ばす。
-        'icon-anchor': 'left',
-        // 表示倍率は slider 連動 (= labelSizeScale、 localStorage 永続)。
-        'icon-size': labelSizeScale,
-        // 近いラベルを優先的に残す (= sort-key 小さいほど優先、 distance 昇順)。
-        'symbol-sort-key': ['get', 'distance_m'],
-        // 距離窓フィルタ (updateSegmentLabelFilter / tick) で rider 近傍だけに絞るので、
-        // 窓内の標識は衝突回避せず全部出す (= 約100m間隔できれいに並べる)。
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    });
-    // rider 近傍の距離窓に初期フィルタを掛ける (= 以降 tick が rider 追従で更新)。
-    updateSegmentLabelFilter();
+  // b12 Phase 2.5: 勾配色の道路リボン / 距離ラベル / 起点終点マーカー / ライダー層の
+  // 構築と初期カメラ寄せは map_renderer.renderCourse に集約。 GeoJSON 組み立て・
+  // レイヤー定義・mesh cache はすべて地図描画モジュールの中に閉じる。
+  // 通常起動は走行視点 (zoom 21 / pitch 85)、 MAP_MODE は initMapMode が URL 引数で
+  // カメラ default を設定済なのでここでは触らない。
+  if (!MAP_MODE) {
+    mapRenderer.setCameraDefaults({ zoom: 21, pitch: 85 });
   }
-  // start / goal markers
-  // start (緑) / goal (赤) pin: pairing / dbinit 中は表示、 ride 中は hide
-  // (= MapLibre Marker は DOM SVG で polygon の上に描画され「うっすら前に浮く」、
-  //   ride 視点では minimap に start/goal が見えるのでメイン map から退ける).
-  mapRenderer.setStartGoalMarkers(
-    [course[0].lon, course[0].lat],
-    [course[course.length - 1].lon, course[course.length - 1].lat],
-  );
+  await mapRenderer.renderCourse(course);
+  // ride 中は start/goal マーカーをメイン map から hide する (= 現 body state に追随)。
   updateStartGoalVisibility();
 
-  // rider マーカー: fill-extrusion で 3D 立体。 buildRiderFeatures が複数 part
-  // (= 自転車車体 + rider) を返し、 各 part の色 / 高さ / base は feature property で持つ。
-  // 2026-05-17: 旧来は cyan 1m 角の豆腐 1 個。 慣性シミュの自転車に寄せ、 低く長い暗色の
-  // 車体 + その上に立つ cyan の rider のシルエットにした。 MapLibre は上方押し出しのみで
-  // スポーク等の 3D 詳細は描けないため、 シルエットで「自転車に乗った rider」 を表す。
-  mapRenderer.addSource('rider', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  mapRenderer.addLayer({
-    id: 'rider-body',
-    type: 'fill-extrusion',
-    source: 'rider',
-    paint: {
-      'fill-extrusion-color': ['get', 'color'],
-      'fill-extrusion-height': ['get', 'height'],
-      'fill-extrusion-base': ['get', 'base'],
-      'fill-extrusion-opacity': 0.95,
-    },
-  });
-
-  // brief 29: minimap を旧 OSM 直叩き方式に rollback。 上半分 = canvas + loadOsmTile (1-shot)、
-  // 下半分 = 標高プロファイル canvas。 course load 完了後 1 回だけ。
-  // buildMinimapTopBase は async (= 9-16 OSM タイル fetch 完了待ち)、 await はせず fire-and-forget。
-  // fetch 完了前は polyline + dot だけが見える状態 (= polylines は同期 ctx.stroke で先に描く)、
-  // fetch 完了後に drawImage で OSM が overlay される。 ride 開始は OSM 完了に依存しない。
+  // brief 29: minimap は MapLibre 非依存の Canvas 2D 直描画。 course load 完了後 1 回だけ。
+  // buildMinimapTopBase は async (= OSM タイル fetch 完了待ち)、 await はせず fire-and-forget。
   buildMinimapTopBase();
   buildMinimapBottomBase();
 
-  // brief 17b: prefetch を完全削除。 タイルは MapLibre が on-demand で
-  // localhost /tiles/... から fetch する。 外部 fetch ゼロ。
-
-  // 初期 camera: start 地点に寄せる、 起動直後から走行視点っぽい絵にする
-  // (全体俯瞰だと goal 側ばかり映って rider が画面外になる、 user 不満を生む)
-  // user 動作確認で確定した default (画面 HUD 由来、 現地の道路幅感覚に合う値)
-  // MAP_MODE は ?z=N&pitch=M で override 可能にする (= UI 操作なし visual 検証用)
-  // 通常起動時は ride 視点 (= 道路 1 車線 + ほぼ水平) の default を hard-set
-  if (!MAP_MODE) {
-    userZoom = 21;       // 2026-05-15 user 判断: 走行視点として親密、 道路 polygon が画面 1/4 程度
-    userPitch = 85;      // ほぼ水平、 カーナビ的前方視野
-  }
-  // user が縦ドラッグ / ホイールで再調整可、 その値が以後 default になる挙動
-  const cam0 = computeCameraParams(course, { curIdx: 0 }, { userZoom, userPitch, lookAhead: 20 });
-  mapRenderer.jumpTo(cam0);
   lastT = performance.now();
   requestAnimationFrame(tick);
 }
@@ -2197,9 +1935,6 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
   }
 }
 
-// brief b2: per-frame 差分検出の前フレーム state (= 無条件再構築の回避用)。
-let _lastRiderFrame = null;   // Critical-1: rider setData 差分
-
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
   if (!rider || !rideState) { requestAnimationFrame(tick); return; }
@@ -2219,45 +1954,25 @@ function tick(t) {
   // tick() 側で module global へ写す経路は廃止 (= 初回 tick より前の state push で slope=0 に
   // なる Critical バグの除去)。
 
-  // camera bearing: 旧 viewer は curIdx の bearing と curIdx+1 の bearing を frac で線形補間して
-  // 「GPS 点間が不均一でも curIdx 変化の瞬間に視線がカクッと回転する」 問題を解消していた。
-  // Terrain.getPositionAtDistance は heading を 1 値だけ返すため、 ここでは旧 frac 補間 logic を
-  // 維持して滑らかさを保つ (= camera 専用、 rider.position.heading は単一 segment ベース).
-  const cam = computeCameraParams(course, { curIdx }, { userZoom, userPitch, lookAhead: 5 });
-  const nextIdx = Math.min(curIdx + 1, course.length - 1);
-  const camNext = computeCameraParams(course, { curIdx: nextIdx }, { userZoom, userPitch, lookAhead: 5 });
-  let bearingDiff = ((camNext.bearing - cam.bearing + 540) % 360) - 180;
-  const courseBearing = cam.bearing + bearingDiff * pos.fracInSegment;
-  // user 横ドラッグ分を camera の旋回 offset として加算 (= rider 進行方向には足し込まない).
-  const smoothBearing = (courseBearing + userBearingOffset + 360) % 360;
-  // camera 用 heading は lookAhead=5 先を見た滑らかな courseBearing。 minimap の矢印も同じ。
-  const riderHeadingRad = (courseBearing + 360) % 360 * Math.PI / 180;
-  // rider マーカー (= リング+三角) は今いる道路タイルそのものに重なる。 lookAhead=5 の
-  // courseBearing だとカーブでタイルの向きとずれるため、 マーカーはタイルと同じ
-  // 「curIdx → curIdx+1 の局所セグメント方位」 で向ける (= マーカーがタイルに平行)。
-  const riderTileHeadingRad = computeTravelHeading(course, curIdx, 1) * Math.PI / 180;
+  // b12 Phase 2.5: カメラ追随は map_renderer.updateCamera に委譲。 bearing 補間や
+  // 横ドラッグ offset の合成は地図描画モジュールの中。 apply=false の時 (= ride 開始前で
+  // map idle 待ち) は camera を動かさず進行方位だけ計算して返す (= idle 発火を妨げない)。
+  // 戻り値 headingRad は minimap の rider 矢印、 bearingDeg は debug HUD が使う。
+  const camResult = mapRenderer.updateCamera({
+    course,
+    curIdx,
+    fracInSegment: pos.fracInSegment,
+    lon: rLon,
+    lat: rLat,
+    lookAhead: 5,
+    apply: course.length > 0 && (snap.active || mapFullyLoaded),
+  });
+  const riderHeadingRad = camResult.headingRad;
 
-  // rider 立体を rider 位置 + 進行方向 + スピン角で更新. spinAngle は rider.tick 内で
-  // cadence rpm に応じて自動進行済 (= rider.spinAngle で取り出す、 viewer 側の累積管理 不要).
-  // brief b2 Critical-1: rider GeoJSON の再構築 + GPU 再アップロード (setData) は
-  // source 全体を再パース・再 tessellate・再 buffer する重い処理。 位置 / 向き /
-  // スピンが前フレームから動いた時だけ実行し、 停止中は丸ごと skip する。
-  {
-    const riderFrame = { lat: rLat, lon: rLon, heading: riderTileHeadingRad, spin: snap.spinAngle };
-    if (riderFrameChanged(_lastRiderFrame, riderFrame)) {
-      // setSourceData は source 未生成なら no-op (= renderer 内で存在 check)。
-      mapRenderer.setSourceData('rider', buildRiderFeatures(rLat, rLon, riderTileHeadingRad, snap.spinAngle));
-      _lastRiderFrame = riderFrame;
-    }
-  }
-
-  // camera は ride active 時だけ jumpTo (= 待機中は map state を動かさず idle 発火を許可、
-  // 「描画準備中」インジケータの解除トリガに干渉しない).
-  // 2026-05-16 fix: map idle 発火済 (= mapFullyLoaded=true) なら ride 未開始でも jumpTo OK、
-  // user 「マウス左右で camera が回らない」 報告への対応 (= ride 開始前でも mouse drag 反映).
-  if (course.length > 0 && (snap.active || mapFullyLoaded)) {
-    mapRenderer.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
-  }
+  // rider 立体を現在位置 + 進行方向 + スピン角で更新。 spinAngle は rider.tick 内で
+  // cadence rpm に応じて自動進行済。 位置 / 向き / スピンが動いた時だけ再構築するのは
+  // renderer 内の責務 (= 停止中の重い再アップロードを skip)。
+  mapRenderer.updateRider({ course, curIdx, lat: rLat, lon: rLon, spin: snap.spinAngle });
 
   // ライド HUD (時間/距離/標高/勾配) は hud に集約。 ride 未開始は elapsedSec=null
   // → "00:00:00"。 rider 追随 HUD の slope は常時更新 (= Terrain 経由で取得)。
@@ -2266,41 +1981,35 @@ function tick(t) {
     : null;
   hud.ride({ elapsedSec, dist: curDist, ele: rEle, slope: pos.slope_pct });
 
-  // b9: 距離ラベルの表示窓を rider 現在地に追従させる。 50m 刻みの bucket が
-  // 変わった時だけ setFilter (= 毎フレーム呼ばない、 軽量)。
-  const labelDistBucket = Math.floor(curDist / 50);
-  if (labelDistBucket !== _lastLabelDistBucket) {
-    _lastLabelDistBucket = labelDistBucket;
-    _riderDistForLabels = curDist;
-    updateSegmentLabelFilter();
-  }
-  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project し、
+  // b9: 距離ラベルの表示窓を rider 現在地に追従させる (= 50m 刻みの間引きは renderer 内)。
+  mapRenderer.updateLabelWindow(curDist);
+  // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に投影し、
   // 画面座標を hud に渡す (= hud は座標系を知らない)。 state-riding の時だけ表示。
   if (document.body.classList.contains('state-riding')) {
-    const pt = mapRenderer.project([rLon, rLat]);
+    const pt = mapRenderer.projectToScreen(rLon, rLat);
     hud.riderHudAt(pt.x, pt.y + 30, true);  // 豆腐の下 30px (= polygon height + 余白)
   } else {
     hud.riderHudAt(0, 0, false);
   }
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
-  setText('cam-zoom', mapRenderer.getZoom().toFixed(2));
-  setText('cam-pitch', mapRenderer.getPitch().toFixed(0));
+  const camInfo = mapRenderer.getCameraInfo();
+  setText('cam-zoom', camInfo.zoom.toFixed(2));
+  setText('cam-pitch', camInfo.pitch.toFixed(0));
   // 2026-05-16: ?debug=1 用の数値 dump (= body.debug-on で右上 panel に表示).
   // user 「座標が外れる」「慣性力おかしい」 を走行中に数値で目視できる. setText は要素無しでも noop.
   // brief b2 High-4: ?debug=1 の時だけ実行 (= 平時は getElementById + textContent + trkpt
   // 走査の毎フレーム 30 件超を丸ごと skip)。
   if (DEBUG_HUD) {
-  const mapCenter = mapRenderer.getCenter();
   const EARTH_M_PER_DEG_DBG = 111000;
   const cosLatDbg = Math.cos(rLat * Math.PI / 180);
-  const dxDbg = (mapCenter.lng - rLon) * EARTH_M_PER_DEG_DBG * cosLatDbg;
-  const dzDbg = (mapCenter.lat - rLat) * EARTH_M_PER_DEG_DBG;
+  const dxDbg = (camInfo.centerLng - rLon) * EARTH_M_PER_DEG_DBG * cosLatDbg;
+  const dzDbg = (camInfo.centerLat - rLat) * EARTH_M_PER_DEG_DBG;
   const camDriftM = Math.sqrt(dxDbg * dxDbg + dzDbg * dzDbg);
   const dtMs = dt * 1000;
   setText('d-rider-lat', rLat.toFixed(7));
   setText('d-rider-lon', rLon.toFixed(7));
-  setText('d-cam-lat', mapCenter.lat.toFixed(7));
-  setText('d-cam-lon', mapCenter.lng.toFixed(7));
+  setText('d-cam-lat', camInfo.centerLat.toFixed(7));
+  setText('d-cam-lon', camInfo.centerLng.toFixed(7));
   setText('d-cam-drift', camDriftM.toFixed(2));
   setText('d-dist', curDist.toFixed(1));
   setText('d-speed', snap.speed.toFixed(3));
@@ -2308,7 +2017,7 @@ function tick(t) {
   setText('d-seg', String(pos.segmentIdx));
   setText('d-frac', pos.fracInSegment.toFixed(3));
   setText('d-slope', pos.slope_pct.toFixed(2));
-  setText('d-brng', smoothBearing.toFixed(1));
+  setText('d-brng', camResult.bearingDeg.toFixed(1));
   setText('d-dt', dtMs.toFixed(1));
   setText('d-fps', dtMs > 0 ? (1000 / dtMs).toFixed(0) : '--');
   setText('d-pow', currentPower != null ? String(currentPower) : '--');
@@ -2396,6 +2105,9 @@ function tick(t) {
       lastAutosaveT = nowT;
     }
   }
+  // b12 Phase 2.5: 1 フレーム描画を地図描画モジュールに頼む。 MapLibre は状態変化で
+  // 自動再描画するため現状は no-op、 Three.js 実装ではここで scene を描く。
+  mapRenderer.render();
   if (!rider.atGoal) {
     requestAnimationFrame(tick);
   } else {
@@ -2580,22 +2292,18 @@ bindBikeSlider('rngRr', 'rrVal', 'fujihill.crr',
 bindBikeSlider('rngCda', 'cdaVal', 'fujihill.cda',
   (p) => Math.round(p * 100), (r) => r / 100, (r) => (r / 100).toFixed(2), (p) => { bikeCda = p; }, bikeCda);
 
-// 光源 (hillshade) slider: 方向 0..360° / 強度 0..100 (MapLibre 0..1 を ×100).
-// setPaintProperty で live 更新、 デバッグ表示も同時。
+// 光源 slider: 方向 0..360° / 強度 0..100。 地図への反映は map_renderer に頼む。
+// b12 Phase 2.5: hillshade paint property の直接操作は地図描画モジュールの中。
 function applyLightDir(deg) {
   setText('lightDirVal', String(Math.round(deg)));
   setText('dbgLightDir', String(Math.round(deg)));
-  if (mapRenderer.hasLayer('hillshade')) {
-    mapRenderer.setPaintProperty('hillshade', 'hillshade-illumination-direction', deg);
-  }
+  mapRenderer.setSunlightDirection(deg);
 }
 function applyLightStr(pct) {
   const exag = pct / 100;
   setText('lightStrVal', String(Math.round(pct)));
   setText('dbgLightExag', exag.toFixed(2));
-  if (mapRenderer.hasLayer('hillshade')) {
-    mapRenderer.setPaintProperty('hillshade', 'hillshade-exaggeration', exag);
-  }
+  mapRenderer.setSunlightStrength(exag);
 }
 const rLightDir = document.getElementById('rngLightDir');
 if (rLightDir) rLightDir.addEventListener('input', () => applyLightDir(parseFloat(rLightDir.value)));

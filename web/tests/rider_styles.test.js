@@ -85,15 +85,19 @@ describe('buildRiderFeatures — 三角形の先端が heading 方向を向く',
   });
 });
 
-describe('viewer-maplibre.js への landing (= source 走査、 二重実装防止)', () => {
-  const viewer = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'viewer-maplibre.js'), 'utf8');
+describe('地図描画モジュールへの landing (= source 走査、 二重実装防止)', () => {
+  const __d = dirname(fileURLToPath(import.meta.url));
+  const viewer = readFileSync(resolve(__d, '..', 'viewer-maplibre.js'), 'utf8');
+  // b12 Phase 2.5: ライダー geometry の生成 (buildRiderFeatures) は地図描画モジュール
+  // (map_renderer.js) の updateRider が持つ。 viewer 本体は描画 geometry を組まない。
+  const renderer = readFileSync(resolve(__d, '..', 'lib', 'map_renderer.js'), 'utf8');
 
-  it('rider_styles.js を import している', () => {
-    expect(viewer).toMatch(/from '\.\/lib\/rider_styles\.js'/);
+  it('map_renderer.js が rider_styles.js を import している', () => {
+    expect(renderer).toMatch(/from '\.\/rider_styles\.js'/);
   });
 
-  it('旧自転車シルエット (#23272f の直書き) が viewer に残存しない', () => {
+  it('旧自転車シルエット (#23272f の直書き) が viewer / map_renderer に残存しない', () => {
     expect(viewer).not.toContain('#23272f');
+    expect(renderer).not.toContain('#23272f');
   });
 });

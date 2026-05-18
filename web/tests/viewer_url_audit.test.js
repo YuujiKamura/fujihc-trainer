@@ -97,15 +97,17 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(viewer).toMatch(/import\s+\{[^}]*smoothCourse[^}]*\}\s+from\s+['"]\.\/lib\/gpx_smooth\.js['"]/);
   });
 
-  // brief 24 + 25: 勾配グレード色分けで道路幅 polygon 描画
-  it('buildGradeColoredRoadPolygons を web/lib/road_polygon.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*buildGradeColoredRoadPolygons[^}]*\}\s+from\s+['"]\.\/lib\/road_polygon\.js['"]/);
+  // brief 24 + 25 / b12 Phase 2.5: 勾配グレード色分けの道路幅 polygon 描画は
+  // 地図描画モジュール (map_renderer.js) の renderCourse が持つ。
+  it('buildGradeColoredRoadPolygons を road_polygon.js から import している (= map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/import\s+\{[^}]*buildGradeColoredRoadPolygons[^}]*\}\s+from\s+['"]\.\/road_polygon\.js['"]/);
   });
 
-  it('route layer は line ではなく fill (= 道幅 polygon)', () => {
-    // route-fill layer が定義されている、 旧 route-line (only) の置き換え済
-    expect(viewer).toMatch(/id:\s*['"]route-fill['"]/);
-    expect(viewer).toMatch(/['"]fill-color['"]:\s*\[['"]get['"],\s*['"]color['"]\]/);
+  it('route layer は line ではなく fill (= 道幅 polygon、 map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/id:\s*['"]route-fill['"]/);
+    expect(renderer).toMatch(/['"]fill-color['"]:\s*\[['"]get['"],\s*['"]color['"]\]/);
   });
 });
 
@@ -124,12 +126,16 @@ describe('brief 19b: viewer 統合層 (ws_client / ride_state / camera_controlle
     expect(viewer).toMatch(/import\s+\{[^}]*createRideState[^}]*\}\s+from\s+['"]\.\/lib\/ride_state\.js['"]/);
   });
 
-  it('computeCameraParams を web/lib/camera_controller.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*computeCameraParams[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]/);
+  // b12 Phase 2.5: カメラ計算 (computeCameraParams) と ホイール/ドラッグ操作
+  // (adjustZoom / adjustPitch) は地図描画モジュール (map_renderer.js) の中。
+  it('computeCameraParams を camera_controller.js から import している (= map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/import\s+\{[^}]*computeCameraParams[^}]*\}\s+from\s+['"]\.\/camera_controller\.js['"]/);
   });
 
-  it('adjustZoom / adjustPitch を web/lib/camera_controller.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*adjustZoom[^}]*adjustPitch[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]|import\s+\{[^}]*adjustPitch[^}]*adjustZoom[^}]*\}\s+from\s+['"]\.\/lib\/camera_controller\.js['"]/);
+  it('adjustZoom / adjustPitch を camera_controller.js から import している (= map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/import\s+\{[^}]*adjustZoom[^}]*adjustPitch[^}]*\}\s+from\s+['"]\.\/camera_controller\.js['"]|import\s+\{[^}]*adjustPitch[^}]*adjustZoom[^}]*\}\s+from\s+['"]\.\/camera_controller\.js['"]/);
   });
 
   it('ws.send 呼出が viewer 内に存在しない (= client.sendXxx に統合済)', () => {
@@ -282,10 +288,10 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
     expect(viewer).toMatch(/getElementById\(['"]loading-indicator['"]/);
   });
 
-  it('userZoom/Pitch の hard-set は !MAP_MODE で guard されている', () => {
-    // loadCourse 末尾の hard-set は MAP_MODE 時に skip、 ?z/?pitch override 可能
-    // 数値は user 判断で再調整される可能性、 ここでは guard 構造の有無のみ pin する
-    expect(viewer).toMatch(/if\s*\(\s*!\s*MAP_MODE\s*\)\s*\{[\s\S]{0,200}userZoom\s*=\s*\d/);
+  it('カメラ default の hard-set は !MAP_MODE で guard されている', () => {
+    // b12 Phase 2.5: loadCourse の走行視点 default は renderer.setCameraDefaults 経由。
+    // MAP_MODE 時は skip して initMapMode の ?z/?pitch を活かす。 guard 構造を pin する。
+    expect(viewer).toMatch(/if\s*\(\s*!\s*MAP_MODE\s*\)\s*\{[\s\S]{0,200}setCameraDefaults\(/);
   });
 
   it('roads line-width interpolate は z=22 まで定義 (= ride 視点 overzoom 対策)', () => {
@@ -294,18 +300,19 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
     expect(renderer).toMatch(/['"]line-width['"]:\s*\[['"]interpolate['"],\s*\[['"]linear['"]\],\s*\[['"]zoom['"]\][\s\S]{0,80}22,\s*\d/);
   });
 
-  it('route-fill は最前面 (= beforeId 無し) で addLayer される', () => {
+  it('route-fill は最前面 (= beforeId 無し) で addLayer される (= map_renderer.js)', () => {
     // Fix2: OSM roads-major (= 橙線) が polygon を貫く問題を解消するため、
     // route-fill は addLayer 第 2 引数 'roads' を持たず、 最後尾 (= 最前面) に挿入する.
-    // b12 Phase 2: addLayer は map_renderer 経由 (= mapRenderer.addLayer)。
-    expect(viewer).toMatch(/mapRenderer\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*\)\s*;/);
-    // 念のため 'route-fill' の addLayer 直後に 'roads' リテラルが入ってない
-    expect(viewer).not.toMatch(/id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
+    // b12 Phase 2.5: route layer 群の addLayer は renderCourse (map_renderer.js) の中。
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*\)\s*;/);
+    expect(renderer).not.toMatch(/id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
   });
 
-  it('route-line も最前面 (= beforeId 無し) で addLayer される', () => {
-    expect(viewer).toMatch(/mapRenderer\.addLayer\(\s*\{[^}]*id:\s*['"]route-line['"][\s\S]{0,400}\}\s*\)\s*;/);
-    expect(viewer).not.toMatch(/id:\s*['"]route-line['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
+  it('route-line も最前面 (= beforeId 無し) で addLayer される (= map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/addLayer\(\s*\{[^}]*id:\s*['"]route-line['"][\s\S]{0,400}\}\s*\)\s*;/);
+    expect(renderer).not.toMatch(/id:\s*['"]route-line['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
   });
 });
 
