@@ -532,7 +532,7 @@ async function main() {
   rider.start();
   const RIDE_POWER_W = 250;
   const bike = buildBikeMesh();
-  bike.scale.setScalar(span * 0.011);
+  bike.scale.setScalar(1.8);  // 実スケール 1.8m (全長 1.0 の unit モデルを m 換算)
   scene.add(bike);
 
   // 5. ライティング: 太陽 (DirectionalLight) + 環境 (Ambient + Hemisphere)。
@@ -557,10 +557,10 @@ async function main() {
   // camera.up を北 (-Z) に向けると、 北が画面上・東が画面右の正しい地図向きになる。
   const topMode    = new URLSearchParams(location.search).get('cam') === 'top';
   const followMode = new URLSearchParams(location.search).get('cam') === 'follow';
-  // 追従カメラの距離定数 (span 比例)。 ライダー後方・上方にカメラを置き前方を注視する。
-  const FOLLOW_BACK = span * 0.003;   // 後方距離
-  const FOLLOW_UP   = span * 0.0008;  // 上方距離
-  const LOOK_AHEAD  = span * 0.001;   // 注視点の前方オフセット
+  // 追従カメラの距離定数 (m 単位、実スケール自転車に合わせた値)。
+  const FOLLOW_BACK = 8;    // 後方 8m
+  const FOLLOW_UP   = 1.8;  // 上方 1.8m (bike 頭上程度)
+  const LOOK_AHEAD  = 3;    // 注視点を前方 3m にずらす
   function applyCamera() {
     if (topMode) {
       camera.up.set(0, 0, -1);  // 北 (= -Z) を画面上に
