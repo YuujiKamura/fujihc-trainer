@@ -108,13 +108,13 @@ export function createRiderMesh3d(THREE) {
     updatePose(ribbonPositions, course, distanceM) {
       const pl = riderPlacementAtDistance(ribbonPositions, course, distanceM);
       group.position.set(pl.position[0], pl.position[1], pl.position[2]);
-      // lookAt で −Z を forward3d 方向へ向け、up=+Y でロール 0 に固定。
-      // setFromUnitVectors の最短回転は坂+カーブで横傾き(ロール)が出るため置き換え。
-      // カメラ追従は水平の pl.forward を引き続き使う。
+      // bike は −Z 前方。通常オブジェクトの lookAt は +Z を対象へ向けるため、
+      // 後方の点 (position − forward3d) を lookAt することで −Z が進行方向を向く。
+      // up=+Y でロール 0 に固定。カメラ追従は水平の pl.forward を引き続き使う。
       group.lookAt(
-        group.position.x + pl.forward3d[0],
-        group.position.y + pl.forward3d[1],
-        group.position.z + pl.forward3d[2]);
+        group.position.x - pl.forward3d[0],
+        group.position.y - pl.forward3d[1],
+        group.position.z - pl.forward3d[2]);
       return pl;
     },
   };

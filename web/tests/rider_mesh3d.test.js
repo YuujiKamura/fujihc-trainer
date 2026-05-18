@@ -110,11 +110,11 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     const pl = r.updatePose(positions, course, 120);
     expect(pl.forward[0]).toBeCloseTo(1, 6);
     expect(pl.forward[2]).toBeCloseTo(0, 6);
-    // lookAt で向きを更新: target = position + forward3d 方向
+    // lookAt 対象は後方 (position − forward3d) ── bike は −Z 前方、通常 lookAt は +Z を向けるため
     expect(r.group.lookAtCalls.length).toBeGreaterThan(0);
     const target = r.group.lookAtCalls[r.group.lookAtCalls.length - 1];
-    // 東進+平坦コース → target.x = group.position.x + 1、target.y = group.position.y
-    expect(target.x).toBeGreaterThan(r.group.position.x);
+    // 東進+平坦コース → 後方は西側 → target.x < position.x、高さは同じ
+    expect(target.x).toBeLessThan(r.group.position.x);
     expect(target.y).toBeCloseTo(r.group.position.y, 6);
   });
 
@@ -131,8 +131,8 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     r.updatePose(climbCurvePositions, climbCourse, 50);
     expect(r.group.lookAtCalls.length).toBeGreaterThan(0);
     const target = r.group.lookAtCalls[r.group.lookAtCalls.length - 1];
-    // target は position より高い (登り方向に lookAt している)
-    expect(target.y).toBeGreaterThan(r.group.position.y);
+    // 後方の点を lookAt → 登り区間では後方は下方 → target.y < position.y
+    expect(target.y).toBeLessThan(r.group.position.y);
   });
 
   it('距離は [0, 総距離] に clamp される (= 範囲外でも mesh が飛ばない)', () => {
