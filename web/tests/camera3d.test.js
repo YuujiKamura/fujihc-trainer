@@ -7,7 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   orbitPosition, topPosition, followPlacement, ndcToScreen,
-  dragToBearing, dragToPitch, wheelRadius, createCamera3d,
+  dragToBearing, dragToPitch, wheelRadius, zoomToRadius, createCamera3d,
+  ZOOM_RADIUS_REF_ZOOM, ZOOM_RADIUS_REF_M,
 } from '../lib/map3d/camera3d.js';
 
 const ORIGIN = { x: 0, y: 0, z: 0 };
@@ -192,5 +193,59 @@ describe('createCamera3d: ファクトリ (THREE 注入)', () => {
     expect(c3d.getMode()).toBe('orbit');
     c3d.setMode('top');
     expect(c3d.getMode()).toBe('top');
+  });
+});
+
+describe('zoomToRadius: MapLibre zoom → オービット半径', () => {
+  it('基準 zoom は基準半径に一致する', () => {
+    expect(zoomToRadius(ZOOM_RADIUS_REF_ZOOM)).toBeCloseTo(ZOOM_RADIUS_REF_M, 6);
+  });
+  it('zoom +1 で半径が半分、 -1 で 2 倍 (= MapLibre の縮尺 2 倍則)', () => {
+    expect(zoomToRadius(22)).toBeCloseTo(zoomToRadius(21) / 2, 6);
+    expect(zoomToRadius(20)).toBeCloseTo(zoomToRadius(21) * 2, 6);
+  });
+  it('走行視点 zoom 24 は zoom 21 の 1/8 (= ライダーに肉薄)', () => {
+    expect(zoomToRadius(24)).toBeCloseTo(zoomToRadius(21) / 8, 6);
+  });
+  it('zoom が増えるほど半径は単調減少する', () => {
+    let prev = Infinity;
+    for (let z = 14; z <= 26; z += 1) {
+      const r = zoomToRadius(z);
+      expect(r).toBeLessThan(prev);
+      prev = r;
+    }
+  });
+});
+
+describe('createCamera3d.setCameraDefaults: 初期 zoom/pitch の反映', () => {
+  it('zoom を渡すとカメラが target からその半径 (= zoomToRadius) に寄る', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
+    c3d.setCameraDefaults({ zoom: 21, pitch: 85 });
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    // orbit はカメラを target から radius の球面に置く ── 半径 = zoomToRadius(21)。
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(zoomToRadius(21), 3);
+  });
+
+  it('遠い zoom 8 でも RADIUS_MAX 3000m にクランプされる (= 31km 引きすぎ問題の解消)', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
+    c3d.setCameraDefaults({ zoom: 8 });  // zoomToRadius(8) は 30 万 m 超
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(3000, 3);
+  });
+
+  it('近すぎる zoom 30 でも RADIUS_MIN 5m にクランプされる (= ライダーにめり込まない)', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
+    c3d.setCameraDefaults({ zoom: 30 });
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(5, 3);
+  });
+
+  it('zoom 未指定なら半径は変えず pitch だけ反映する', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    const before = dist(c3d.camera.position, { x: 0, y: 0, z: 0 });
+    c3d.setCameraDefaults({ pitch: 70 });  // zoom なし
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(before, 3);
   });
 });

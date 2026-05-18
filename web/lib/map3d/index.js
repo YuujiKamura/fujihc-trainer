@@ -239,6 +239,11 @@ export function createMapRenderer() {
           // 保留していた光源設定を反映 (= boot 前に set された分)。
           if (pending.sunDir != null) scene.setSunlightDirection(pending.sunDir);
           if (pending.sunStrength != null) scene.setSunlightStrength(pending.sunStrength);
+          // 保留していたカメラ初期 zoom/pitch を反映 (= b12 Phase4: camera3d が
+          // setCameraDefaults を実装したので、 ここで pending を流し込めるようになった)。
+          if (pending.camZoom != null || pending.camPitch != null) {
+            camera3d.setCameraDefaults({ zoom: pending.camZoom, pitch: pending.camPitch });
+          }
 
           wireCameraInput(container);
           handleResize();
@@ -265,12 +270,16 @@ export function createMapRenderer() {
 
     // === カメラ ===
 
-    // 初期 zoom / pitch を指定する。 camera3d (確定済の部品4) は defaults setter を
-    // 持たないため Phase3 では値を保留するに留める ── MapLibre の zoom/pitch 数値を
-    // Three.js のカメラ距離・仰角へ写す対応は設計メモ §6 の通り Phase4 の画面確認で詰める。
+    // 初期 zoom / pitch を指定する。 b12 Phase4: camera3d.setCameraDefaults が
+    // MapLibre zoom → Three.js オービット半径の変換を持つので、 camera3d 生成済なら
+    // 即反映、 boot 前なら pending に保留して boot 内で流し込む (= 他 set 系と同じ作法)。
     setCameraDefaults({ zoom, pitch } = {}) {
-      if (Number.isFinite(zoom)) pending.camZoom = zoom;
-      if (Number.isFinite(pitch)) pending.camPitch = pitch;
+      if (camera3d) {
+        camera3d.setCameraDefaults({ zoom, pitch });
+      } else {
+        if (Number.isFinite(zoom)) pending.camZoom = zoom;
+        if (Number.isFinite(pitch)) pending.camPitch = pitch;
+      }
     },
 
     // 毎フレーム、 カメラをライダー現在位置に追随させる。 apply=false なら動かさず

@@ -72,6 +72,17 @@ export function wheelRadius(radius, deltaY, min, max) {
   return Math.min(max, Math.max(min, r));
 }
 
+// MapLibre の zoom 値を Three.js オービット半径 (m) に変換する。
+// MapLibre zoom は +1 で地図縮尺が 2 倍になるので、 カメラ半径は zoom が 1 増えるごとに
+// 半分にする。 基準点 = 走行視点の zoom 21 をオービット半径 40m に合わせた
+// (= ライダー本体 + 前方の路面が画面に収まる距離)。 画面確認で寄り / 引きが
+// 合わなければ ZOOM_RADIUS_REF_M を調整する (= 1 行で寄り具合を変えられる)。
+export const ZOOM_RADIUS_REF_ZOOM = 21;
+export const ZOOM_RADIUS_REF_M = 40;
+export function zoomToRadius(zoom) {
+  return ZOOM_RADIUS_REF_M * Math.pow(2, ZOOM_RADIUS_REF_ZOOM - zoom);
+}
+
 // === ファクトリ (THREE 注入、 描画グルー) ===
 
 // camera3d を生成する。 opts:
@@ -86,9 +97,15 @@ export function createCamera3d(THREE, opts = {}) {
   // MapLibre 準拠のカメラ操作変数 (terrain3d.html L612-616)。
   let bearing = 0;
   let pitch = 61;             // 初期仰角 ≈ 61° (terrain3d.html の初期 phi と揃える)
-  let radius = span * 1.3;
-  const RADIUS_MIN = span * 0.03;
-  const RADIUS_MAX = span * 3.5;
+  // 初期半径は走行視点寄りの 80m (= setCameraDefaults 未呼出でもライダーに寄った絵)。
+  // viewer は loadCourse で setCameraDefaults({zoom,pitch}) を呼ぶのでそこで上書きされる。
+  let radius = 80;
+  // radius のクランプ域 (m)。 terrain3d.html は span 比例 (span*0.03〜span*3.5) だが、
+  // 富士のように span が大きいと最小でも数百 m になり「ライダーに寄れない」。
+  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 3000m
+  // (= コース全体の文脈は見えるが地形全景まで引かない、 31km 引きすぎ問題の解消)。
+  const RADIUS_MIN = 5;
+  const RADIUS_MAX = 3000;
   // 追従カメラの距離定数 (m、 実スケール自転車に合わせた値、 terrain3d.html L622-624)。
   const FOLLOW_BACK = 8;
   const FOLLOW_UP = 1.8;
@@ -146,6 +163,19 @@ export function createCamera3d(THREE, opts = {}) {
       viewH = height;
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+    },
+
+    // 初期 zoom / pitch を反映する。 zoom は MapLibre 値 (走行視点 ≈ 21) で来るので
+    // zoomToRadius でオービット半径 (m) に変換し、 クランプ域に収める。 pitch は度数で、
+    // MapLibre と camera3d で同じ意味 (0=真上, 85=ほぼ水平) なのでそのまま反映する
+    // (= applyOrbit 内で phi 範囲に再クランプされる)。 viewer が loadCourse から呼ぶ。
+    setCameraDefaults({ zoom, pitch: pitchDeg } = {}) {
+      if (Number.isFinite(zoom)) {
+        radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, zoomToRadius(zoom)));
+      }
+      if (Number.isFinite(pitchDeg)) {
+        pitch = pitchDeg;
+      }
     },
 
     // マウス操作 hook (= facade が container の drag / wheel イベントを流し込む)。
