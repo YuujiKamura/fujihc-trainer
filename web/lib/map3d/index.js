@@ -67,6 +67,23 @@ export function distanceAlongCourse(course, curIdx, lat, lon) {
 }
 
 /**
+ * dbBounds が DEM タイル範囲を出せる形か検証する純関数.
+ *
+ * 有効な dbBounds は [west, south, east, north] の有限数 4 要素で、 E>=W かつ N>=S。
+ * これを満たさない値 (undefined / 要素数違い / 非有限 / 東西南北の逆転) を
+ * tileRangeForBounds に渡すと TypeError / RangeError になり、 boot() の catch が
+ * 握りつぶして地形が黙って消える ── boot 側はこの検証で先に弾き明示エラーにする。
+ *
+ * @param {*} b
+ * @returns {boolean}
+ */
+export function isValidBounds(b) {
+  return Array.isArray(b) && b.length === 4
+    && b.every((v) => Number.isFinite(v))
+    && b[2] >= b[0] && b[3] >= b[1];
+}
+
+/**
  * Three.js 版の地図描画レンダラを生成する.
  *
  * map_renderer.js の createMapRenderer() と同じく、 15 の意味メソッドを持つ
@@ -212,6 +229,14 @@ export function createMapRenderer() {
           scene = createScene({ container });
 
           // DEM タイル → 連結標高グリッド。 範囲は course 定義由来の DB bbox。
+          // dbBounds が不正 (undefined 等) だと tileRangeForBounds が TypeError を投げ、
+          // boot ごと catch に落ちて地形が黙って消える。 ここで先に検証し、 原因の読める
+          // 明示エラーにして catch の console.error → onLoaded(8 秒安全弁) 経路へ乗せる。
+          if (!isValidBounds(opts.dbBounds)) {
+            throw new Error(
+              'boot: opts.dbBounds が不正 ── [west,south,east,north] の有限数 4 要素 '
+              + '(E>=W, N>=S) が必要。 受領: ' + JSON.stringify(opts.dbBounds));
+          }
           const tileCache = await openTileCache().catch(() => null);
           const dem = await loadDemStitched({ bounds: opts.dbBounds });
           stitched = dem.stitched;
@@ -349,8 +374,6 @@ export function createMapRenderer() {
         console.warn('[map3d] renderCourse: 地形未準備のため skip');
         return;
       }
-      courseRendered = true;
-
       // 投影パラメータ ── 部品3/6/7 が地形と同じ座標系でコースを drape するために共有する。
       const geoOpts = {
         range,
@@ -392,6 +415,11 @@ export function createMapRenderer() {
       lastTarget = { x: pl.position[0], y: pl.position[1], z: pl.position[2] };
       lastForward = { x: pl.forward[0], y: pl.forward[1], z: pl.forward[2] };
       camera3d.update(lastTarget, lastForward);
+
+      // 冪等ガードのフラグは全構築の成功後に立てる。 途中で throw した場合は false の
+      // ままにして renderCourse を再試行可能に保つ (= フラグを関数頭で立てると、
+      // 1 度の失敗で courseRendered が true に固着し二度と描けなくなる)。
+      courseRendered = true;
     },
 
     // === ライダー ===

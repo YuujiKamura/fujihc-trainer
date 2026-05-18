@@ -6,7 +6,7 @@
 // シーン構築・カメラ・rider) は three / DOM が要るので Phase 4 の画面確認で見る。
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { createMapRenderer, distanceAlongCourse } from '../lib/map3d/index.js';
+import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/map3d/index.js';
 
 // map_renderer.js が定める意味メソッド15個。 Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
@@ -142,5 +142,38 @@ describe('boot() の再入ガード (b12 Phase4 フリーズ回帰の pin)', () 
     r.boot({}, { container: {}, onLoaded() {} });
     expect(() => r.boot({}, { container: {}, onLoaded() {} })).not.toThrow();
     expect(r.isBooted()).toBe(true);
+  });
+});
+
+describe('isValidBounds — dbBounds の検証', () => {
+  it('[west,south,east,north] の有限数 4 要素 (E>=W,N>=S) を受理する', () => {
+    expect(isValidBounds([138.7, 35.3, 138.9, 35.5])).toBe(true);
+  });
+
+  it('E==W / N==S の退化 bbox も受理する (>= 判定)', () => {
+    expect(isValidBounds([138.7, 35.3, 138.7, 35.3])).toBe(true);
+  });
+
+  it('undefined / null / 非配列を弾く', () => {
+    expect(isValidBounds(undefined)).toBe(false);
+    expect(isValidBounds(null)).toBe(false);
+    expect(isValidBounds('138,35,139,36')).toBe(false);
+  });
+
+  it('要素数が 4 でない配列を弾く', () => {
+    expect(isValidBounds([138.7, 35.3, 138.9])).toBe(false);
+    expect(isValidBounds([138.7, 35.3, 138.9, 35.5, 0])).toBe(false);
+    expect(isValidBounds([])).toBe(false);
+  });
+
+  it('非有限値 (NaN / Infinity / 文字列) を含む配列を弾く', () => {
+    expect(isValidBounds([138.7, NaN, 138.9, 35.5])).toBe(false);
+    expect(isValidBounds([138.7, 35.3, Infinity, 35.5])).toBe(false);
+    expect(isValidBounds(['138.7', 35.3, 138.9, 35.5])).toBe(false);
+  });
+
+  it('東西 / 南北が逆転した bbox を弾く (E<W, N<S)', () => {
+    expect(isValidBounds([138.9, 35.3, 138.7, 35.5])).toBe(false);  // E<W
+    expect(isValidBounds([138.7, 35.5, 138.9, 35.3])).toBe(false);  // N<S
   });
 });
