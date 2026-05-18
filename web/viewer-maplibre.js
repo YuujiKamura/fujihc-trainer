@@ -1,9 +1,11 @@
 // fujihill viewer - MapLibre GL JS 試験版
 // Cesium を廃止、 GSI 標高 + OSM raster で 3D 地形表示。
 // addProtocol で GSI dem_png を terrarium 形式に変換して MapLibre の terrain に食わせる。
-// brief 21: GSI 6m grid を bilinear 4x で 1.5m grid 等価に upsample、 ride 視点を滑らかに.
-
-import { gsiToTerrariumUpsampled } from './lib/terrain_mesh.js';
+// b12 Phase 2: 地図描画は map_renderer.js に集約。 viewer 本体は map インスタンスを
+// 持たず、 createMapRenderer() の返す renderer 経由でしか地図を触らない (= 差し替え口)。
+import { createMapRenderer } from './lib/map_renderer.js';
+// b12 Phase 1: 富士ヒル固有値 (bounds / center / course file) は course 定義に集約.
+import { fujihill } from './courses/fujihill.js';
 // brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
 import { smoothCourse } from './lib/gpx_smooth.js';
 // brief 24 + 25: 勾配グレード別色分けで「一定幅の道路 polygon」として描画
@@ -14,8 +16,7 @@ import { buildSegmentLabels } from './lib/segment_labels.js';
 import { getMeshCache, setMeshCache, computeCourseHash } from './lib/mesh_cache.js';
 // brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
 import {
-  riderFrameChanged, parseTileCoord, terrainTileKey, terrainCacheKind,
-  createTextWriter, minimapDirty,
+  riderFrameChanged, createTextWriter, minimapDirty,
 } from './lib/frame_diff.js';
 // Path B Phase 0: ライド HUD の表示更新を hud.js に集約 (= MapLibre/Three.js 非依存)。
 import {
@@ -40,10 +41,6 @@ import { computeTravelHeading } from './lib/heading.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
 // (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
 import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
-// brief 31: pmtiles:// protocol を MapLibre に登録 (= GitHub Pages 静的 mode 用)。
-// vendored pmtiles.js は web/lib/vendor/pmtiles.js (BSD-3-Clause)、 index.html の
-// <script> で window.pmtiles を IIFE 化、 ここでは window 経由で参照する。
-import { registerPmtilesProtocol } from './lib/pmtiles_loader.js';
 // brief 31 commit γ: checkSetupStatus を lib 抽出して behavioral test 可能に
 import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_status.js';
 // brief 33: ride 終了時の 4 button bind (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
@@ -74,11 +71,8 @@ import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sectio
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
 import { createTerrainLoader } from './lib/terrain_loader.js';
 
-// upsample 倍率. 2 で 256x256 -> 512x512。 bilinear upsample は元 DEM に無い情報を
-// 生まない (= ただの補間)、 4 は 1 タイル 4 MB RGBA を生んで VRAM / 転送帯域を浪費する。
-// 低 VRAM GPU (= RX 6400 等) では DEM テクスチャ転送が描画の支配項になるため 2 に下げる
-// (= VRAM は 4 の 1/4)。 2 でメッシュは十分滑らか、 視覚差は実質ゼロ。
-const TERRAIN_UPSAMPLE_FACTOR = 2;
+// b12 Phase 2: 地図描画 renderer。 viewer 本体が地図を触る唯一の窓口。
+const mapRenderer = createMapRenderer();
 
 const status = (msg) => { document.getElementById('status').textContent = msg; };
 
@@ -98,116 +92,8 @@ const BASE_PATH = location.pathname.replace(/\/[^/]*$/, '/');
 const BRIDGE_TILE_BASE_URL = `${location.origin}/tiles`;
 const STATIC_TILE_BASE_URL = `${location.origin}${BASE_PATH}static`;
 
-// === GSI 標高 PNG を terrarium 形式 PNG に変換するカスタムプロトコル ===
-// brief 21: 変換ロジックは web/lib/terrain_mesh.js に切出し済 (= test 6 件で pin)、
-// ここはタイル DL + Canvas decode + lib 呼出 + Blob 出力の thin adapter のみ.
-maplibregl.addProtocol('gsidem', (params) => {
-  const url = params.url.replace(/^gsidem:\/\//, '');
-  return new Promise((resolve, reject) => {
-    // brief b2 Critical-2: terrarium 変換結果 (= 重い CPU 処理) を mesh_cache に persist。
-    // key = z/x/y タイル座標、 kind = terrain-u<倍率> (= 倍率変更で旧 cache を物理的に
-    // hit させず stale を防ぐ)。 2 回目以降は DL + Canvas decode + upsample を完全 bypass。
-    const coord = parseTileCoord(url);
-    const cacheKind = terrainCacheKind(TERRAIN_UPSAMPLE_FACTOR);
-    const tileKey = coord ? terrainTileKey(coord.z, coord.x, coord.y) : null;
-
-    // 既存経路: タイル DL → Canvas decode → 純関数 upsample → PNG bytes。
-    // 成功時、 PNG bytes を mesh_cache へ fire-and-forget で書く (= 書き込み失敗で
-    // 起動を block しない、 次回 reload で再 attempt)。
-    const decodeAndUpsample = () => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const W = img.width, H = img.height;
-        const srcCanvas = document.createElement('canvas');
-        srcCanvas.width = W; srcCanvas.height = H;
-        const sctx = srcCanvas.getContext('2d');
-        sctx.drawImage(img, 0, 0);
-        let srcImage;
-        try { srcImage = sctx.getImageData(0, 0, W, H); }
-        catch (e) { reject(e); return; }
-        // 純関数で bilinear upsample + GSI -> terrarium 変換 (= brief 21).
-        const result = gsiToTerrariumUpsampled(srcImage.data, W, H, TERRAIN_UPSAMPLE_FACTOR);
-        const dstCanvas = document.createElement('canvas');
-        dstCanvas.width = result.width;
-        dstCanvas.height = result.height;
-        const dctx = dstCanvas.getContext('2d');
-        const dstImage = dctx.createImageData(result.width, result.height);
-        dstImage.data.set(result.data);
-        dctx.putImageData(dstImage, 0, 0);
-        dstCanvas.toBlob((blob) => {
-          if (!blob) { reject(new Error('toBlob failed')); return; }
-          blob.arrayBuffer().then((buf) => {
-            const bytes = new Uint8Array(buf);
-            if (tileKey) {
-              setMeshCache(tileKey, cacheKind, { png: bytes }).catch(() => {});
-            }
-            resolve({ data: bytes });
-          }).catch(reject);
-        }, 'image/png');
-      };
-      img.onerror = () => reject(new Error('GSI tile load failed: ' + url));
-      img.src = url;
-    };
-
-    if (tileKey) {
-      // cache lookup → hit で decode/upsample を bypass。 miss / 例外いずれも
-      // getMeshCache は null を返すので既存経路に fail-open する。
-      getMeshCache(tileKey, cacheKind).then((rec) => {
-        if (rec && rec.arrays && rec.arrays.png) {
-          resolve({ data: rec.arrays.png });
-        } else {
-          decodeAndUpsample();
-        }
-      }).catch(() => decodeAndUpsample());
-    } else {
-      decodeAndUpsample();
-    }
-  });
-});
-
-// === Map 初期化 ===
-// brief 31: bridge mode と GitHub Pages 静的 mode で source URL が違うため、
-// style 構築を `buildMapStyle({bridgeReachable})` に切り出して 2 mode 共有。
-// COMMON_LAYERS / COMMON_SKY は mode 非依存 (= layers は source.id 名で参照、
-// 物理化された 1 コピー、 NG-R1-11 双子コピペ回避)。
-// 旧 const map = new maplibregl.Map(...) は撤回、 `bootCheckSetupStatus` で
-// bridgeReachable を確定してから `bootMap(bridgeReachable)` で生成する遅延化。
-const COMMON_LAYERS = [
-  // 背景の単色 (= PMTiles 未整備時の fallback、 灰白で地形の凹凸が見える)
-  { id: 'bg', type: 'background', paint: { 'background-color': '#e8e8e8' } },
-  // Protomaps の標準 vector layer (= name は Protomaps OpenMapTiles 互換 schema 前提)
-  // PMTiles に layer が存在しない場合は MapLibre が silent skip、 fallback bg が見える
-  { id: 'earth', type: 'fill', source: 'osm', 'source-layer': 'earth',
-    paint: { 'fill-color': '#f5f5f0' } },
-  { id: 'water', type: 'fill', source: 'osm', 'source-layer': 'water',
-    paint: { 'fill-color': '#a8d8ea' } },
-  { id: 'landuse-forest', type: 'fill', source: 'osm', 'source-layer': 'landuse',
-    filter: ['in', 'kind', 'forest', 'wood', 'park'],
-    paint: { 'fill-color': '#cfe7c8', 'fill-opacity': 0.7 } },
-  { id: 'roads', type: 'line', source: 'osm', 'source-layer': 'roads',
-    paint: { 'line-color': '#888', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6] } },
-  { id: 'roads-major', type: 'line', source: 'osm', 'source-layer': 'roads',
-    filter: ['in', 'kind', 'highway', 'major_road'],
-    paint: { 'line-color': '#ffb84d', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, 3, 22, 12] } },
-  // 地形シェーディング + 光源方向 (= 朝の太陽を南東から、 山の片面を明るく / 反対面を陰に).
-  // illumination-direction 135 = 南東 (= 0=北、 90=東、 180=南、 270=西)、
-  // illumination-anchor 'map' で地理北基準 (= viewport rotate に追従しない).
-  // exaggeration 1.0 + shadow #000000 + highlight #ffffff で凹凸クッキリ.
-  { id: 'hillshade', type: 'hillshade', source: 'gsi-terrain',
-    paint: {
-      'hillshade-exaggeration': 1.0,
-      'hillshade-shadow-color': '#000000',
-      'hillshade-highlight-color': '#ffffff',
-      'hillshade-accent-color': '#404040',
-      'hillshade-illumination-direction': 135,
-      'hillshade-illumination-anchor': 'map',
-    } },
-  // brief 17b: prefetch 削除済、 fetch 経路は MapLibre on-demand のみ
-];
-
-// 空のグラデ: 上が濃青、 下 (= 水平線寄り) が白っぽい (= 朝/昼の自然な空).
-const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-color': '#d8d0c8' };
+// b12 Phase 2: gsidem カスタムプロトコル / COMMON_LAYERS / COMMON_SKY / buildMapStyle は
+// web/lib/map_renderer.js に集約済 (= 地図描画モジュールの内側)。 viewer 本体は持たない。
 
 // brief 34 ε-7: 富士スバルライン専用 DB bbox (= MapLibre の vector/DEM source 用).
 // MapLibre の source に bounds として渡すと「この範囲外は要求しない」を伝えられる、
@@ -218,65 +104,16 @@ const COMMON_SKY = { 'sky-color': '#3a7cc4', 'horizon-color': '#e8f0f8', 'fog-co
 // 別 canvas (上半分 minimap) の z=11 raster pre-fetch 範囲。 minimap は
 // course bbox + 20% margin + buffer=1 で 16 タイル要求するため MINIMAP_BBOX
 // の方が広い (= MINIMAP_BBOX ⊃ FUJIHILL_DB_BOUNDS)。
-export const FUJIHILL_DB_BOUNDS = [138.65, 35.30, 138.85, 35.50];
+// b12 Phase 1: 値の正本は web/courses/fujihill.js に移動。 ここは後方互換の
+// re-export (= 既存の test / import を壊さない)。 値は完全に同一。
+export const FUJIHILL_DB_BOUNDS = fujihill.dbBounds;
 // center は bbox 中央 (= 138.75, 35.40)、 default view が DB 内に確実に収まる位置。
-export const FUJIHILL_DB_CENTER = [138.75, 35.40];
+export const FUJIHILL_DB_CENTER = fujihill.dbCenter;
 
-export function buildMapStyle(env) {
-  // brief 31 commit β: env (= immutable ENV object) 受け、 bridgeReachable は env.mode で判定。
-  // 後方互換のため `{bridgeReachable: bool}` を渡されても動く (= env.bridgeReachable / env.mode は
-  // 同一 ENV object で同期、 旧 caller を破壊しない signature 拡張)。
-  const bridgeReachable = env && (env.mode === 'bridge' || env.bridgeReachable === true);
-  // bridge mode: 個別 PBF / PNG file ツリーを localhost /tiles から fetch (= 従来)。
-  // static mode: PMTiles 単一 file (pmtiles:// scheme) + ${BASE_PATH}static/tiles/gsi_dem 配下 PNG。
-  // brief 34 ε-7: 両 mode の osm / gsi-terrain source に bounds を設定 (= 範囲外要求を抑制).
-  const sources = bridgeReachable
-    ? {
-        'osm': {
-          type: 'vector',
-          tiles: [`${BRIDGE_TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf`],
-          minzoom: 13,
-          maxzoom: 15,
-          bounds: FUJIHILL_DB_BOUNDS,
-          attribution: '© OpenStreetMap contributors',
-        },
-        'gsi-terrain': {
-          type: 'raster-dem',
-          tiles: [`gsidem://${BRIDGE_TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png`],
-          tileSize: 256,
-          encoding: 'terrarium',
-          minzoom: 8,
-          maxzoom: 14,
-          bounds: FUJIHILL_DB_BOUNDS,
-          attribution: '国土地理院 標高タイル',
-          volatile: false,
-        },
-      }
-    : {
-        'osm': {
-          type: 'vector',
-          url: `pmtiles://${STATIC_TILE_BASE_URL}/map.pmtiles`,
-          bounds: FUJIHILL_DB_BOUNDS,
-          attribution: '© OpenStreetMap contributors',
-        },
-        'gsi-terrain': {
-          type: 'raster-dem',
-          tiles: [`gsidem://${STATIC_TILE_BASE_URL}/tiles/gsi_dem/{z}/{x}/{y}.png`],
-          tileSize: 256,
-          encoding: 'terrarium',
-          minzoom: 8,
-          maxzoom: 14,
-          bounds: FUJIHILL_DB_BOUNDS,
-          attribution: '国土地理院 標高タイル',
-          volatile: false,
-        },
-      };
-  return { version: 8, sources, layers: COMMON_LAYERS, sky: COMMON_SKY };
-}
+// b12 Phase 2: buildMapStyle は map_renderer.js が持つ。 viewer は renderer.boot に
+// course 定義の dbBounds / dbCenter を渡すだけで、 style 構築の中身は触らない。
 
-// map は `bootMap` で生成、 それまで null。 全 caller (= setupWheelZoom / loadCourse 等)
-// は bootMap 完了後に呼ばれるため、 null 参照は起きない。
-let map = null;
+// 地図インスタンスは mapRenderer の内側。 viewer は mapRenderer.isBooted() で生成済を判定する。
 // brief 31 commit β: bridge/static mode 判定を immutable env object に集約
 // (= 旧 `let _bridgeReachable = true` の mutable + race door を廃止)。
 // ENV は `bootEnv()` 完了後に Object.freeze 済の値が入り、 以後変更されない。
@@ -294,107 +131,50 @@ async function bootEnv() {
     mode,
     bridgeReachable: s.bridgeReachable,
     tileBase: s.bridgeReachable ? BRIDGE_TILE_BASE_URL : STATIC_TILE_BASE_URL,
-    courseUrl: s.bridgeReachable ? 'course.json' : `${BASE_PATH}static/course.json`,
+    courseUrl: s.bridgeReachable ? fujihill.courseFile : `${BASE_PATH}static/${fujihill.courseFile}`,
     setupStatus: s,
   });
   return ENV;
 }
 
+// b12 Phase 2: 地図インスタンス生成 / protocol 登録 / load・idle・error 結線は
+// map_renderer.js の renderer.boot に委譲。 viewer 本体は course 定義の dbBounds /
+// dbCenter を渡し、 load 完了後の起動継続 (= onMapLoaded) だけを担う。
 function bootMap(env) {
-  // pmtiles:// protocol は idempotent (= 冪等)、 bridge mode でも害なし。
-  // index.html の <script src="./lib/vendor/pmtiles.js"> で window.pmtiles が IIFE 化済。
-  if (typeof window !== 'undefined' && window.pmtiles) {
-    try { registerPmtilesProtocol(maplibregl, window.pmtiles); }
-    catch (e) { console.warn('pmtiles protocol register failed:', e && e.message); }
-  }
-  map = new maplibregl.Map({
-    container: 'map',
-    style: buildMapStyle(env),
-    // brief 34 ε-7: default center を DB bbox 中央 (= 138.75, 35.40) に寄せて、
-    // 起動直後の view が確実に DB 範囲内に収まるようにする (= 404 量産抑制).
-    // 旧 [138.7587, 35.4521] (= 富士スバルライン Start 付近) は bbox 内ではあるが端寄り、
-    // 中央寄せの方が default view から見える範囲が広い。
-    center: FUJIHILL_DB_CENTER,
-    zoom: 13,
-    pitch: 60,
-    bearing: 0,
-    // pitch を default 60 → 85 まで拡張、 zoom 上限も MapLibre の最大 22 まで開放
-    maxPitch: 85,  // MapLibre 仕様上の最大値 (= 89 にすると new Map で throw、 map 起動失敗).
-    minPitch: 0,
-    maxZoom: 24,
-    minZoom: 13,
-    // タイル memory cache. brief 21 で GSI dem を 4x upsample (1024x1024 RGBA = 4 MB/tile)、
-    // 200 だと 800 MB VRAM 圧迫. 50 で 200 MB 上限、 ride viewport (= 9 タイル) には十分.
-    maxTileCacheSize: 50,
-    // タイルのクロスフェード短縮、 GPU 負荷軽減
-    fadeDuration: 0,
+  return mapRenderer.boot(env, {
+    dbBounds: fujihill.dbBounds,
+    dbCenter: fujihill.dbCenter,
+    onLoaded: onMapLoaded,
   });
-  // 2026-05-17 fix: loadCourse() / rider 初期化を map の 'load' イベントに結線していたが、
-  // vector / pmtiles source の初期化が致命的に失敗する (= Range request 非対応サーバ等で
-  // byte-serving が落ちる) と MapLibre は 'load' を永遠に発火しない。 その結果 loadCourse が
-  // 一度も呼ばれず、 rideState が生成されず、 「描画準備中...」 overlay が永久に残り
-  // HUD の total が "?" のまま固まる (= 実画面で確認された起動不全)。
-  // 修正: load handler の本体を onMapLoad() に括り出し、 'load' 発火と 8 秒 fallback の
-  // 両方から呼べるようにする。 _mapLoadHandled で多重実行を防止。 course 描画 / rideState
-  // 生成は地図 tile の成否に依存しないので、 tile が落ちても rider は出て走れる。
-  let _mapLoadHandled = false;
-  function onMapLoad() {
-    if (_mapLoadHandled) return;
-    _mapLoadHandled = true;
-    // setTerrain は style 読込後でないと throw する。 style 未完なら try-catch で握り潰し、
-    // 地形なしでも course / rider 描画は続行する (= fail-open)。
-    try { map.setTerrain({ source: 'gsi-terrain', exaggeration: 1.0 }); }
-    catch (e) { console.warn('setTerrain skipped:', e && e.message); }
-    status('map loaded');
-    // 2026-05-15 fix: 「地形 data が出揃うまでデモ走行ボタンを押せないようにしろ」反映。
-    // probe ok だけでは「最低限の起動」、 実 viewport の地図全 tile 描画完了は別。
-    // map.on('idle') は viewport 内の全 source / tile load 完了で 1 度発火、
-    // ここで mapFullyLoaded = true にして terrain probe ok と AND で button enable。
-    map.once('idle', () => {
+}
+
+// 地図 'load' 完了後の viewer 側起動継続。 setTerrain / 操作系 disable は renderer が
+// 済ませた後にここが呼ばれる (= status / idle gate / カメラ入力 bind / コース描画)。
+// 2026-05-17 fix: loadCourse / rider 初期化を 'load' に直結すると、 source 初期化失敗で
+// 'load' が永遠未発火のとき loadCourse が走らず起動不全になる。 renderer.boot 側が
+// 'load' と 8 秒 fallback の両方から onLoaded を呼ぶため、 ここは必ず 1 度実行される。
+function onMapLoaded() {
+  status('map loaded');
+  // 'idle' = viewport 内の全 source / tile load 完了。 terrain probe ok と AND で
+  // button enable する (= mapFullyLoaded)。
+  mapRenderer.onceIdle(() => {
+    mapFullyLoaded = true;
+    updateActionButtonsForTerrain();
+  });
+  // idle 永遠未発火 (= 一部 tile 404 / load 失敗で全 tile 揃わない) を想定して 5 秒 fallback。
+  // 過剰待ちで permanent disabled に陥らない安全弁。
+  setTimeout(() => {
+    if (!mapFullyLoaded) {
       mapFullyLoaded = true;
       updateActionButtonsForTerrain();
-    });
-    // 2026-05-15 fix: idle 永遠未発火 (= 一部 tile 404 / load 失敗で全 tile 揃わない) を
-    // 想定して 5 秒 fallback。 過剰待ちで permanent disabled に陥らない安全弁。
-    setTimeout(() => {
-      if (!mapFullyLoaded) {
-        mapFullyLoaded = true;
-        updateActionButtonsForTerrain();
-      }
-    }, 5000);
-    // 操作系: マウスホイールで zoom (default 維持)、 縦ドラッグで pitch だけ変更、
-    // 横ドラッグ (bearing 回転) は AI が進行方向に自動セットするので無効化
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-    map.dragPan.disable();
-    // MapLibre 標準の scrollZoom は「マウスポインタ位置を中心に zoom」する。 これだと
-    // tick で rider に center を戻すまでに毎フレーム rider がズレて見える。
-    // scrollZoom を切って、 自前で「wheel → userZoom を増減 → map.setZoom (現 center 維持)」に。
-    map.scrollZoom.disable();
-    setupWheelZoom();
-    setupPitchDrag();
-    loadCourse();
-    // brief 34 ε-6: 帰属表示 (= attribution control) の display を 1 度 assert。
-    // CSS で `display:none` にされたら OSM ODbL / 国土地理院 規約違反、 warning を出す
-    // (= block はせず flag のみ、 harm 主体は inject した訪問者本人).
-    requestAnimationFrame(() => verifyAttributionVisible());
-  }
-  map.on('load', onMapLoad);
-  // fallback: 8 秒待っても 'load' が来なければ強制で onMapLoad を実行 (= source 初期化失敗で
-  // 'load' が永遠に発火しない MapLibre の挙動への安全弁)。 多重実行は _mapLoadHandled で防ぐ。
-  setTimeout(() => {
-    if (!_mapLoadHandled) {
-      console.warn('[fujihill] map load イベント 8 秒未発火、 fallback で起動続行');
-      onMapLoad();
     }
-  }, 8000);
-  map.on('error', (e) => {
-    // e.error の中身まで出す (= '[object Object]' だけだとデバッグ不能)。
-    const err = e && e.error;
-    const detail = err && (err.message || err.url) ? (err.message || err.url) : (err ?? e);
-    console.warn('maplibre error:', detail);
-  });
-  return map;
+  }, 5000);
+  setupWheelZoom();
+  setupPitchDrag();
+  loadCourse();
+  // brief 34 ε-6: 帰属表示 (= attribution control) の display を 1 度 assert。
+  // CSS で `display:none` にされたら OSM ODbL / 国土地理院 規約違反、 warning を出す。
+  requestAnimationFrame(() => verifyAttributionVisible());
 }
 
 let course = [];
@@ -471,13 +251,13 @@ let lastAutosaveT = 0;
 let rideStartedIso = null;  // ride 開始時の ISO 文字列 (= autosave に保存する rideStartedAt)
 
 function setupWheelZoom() {
-  const mapEl = map.getContainer();
+  const mapEl = mapRenderer.getContainerEl();
   mapEl.addEventListener('wheel', (e) => {
     e.preventDefault();
     // wheel 1 回 = zoom ±0.5 (= 元の感度 5 倍相当)、 center は触らない (次フレームで rider に戻る)
     const delta = -Math.sign(e.deltaY) * 0.5;
     userZoom = adjustZoom(userZoom, delta);
-    map.setZoom(userZoom);
+    mapRenderer.setZoom(userZoom);
   }, { passive: false });
 }
 
@@ -487,10 +267,10 @@ function setupWheelZoom() {
 let userBearingOffset = 0;
 
 function setupPitchDrag() {
-  const mapEl = map.getContainer();
+  const mapEl = mapRenderer.getContainerEl();
   let drag = null;
   mapEl.addEventListener('mousedown', (e) => {
-    drag = { x: e.clientX, y: e.clientY, pitch: map.getPitch(), bearingOffset: userBearingOffset };
+    drag = { x: e.clientX, y: e.clientY, pitch: mapRenderer.getPitch(), bearingOffset: userBearingOffset };
     e.preventDefault();
   });
   window.addEventListener('mousemove', (e) => {
@@ -501,7 +281,7 @@ function setupPitchDrag() {
     // 既存式: newPitch = drag.pitch - dy * 2.0、 adjustPitch(currentPitch, delta) で同じ結果に: delta = -dy * 2.0
     const newPitch = adjustPitch(drag.pitch, -dy * 2.0);
     userPitch = newPitch;
-    map.setPitch(newPitch);
+    mapRenderer.setPitch(newPitch);
     // 横移動で bearing offset を加算 (= 1 pixel = 0.5 度、 360 で正規化).
     // 進行方向に対する相対視線として持つので、 tick で smoothBearing に足し込んで適用.
     userBearingOffset = ((drag.bearingOffset + dx * 0.5) % 360 + 360) % 360;
@@ -516,14 +296,10 @@ function setupPitchDrag() {
 // - dbinit: DB 不足、 #dbinit-overlay で GSI fetch / OSM extract / skip を user に提示
 // - pairing: 既存 BLE flow (= state-pairing と同じ挙動)
 // - riding: 既存 ride 中
-// start/goal の MapLibre Marker への参照 (= ride 中 hide 用、 loadCourse で初期化)
-let startGoalMarkers = [];
+// start/goal マーカーの実体は map_renderer が保持。 ride 中はメイン map から hide する。
 function updateStartGoalVisibility() {
   const hide = document.body.classList.contains('state-riding');
-  for (const m of startGoalMarkers) {
-    const el = m.getElement && m.getElement();
-    if (el) el.style.display = hide ? 'none' : 'block';
-  }
+  mapRenderer.setStartGoalMarkersVisible(!hide);
 }
 
 // brief b-segment-labels / b9: 道路セグメント上の「距離+勾配」ラベルを描く symbol
@@ -578,8 +354,8 @@ try {
 // ラベル倍率を route-labels layer に適用する (= layer 未生成なら次の生成時に反映)。
 function applyLabelSize(scale) {
   labelSizeScale = scale;
-  if (map && map.getLayer && map.getLayer('route-labels')) {
-    map.setLayoutProperty('route-labels', 'icon-size', scale);
+  if (mapRenderer.hasLayer('route-labels')) {
+    mapRenderer.setLayoutProperty('route-labels', 'icon-size', scale);
   }
 }
 
@@ -595,10 +371,10 @@ let _lastLabelDistBucket = -1;   // setFilter 呼出を 50m 刻みに間引く�
 // route-labels layer の距離窓フィルタを rider 現在地に合わせて更新する。
 // setFilter は feature の再 tessellate を伴わない軽い操作 (= 50m 毎に呼んで十分軽い)。
 function updateSegmentLabelFilter() {
-  if (!map || !map.getLayer || !map.getLayer('route-labels')) return;
+  if (!mapRenderer.hasLayer('route-labels')) return;
   const lo = _riderDistForLabels - LABEL_BACK_M;
   const hi = _riderDistForLabels + LABEL_AHEAD_M;
-  map.setFilter('route-labels', [
+  mapRenderer.setFilter('route-labels', [
     'all',
     ['>=', ['get', 'distance_m'], lo],
     ['<=', ['get', 'distance_m'], hi],
@@ -1060,7 +836,7 @@ function connectBridge() {
 // setup-overlay 内に専用 button group (#ble-section) を unhide して click 起点で発火.
 async function initBleMode() {
   // map は既存 default mode と同じ. bridge への HTTP 不在で static tile に倒す.
-  if (!map) { ensureMapBooted().then(() => initBleMode()); return; }
+  if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initBleMode()); return; }
   setAppState('pairing');
   // brief 34 ε-1 で setup-overlay の default class="visible" を撤去したため、
   // intro 通過後の遷移先 (= initBleMode / bootCheckSetupStatus 経由 connectBridge) で
@@ -1110,7 +886,7 @@ async function initBleMode() {
 // 旧 `bootMap(s.bridgeReachable)` を `bootMap(env)` に rewire し、 引数の単一化で
 // race door (= bridgeReachable bool が複数経路から渡される可能性) を構造的に消す。
 async function ensureMapBooted() {
-  if (map) return;
+  if (mapRenderer.isBooted()) return;
   const env = await bootEnv();
   bootMap(env);
 }
@@ -1118,7 +894,7 @@ async function ensureMapBooted() {
 function initTestMode() {
   // brief 31: bootMap が未呼出なら map を先に立ち上げる (= ?test=1 経路、 module top dispatch)。
   // 既存 bootCheckSetupStatus 経路から呼ばれた場合 map は既生成、 ensureMapBooted は no-op。
-  if (!map) { ensureMapBooted().then(() => initTestMode()); return; }
+  if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initTestMode()); return; }
   status('TEST MODE: bridge/trainer 不要、 fake state 1Hz でループ');
   setText('setup-status', 'TEST MODE: 接続スキップ、 ride 開始ボタンが押せる');
   setText('p-device', 'TEST MODE (no trainer)');
@@ -1486,7 +1262,7 @@ function dispatchAfterIntro() {
 // section 選択 → rideState.startFrom(start_idx) で fake state ride を開始、
 // 走行ログは保存しない (= IndexedDB / Strava upload を物理 disable は body.mode-view CSS + flag 経由).
 function initViewMode() {
-  if (!map) { ensureMapBooted().then(() => initViewMode()); return; }
+  if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initViewMode()); return; }
   status('VIEW MODE: 観るモード (= trainer 不要、 区間勾配を眺める)');
   document.body.classList.add('mode-view');
   // 全 overlay を hide してから section-overlay を出す (= 視覚的に他 UI を排他).
@@ -1813,7 +1589,7 @@ function applyPendingRestore() {
 checkRestoreThenDispatch();
 
 function initMapMode() {
-  if (!map) { ensureMapBooted().then(() => initMapMode()); return; }  // brief 31
+  if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initMapMode()); return; }  // brief 31
   status('MAP MODE: UI 操作なしで地図表示のみ確認');
   // 全 overlay を hide (= 視界をクリアにして地図 + HUD + minimap だけ見せる)
   hideDbinit();
@@ -1845,7 +1621,7 @@ function initMapMode() {
     rideState.start();
     rideStartedAt = performance.now();
   }
-  map.once('idle', () => { mapIdle = true; tryStart(); });
+  mapRenderer.onceIdle(() => { mapIdle = true; tryStart(); });
   // fallback: 6 秒待っても idle が来なければ強制 start (= terrain dem の継続 fetch で
   // idle が永遠に発火しない MapLibre の挙動 workaround).
   setTimeout(() => { if (!mapIdle) { mapIdle = true; tryStart(); } }, 6000);
@@ -1948,7 +1724,7 @@ async function loadCourse() {
   // brief 34 ε-F: course 不変前提で polygon 計算結果を IndexedDB に persist。 2 回目以降の
   // 起動では既存 cache を読み戻し、 buildGradeColoredRoadPolygons (= 全 segment の expansion +
   // 勾配 grade 計算) を完全 skip。 cache miss / IDB 不在は既存経路に fallback (= no-op fail-open).
-  if (!map.getSource('route')) {
+  if (!mapRenderer.hasSource('route')) {
     const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const courseHash = computeCourseHash(course);
     let polygonData = null;
@@ -1971,7 +1747,7 @@ async function loadCourse() {
     }
     const dt = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0;
     console.log(`[mesh_cache] polygon ${cacheHit ? 'HIT' : 'MISS'} ${dt.toFixed(1)}ms hash=${courseHash}`);
-    map.addSource('route', { type: 'geojson', data: polygonData });
+    mapRenderer.addSource('route', { type: 'geojson', data: polygonData });
     // brief b2 High-3: 帯ポリゴン (1968 セグメント) の zoom 連動再生成を撤去。
     // 旧実装は map.on('zoom') ごとに buildGradeColoredRoadPolygons を再実行し
     // 全頂点を GPU に再アップロードしていた (= zoom 操作中 1 回 31〜63ms の stall)。
@@ -1981,7 +1757,7 @@ async function loadCourse() {
     // Fix2: 道路 polygon を **最前面** に挿入 (= beforeId 削除).
     // 旧仕様で beforeId='roads' にしていたが、 OSM roads-major (= 橙線) が
     // polygon を貫いて表示されてしまうため、 polygon を上に置いて道幅を露出させる.
-    map.addLayer({
+    mapRenderer.addLayer({
       id: 'route-fill',
       type: 'fill',
       source: 'route',
@@ -1994,7 +1770,7 @@ async function loadCourse() {
       },
     });
     // 細い線で polygon の縁取り (= zoom out 時の視認性確保)
-    map.addLayer({
+    mapRenderer.addLayer({
       id: 'route-line',
       type: 'line',
       source: 'route',
@@ -2015,8 +1791,8 @@ async function loadCourse() {
     const segLabelFeatures = [];
     segLabels.forEach((lbl, i) => {
       const imageId = `seg-label-${i}`;
-      if (!map.hasImage(imageId)) {
-        map.addImage(imageId, makeSegLabelImage(lbl.text));
+      if (!mapRenderer.hasImage(imageId)) {
+        mapRenderer.addImage(imageId, makeSegLabelImage(lbl.text));
       }
       segLabelFeatures.push({
         type: 'Feature',
@@ -2024,11 +1800,11 @@ async function loadCourse() {
         properties: { icon: imageId, distance_m: lbl.distance_m },
       });
     });
-    map.addSource('route-labels', {
+    mapRenderer.addSource('route-labels', {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: segLabelFeatures },
     });
-    map.addLayer({
+    mapRenderer.addLayer({
       id: 'route-labels',
       type: 'symbol',
       source: 'route-labels',
@@ -2059,10 +1835,10 @@ async function loadCourse() {
   // start (緑) / goal (赤) pin: pairing / dbinit 中は表示、 ride 中は hide
   // (= MapLibre Marker は DOM SVG で polygon の上に描画され「うっすら前に浮く」、
   //   ride 視点では minimap に start/goal が見えるのでメイン map から退ける).
-  startGoalMarkers = [
-    new maplibregl.Marker({ color: '#7fff00' }).setLngLat([course[0].lon, course[0].lat]).addTo(map),
-    new maplibregl.Marker({ color: '#ff3030' }).setLngLat([course[course.length - 1].lon, course[course.length - 1].lat]).addTo(map),
-  ];
+  mapRenderer.setStartGoalMarkers(
+    [course[0].lon, course[0].lat],
+    [course[course.length - 1].lon, course[course.length - 1].lat],
+  );
   updateStartGoalVisibility();
 
   // rider マーカー: fill-extrusion で 3D 立体。 buildRiderFeatures が複数 part
@@ -2070,8 +1846,8 @@ async function loadCourse() {
   // 2026-05-17: 旧来は cyan 1m 角の豆腐 1 個。 慣性シミュの自転車に寄せ、 低く長い暗色の
   // 車体 + その上に立つ cyan の rider のシルエットにした。 MapLibre は上方押し出しのみで
   // スポーク等の 3D 詳細は描けないため、 シルエットで「自転車に乗った rider」 を表す。
-  map.addSource('rider', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  map.addLayer({
+  mapRenderer.addSource('rider', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  mapRenderer.addLayer({
     id: 'rider-body',
     type: 'fill-extrusion',
     source: 'rider',
@@ -2105,7 +1881,7 @@ async function loadCourse() {
   }
   // user が縦ドラッグ / ホイールで再調整可、 その値が以後 default になる挙動
   const cam0 = computeCameraParams(course, { curIdx: 0 }, { userZoom, userPitch, lookAhead: 20 });
-  map.jumpTo(cam0);
+  mapRenderer.jumpTo(cam0);
   lastT = performance.now();
   requestAnimationFrame(tick);
 }
@@ -2466,11 +2242,11 @@ function tick(t) {
   // brief b2 Critical-1: rider GeoJSON の再構築 + GPU 再アップロード (setData) は
   // source 全体を再パース・再 tessellate・再 buffer する重い処理。 位置 / 向き /
   // スピンが前フレームから動いた時だけ実行し、 停止中は丸ごと skip する。
-  const ridSrc = map.getSource && map.getSource('rider');
-  if (ridSrc) {
+  {
     const riderFrame = { lat: rLat, lon: rLon, heading: riderTileHeadingRad, spin: snap.spinAngle };
     if (riderFrameChanged(_lastRiderFrame, riderFrame)) {
-      ridSrc.setData(buildRiderFeatures(rLat, rLon, riderTileHeadingRad, snap.spinAngle));
+      // setSourceData は source 未生成なら no-op (= renderer 内で存在 check)。
+      mapRenderer.setSourceData('rider', buildRiderFeatures(rLat, rLon, riderTileHeadingRad, snap.spinAngle));
       _lastRiderFrame = riderFrame;
     }
   }
@@ -2480,7 +2256,7 @@ function tick(t) {
   // 2026-05-16 fix: map idle 発火済 (= mapFullyLoaded=true) なら ride 未開始でも jumpTo OK、
   // user 「マウス左右で camera が回らない」 報告への対応 (= ride 開始前でも mouse drag 反映).
   if (course.length > 0 && (snap.active || mapFullyLoaded)) {
-    map.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
+    mapRenderer.jumpTo({ ...cam, center: [rLon, rLat], bearing: smoothBearing });
   }
 
   // ライド HUD (時間/距離/標高/勾配) は hud に集約。 ride 未開始は elapsedSec=null
@@ -2501,20 +2277,20 @@ function tick(t) {
   // 豆腐の下に #rider-hud を追随表示。 rider の地理座標を screen pixel に project し、
   // 画面座標を hud に渡す (= hud は座標系を知らない)。 state-riding の時だけ表示。
   if (document.body.classList.contains('state-riding')) {
-    const pt = map.project([rLon, rLat]);
+    const pt = mapRenderer.project([rLon, rLat]);
     hud.riderHudAt(pt.x, pt.y + 30, true);  // 豆腐の下 30px (= polygon height + 余白)
   } else {
     hud.riderHudAt(0, 0, false);
   }
   // デバッグ: 現在の camera zoom / pitch を HUD に表示 (user が好みの値を確認 → default 化に使う)
-  setText('cam-zoom', map.getZoom().toFixed(2));
-  setText('cam-pitch', map.getPitch().toFixed(0));
+  setText('cam-zoom', mapRenderer.getZoom().toFixed(2));
+  setText('cam-pitch', mapRenderer.getPitch().toFixed(0));
   // 2026-05-16: ?debug=1 用の数値 dump (= body.debug-on で右上 panel に表示).
   // user 「座標が外れる」「慣性力おかしい」 を走行中に数値で目視できる. setText は要素無しでも noop.
   // brief b2 High-4: ?debug=1 の時だけ実行 (= 平時は getElementById + textContent + trkpt
   // 走査の毎フレーム 30 件超を丸ごと skip)。
   if (DEBUG_HUD) {
-  const mapCenter = map.getCenter();
+  const mapCenter = mapRenderer.getCenter();
   const EARTH_M_PER_DEG_DBG = 111000;
   const cosLatDbg = Math.cos(rLat * Math.PI / 180);
   const dxDbg = (mapCenter.lng - rLon) * EARTH_M_PER_DEG_DBG * cosLatDbg;
@@ -2809,16 +2585,16 @@ bindBikeSlider('rngCda', 'cdaVal', 'fujihill.cda',
 function applyLightDir(deg) {
   setText('lightDirVal', String(Math.round(deg)));
   setText('dbgLightDir', String(Math.round(deg)));
-  if (map && map.getLayer && map.getLayer('hillshade')) {
-    map.setPaintProperty('hillshade', 'hillshade-illumination-direction', deg);
+  if (mapRenderer.hasLayer('hillshade')) {
+    mapRenderer.setPaintProperty('hillshade', 'hillshade-illumination-direction', deg);
   }
 }
 function applyLightStr(pct) {
   const exag = pct / 100;
   setText('lightStrVal', String(Math.round(pct)));
   setText('dbgLightExag', exag.toFixed(2));
-  if (map && map.getLayer && map.getLayer('hillshade')) {
-    map.setPaintProperty('hillshade', 'hillshade-exaggeration', exag);
+  if (mapRenderer.hasLayer('hillshade')) {
+    mapRenderer.setPaintProperty('hillshade', 'hillshade-exaggeration', exag);
   }
 }
 const rLightDir = document.getElementById('rngLightDir');

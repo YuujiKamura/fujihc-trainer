@@ -6,65 +6,79 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+// b12 Phase 1: 富士ヒル固有値の正本は course 定義オブジェクト.
+import { fujihill } from '../courses/fujihill.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+// b12 Phase 2: buildMapStyle / 地図生成は web/lib/map_renderer.js に移設済。 source の
+// bounds / center 設定はそちらを grep する。 buildMapStyle は course 定義由来の dbBounds を
+// 引数受けし、 source に `bounds: dbBounds` として渡す (= 値は fujihill.dbBounds)。
+const RENDERER = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
 
-describe('brief 34 ε-7: FUJIHILL_DB_BOUNDS const (= tile_constants.py:MINIMAP_BBOX と同値)', () => {
-  it('FUJIHILL_DB_BOUNDS が [138.65, 35.30, 138.85, 35.50] で export 済', () => {
-    expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_BOUNDS\s*=\s*\[\s*138\.65\s*,\s*35\.30?\s*,\s*138\.85\s*,\s*35\.50?\s*\]/);
+describe('b12 Phase 1: 富士ヒル DB bbox / center は course 定義 (web/courses/fujihill.js) が正本', () => {
+  // brief 34 ε-7 で viewer に inline されていた定数を b12 で course 定義へ移動。
+  // 値そのものを定義オブジェクトに対して検証する (= ソース文字列照合より頑健)。
+  it('fujihill.dbBounds が [138.65, 35.30, 138.85, 35.50] (= tile_constants.py:MINIMAP_BBOX と同値)', () => {
+    expect(fujihill.dbBounds).toEqual([138.65, 35.30, 138.85, 35.50]);
   });
 
-  it('FUJIHILL_DB_CENTER が [138.75, 35.40] (= bbox 中央) で export 済', () => {
-    expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_CENTER\s*=\s*\[\s*138\.75\s*,\s*35\.40?\s*\]/);
+  it('fujihill.dbCenter が [138.75, 35.40] (= bbox 中央)', () => {
+    expect(fujihill.dbCenter).toEqual([138.75, 35.40]);
+  });
+
+  it('viewer-maplibre.js は FUJIHILL_DB_BOUNDS / FUJIHILL_DB_CENTER を course 定義から re-export 済 (= 後方互換)', () => {
+    expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_BOUNDS\s*=\s*fujihill\.dbBounds/);
+    expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_CENTER\s*=\s*fujihill\.dbCenter/);
   });
 });
 
-describe('brief 34 ε-7: 各 source に bounds が設定済 (= 範囲外 tile 要求を MapLibre が抑制)', () => {
-  it('bridge mode の osm source に bounds: FUJIHILL_DB_BOUNDS', () => {
-    // bridge / static の 2 つの osm source object 内に bounds: FUJIHILL_DB_BOUNDS が現れる
-    const matches = VIEWER.match(/bounds:\s*FUJIHILL_DB_BOUNDS/g) || [];
-    // bridge.osm + bridge.gsi-terrain + static.osm + static.gsi-terrain = 4 箇所
+describe('brief 34 ε-7 / b12 Phase 2: 各 source に bounds が設定済 (= 範囲外 tile 要求を抑制)', () => {
+  it('buildMapStyle の osm / gsi-terrain source に bounds: dbBounds (= 4 箇所)', () => {
+    // b12 Phase 2: buildMapStyle(env, dbBounds) は course 定義由来の dbBounds を
+    // bridge / static × osm / gsi-terrain の 4 source に `bounds: dbBounds` で渡す。
+    const matches = RENDERER.match(/bounds:\s*dbBounds/g) || [];
     expect(matches.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('bridge mode の gsi-terrain も bounds: FUJIHILL_DB_BOUNDS を持つ (= source 隣接 grep)', () => {
-    // gsi-terrain source は内部に template literal `${BASE_URL}` を含み balanced brace
-    // matching が regex で困難 (= `}` が path 内に現れる)。 「'gsi-terrain' → type:
-    // raster-dem → bounds: FUJIHILL_DB_BOUNDS」の連続出現を構造的隣接で check
-    // (= 2 箇所: bridge / static)。
-    const matches = VIEWER.match(/['"]gsi-terrain['"]:\s*\{[\s\S]{0,500}?type:\s*['"]raster-dem['"][\s\S]{0,500}?bounds:\s*FUJIHILL_DB_BOUNDS/g);
+  it('bridge mode の gsi-terrain も bounds: dbBounds を持つ (= source 隣接 grep)', () => {
+    // 「'gsi-terrain' → type: raster-dem → bounds: dbBounds」の連続出現を構造的隣接で
+    // check (= 2 箇所: bridge / static)。
+    const matches = RENDERER.match(/['"]gsi-terrain['"]:\s*\{[\s\S]{0,500}?type:\s*['"]raster-dem['"][\s\S]{0,500}?bounds:\s*dbBounds/g);
     expect(matches).not.toBeNull();
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('static mode の osm (= pmtiles) source も bounds: FUJIHILL_DB_BOUNDS', () => {
-    // static mode の osm source は `url: pmtiles://${STATIC_TILE_BASE_URL}/map.pmtiles`、
-    // template literal `}` を含むため source 隣接で check.
-    const m = VIEWER.match(/['"]osm['"]:\s*\{[\s\S]{0,200}?url:\s*`pmtiles:\/\/[\s\S]{0,500}?bounds:\s*FUJIHILL_DB_BOUNDS/);
+  it('static mode の osm (= pmtiles) source も bounds: dbBounds', () => {
+    const m = RENDERER.match(/['"]osm['"]:\s*\{[\s\S]{0,200}?url:\s*`pmtiles:\/\/[\s\S]{0,500}?bounds:\s*dbBounds/);
     expect(m).not.toBeNull();
   });
 });
 
-describe('brief 34 ε-7: map 初期化の center は FUJIHILL_DB_CENTER (= bbox 中央)', () => {
-  it('new maplibregl.Map の center に FUJIHILL_DB_CENTER が指定済', () => {
-    expect(VIEWER).toMatch(/center:\s*FUJIHILL_DB_CENTER/);
+describe('brief 34 ε-7 / b12 Phase 2: map 初期化の center は course 定義の dbCenter (= bbox 中央)', () => {
+  it('map_renderer.boot は new maplibregl.Map の center に opts.dbCenter を渡す', () => {
+    // b12 Phase 2: viewer は fujihill.dbCenter を renderer.boot に渡し、 renderer が
+    // new maplibregl.Map({ center: opts.dbCenter }) で適用する。
+    expect(RENDERER).toMatch(/center:\s*opts\.dbCenter/);
+  });
+
+  it('viewer は bootMap で fujihill.dbCenter を renderer.boot に渡す', () => {
+    expect(VIEWER).toMatch(/dbCenter:\s*fujihill\.dbCenter/);
   });
 
   it('旧 hardcoded center [138.7587, 35.4521] は撤回済 (= 中央寄せに変更)', () => {
-    // 新 center FUJIHILL_DB_CENTER は const 経由、 旧 inline literal は撤回.
     expect(VIEWER).not.toMatch(/center:\s*\[\s*138\.7587\s*,\s*35\.4521\s*\]/);
+    expect(RENDERER).not.toMatch(/center:\s*\[\s*138\.7587\s*,\s*35\.4521\s*\]/);
   });
 });
 
 describe('brief 34 ε-7: 外部サーバ負担評価 (= GSI / OSM への再アクセスなし)', () => {
-  it('bounds 設定により MapLibre は範囲外 tile を要求しない (= viewer source 上の constraint)', () => {
+  it('bounds 設定により MapLibre は範囲外 tile を要求しない (= map_renderer source 上の constraint)', () => {
     // bounds は MapLibre が範囲外 tile を要求しない constraint、 これにより GSI 再アクセス / 404
-    // 量産が止まる。 既存 DB をフル活用、 外部 fetch 発生量ゼロ (= v3 設計図 line 230-234)。
-    // 構造 grep で確認、 behavioral test は MapLibre instance が必要なので integration テスト範囲外。
+    // 量産が止まる。 b12 Phase 2 で buildMapStyle は map_renderer.js に移設、 bounds 設定箇所も
+    // そちらにある。 値は course 定義由来の dbBounds (= fujihill.dbBounds)。
     expect(VIEWER).toMatch(/FUJIHILL_DB_BOUNDS/);
-    // bounds 設定箇所が 4 箇所以上 (= bridge/static × osm/gsi-terrain)
-    const boundsCount = (VIEWER.match(/bounds:\s*FUJIHILL_DB_BOUNDS/g) || []).length;
+    const boundsCount = (RENDERER.match(/bounds:\s*dbBounds/g) || []).length;
     expect(boundsCount).toBeGreaterThanOrEqual(4);
   });
 

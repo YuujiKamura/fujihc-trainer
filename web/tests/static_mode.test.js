@@ -159,21 +159,33 @@ describe('brief 31 commit β: ENV (= immutable env object) と bootEnv が race 
   });
 });
 
-describe('brief 31: bootMap helper (= 旧 const map = new Map(...) の遅延化)', () => {
-  it('let map = null で module-scope 宣言 (= ensureMapBooted で代入)', () => {
-    expect(viewer).toMatch(/^let\s+map\s*=\s*null/m);
+describe('brief 31 / b12 Phase 2: bootMap helper (= 地図生成は map_renderer に委譲)', () => {
+  const RENDERER_PATH = resolve(__dirname, '..', 'lib', 'map_renderer.js');
+  const renderer = readFileSync(RENDERER_PATH, 'utf8');
+
+  it('viewer は map インスタンスを直接持たず、 createMapRenderer() の renderer 経由で操作する', () => {
+    // b12 Phase 2: 旧 `let map = null` は撤去、 viewer は mapRenderer 1 個だけ持つ。
+    expect(viewer).not.toMatch(/^let\s+map\s*=\s*null/m);
+    expect(viewer).toMatch(/const\s+mapRenderer\s*=\s*createMapRenderer\(\)/);
+    expect(viewer).toMatch(/import\s+\{\s*createMapRenderer\s*\}\s+from\s+['"]\.\/lib\/map_renderer\.js['"]/);
   });
 
-  it('function bootMap(env) 定義が存在 + new maplibregl.Map を呼ぶ (= commit β で signature 変更)', () => {
+  it('function bootMap(env) は map_renderer.boot に委譲する (= 地図生成を地図描画モジュールに集約)', () => {
     expect(viewer).toMatch(/function\s+bootMap\s*\(\s*env\s*\)/);
     const m = viewer.match(/function\s+bootMap\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/new\s+maplibregl\.Map\(/);
-    expect(m[0]).toMatch(/buildMapStyle\(/);
+    expect(m[0]).toMatch(/mapRenderer\.boot\(/);
   });
 
-  it('旧 const map = new maplibregl.Map(...) の module-top inline 生成は撤回', () => {
+  it('new maplibregl.Map + buildMapStyle は map_renderer.js が持つ (= 地図描画モジュールの内側)', () => {
+    expect(renderer).toMatch(/new\s+maplibregl\.Map\(/);
+    expect(renderer).toMatch(/buildMapStyle\(/);
+  });
+
+  it('旧 const map = new maplibregl.Map(...) の viewer module-top inline 生成は撤回', () => {
     expect(viewer).not.toMatch(/^const\s+map\s*=\s*new\s+maplibregl\.Map/m);
+    // viewer 本体に maplibregl 直接参照が残っていない (= b12 Phase 2 完了条件)。
+    expect(viewer).not.toMatch(/\bmaplibregl\./);
   });
 });
 
@@ -185,7 +197,9 @@ describe('brief 31 commit β: course.json fetch URL は ENV.courseUrl 経由', (
   it('bootEnv 内で courseUrl が bridge / static 別に設定される', () => {
     const m = viewer.match(/async\s+function\s+bootEnv\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/courseUrl:\s*s\.bridgeReachable\s*\?\s*['"]course\.json['"]\s*:\s*`\$\{BASE_PATH\}static\/course\.json`/);
+    // b12 Phase 1: course.json リテラルは course 定義 (fujihill.courseFile) 経由に。
+    // bridge / static で別 URL になる構造は不変。
+    expect(m[0]).toMatch(/courseUrl:\s*s\.bridgeReachable\s*\?\s*fujihill\.courseFile\s*:\s*`\$\{BASE_PATH\}static\/\$\{fujihill\.courseFile\}`/);
   });
 });
 

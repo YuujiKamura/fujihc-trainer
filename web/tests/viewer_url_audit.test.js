@@ -58,15 +58,21 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
     expect(viewer).not.toMatch(/prefetchTilesAlongCourse\s*=\s*function/);
   });
 
-  // brief 21: 標高補完を inline 実装ではなく lib 経由で呼ぶ (= 二重実装防止)
-  it('gsiToTerrariumUpsampled を web/lib/terrain_mesh.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*gsiToTerrariumUpsampled[^}]*\}\s+from\s+['"]\.\/lib\/terrain_mesh\.js['"]/);
+  // brief 21 / b12 Phase 2: 標高補完は lib 経由で呼ぶ (= 二重実装防止)。 gsidem protocol は
+  // map_renderer.js に移設済なので gsiToTerrariumUpsampled の import もそちらにある。
+  it('gsiToTerrariumUpsampled を web/lib/terrain_mesh.js から import している (= map_renderer.js)', () => {
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/import\s+\{[^}]*gsiToTerrariumUpsampled[^}]*\}\s+from\s+['"]\.\/terrain_mesh\.js['"]/);
+    // viewer 本体には GSI decode 用 import が残っていない (= 二重実装防止)。
+    expect(viewer).not.toMatch(/gsiToTerrariumUpsampled/);
   });
 
   it('addProtocol callback 内に標高 decode の inline loop が無い (= 純関数に委譲)', () => {
     // GSI decode の inline 数式 (= R*65536 + G*256 + B) は terrain_mesh.js 側に閉じる、
-    // viewer 内で再定義していないことを確認
+    // viewer / map_renderer 内で再定義していないことを確認
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
     expect(viewer).not.toMatch(/r\s*\*\s*65536\s*\+\s*g\s*\*\s*256\s*\+\s*b/);
+    expect(renderer).not.toMatch(/r\s*\*\s*65536\s*\+\s*g\s*\*\s*256\s*\+\s*b/);
   });
 
   // brief 22: trainer / bridge 不要の画面操作確認モード
@@ -206,31 +212,31 @@ describe('brief 26b: 起動 DB 構築フロー + 4 状態 state machine', () => 
   });
 });
 
-describe('brief 26a: OSM を vector pbf で受ける (= 17b 積み残し fix)', () => {
-  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+describe('brief 26a / b12 Phase 2: OSM を vector pbf で受ける (= buildMapStyle / COMMON_LAYERS は map_renderer.js)', () => {
+  // b12 Phase 2: buildMapStyle / COMMON_LAYERS は map_renderer.js へ移設済。
+  const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
 
   it('osm source は type: vector', () => {
-    // 'type: 'vector'' が osm source 内に存在
-    expect(viewer).toMatch(/'osm':\s*\{[^}]*type:\s*['"]vector['"]/s);
+    expect(renderer).toMatch(/'osm':\s*\{[^}]*type:\s*['"]vector['"]/s);
   });
 
   it('osm tiles URL は .pbf (= raster .png ではない)', () => {
-    expect(viewer).toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.pbf/);
-    expect(viewer).not.toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.png/);
+    expect(renderer).toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.pbf/);
+    expect(renderer).not.toMatch(/\/osm\/\{z\}\/\{x\}\/\{y\}\.png/);
   });
 
   it('background layer (= PMTiles 不在時の fallback) が定義済', () => {
-    expect(viewer).toMatch(/type:\s*['"]background['"]/);
+    expect(renderer).toMatch(/type:\s*['"]background['"]/);
   });
 
   it('roads / water / earth の source-layer が宣言済 (= Protomaps schema)', () => {
-    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]roads['"]/);
-    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]water['"]/);
-    expect(viewer).toMatch(/['"]source-layer['"]:\s*['"]earth['"]/);
+    expect(renderer).toMatch(/['"]source-layer['"]:\s*['"]roads['"]/);
+    expect(renderer).toMatch(/['"]source-layer['"]:\s*['"]water['"]/);
+    expect(renderer).toMatch(/['"]source-layer['"]:\s*['"]earth['"]/);
   });
 
   it('旧 raster osm layer (id: osm, type: raster) は消えている', () => {
-    expect(viewer).not.toMatch(/\{\s*id:\s*['"]osm['"],\s*type:\s*['"]raster['"]/);
+    expect(renderer).not.toMatch(/\{\s*id:\s*['"]osm['"],\s*type:\s*['"]raster['"]/);
   });
 });
 
@@ -267,8 +273,9 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
     expect(viewer).toMatch(/function\s+initMapMode[\s\S]{0,800}setAppState\(['"]riding['"]\)/);
   });
 
-  it('MAP_MODE は map.idle を待ってから ride 開始 (= 全描画完了まで待機)', () => {
-    expect(viewer).toMatch(/map\.once\(['"]idle['"]/);
+  it('MAP_MODE は map idle を待ってから ride 開始 (= 全描画完了まで待機)', () => {
+    // b12 Phase 2: 'idle' 購読は map_renderer 経由 (= mapRenderer.onceIdle)。
+    expect(viewer).toMatch(/mapRenderer\.onceIdle\(/);
   });
 
   it('ローディングインジケータ #loading-indicator が viewer から制御される', () => {
@@ -282,22 +289,22 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
   });
 
   it('roads line-width interpolate は z=22 まで定義 (= ride 視点 overzoom 対策)', () => {
-    // z=22 stop が含まれる、 17 で打ち切らない
-    // interpolate の zoom expression は ['linear'], ['zoom'], 13, 0.5, 15, 1.5, 22, 6 の形
-    expect(viewer).toMatch(/['"]line-width['"]:\s*\[['"]interpolate['"],\s*\[['"]linear['"]\],\s*\[['"]zoom['"]\][\s\S]{0,80}22,\s*\d/);
+    // z=22 stop が含まれる、 17 で打ち切らない。 b12 Phase 2: COMMON_LAYERS は map_renderer.js。
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/['"]line-width['"]:\s*\[['"]interpolate['"],\s*\[['"]linear['"]\],\s*\[['"]zoom['"]\][\s\S]{0,80}22,\s*\d/);
   });
 
   it('route-fill は最前面 (= beforeId 無し) で addLayer される', () => {
     // Fix2: OSM roads-major (= 橙線) が polygon を貫く問題を解消するため、
     // route-fill は addLayer 第 2 引数 'roads' を持たず、 最後尾 (= 最前面) に挿入する.
-    // addLayer({id: 'route-fill', ...}) の直後が `)` で終わる (= 第 2 引数なし)
-    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*\)\s*;/);
+    // b12 Phase 2: addLayer は map_renderer 経由 (= mapRenderer.addLayer)。
+    expect(viewer).toMatch(/mapRenderer\.addLayer\(\s*\{[^}]*id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*\)\s*;/);
     // 念のため 'route-fill' の addLayer 直後に 'roads' リテラルが入ってない
     expect(viewer).not.toMatch(/id:\s*['"]route-fill['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
   });
 
   it('route-line も最前面 (= beforeId 無し) で addLayer される', () => {
-    expect(viewer).toMatch(/map\.addLayer\(\s*\{[^}]*id:\s*['"]route-line['"][\s\S]{0,400}\}\s*\)\s*;/);
+    expect(viewer).toMatch(/mapRenderer\.addLayer\(\s*\{[^}]*id:\s*['"]route-line['"][\s\S]{0,400}\}\s*\)\s*;/);
     expect(viewer).not.toMatch(/id:\s*['"]route-line['"][\s\S]{0,400}\}\s*,\s*['"]roads['"]/);
   });
 });

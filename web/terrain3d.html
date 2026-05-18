@@ -520,8 +520,8 @@ async function main() {
   //   - gradeColorContinuous で各点の slope_pct から頂点色 (MapLibre: a.slope_pct)。
   //   - 左右端を DEM 標高で drape し地形表面に沿わせる。
   //   - UV テクスチャは廃止し vertexColors で描く (= MapLibre fill layer と同じ色ロジック)。
-  const ROAD_WIDTH_M   = span * 0.0055;
-  const DRAPE_OFFSET_M = span * 0.0013;
+  const ROAD_WIDTH_M   = 24;   // m (視認性のため 3倍誇張、実幅 7-8m)
+  const DRAPE_OFFSET_M = 15;   // m
   const mPerDegLon = 111320 * Math.cos(geo.centerLat * Math.PI / 180);
   const miterOffs = computeMiterOffsets(course, ROAD_WIDTH_M / 2);
   const n = course.length;

@@ -29,7 +29,8 @@ describe('brief b-segment-labels: viewer のラベル symbol レイヤー統合�
 
   it('文字を canvas 画像にして addImage している (= glyphs 不要の icon-image 方式)', () => {
     expect(viewer).toMatch(/function\s+makeSegLabelImage/);
-    expect(viewer).toMatch(/map\.addImage\s*\(/);
+    // b12 Phase 2: 地図操作は map_renderer 経由 (= mapRenderer.addImage)。
+    expect(viewer).toMatch(/mapRenderer\.addImage\s*\(/);
   });
 
   it("ラベル専用の geojson source と symbol レイヤー 'route-labels' を追加している", () => {
@@ -62,7 +63,8 @@ describe('brief b-segment-labels: viewer のラベル symbol レイヤー統合�
 
   it('rider 距離窓で間引く: setFilter で近傍だけ表示 (= 地平の潰れ対策)', () => {
     expect(viewer).toMatch(/function\s+updateSegmentLabelFilter/);
-    expect(viewer).toMatch(/map\.setFilter\(\s*['"]route-labels['"]/);
+    // b12 Phase 2: 地図操作は map_renderer 経由 (= mapRenderer.setFilter)。
+    expect(viewer).toMatch(/mapRenderer\.setFilter\(\s*['"]route-labels['"]/);
     expect(viewer).toMatch(/const\s+LABEL_BACK_M\s*=\s*\d+/);
     expect(viewer).toMatch(/const\s+LABEL_AHEAD_M\s*=\s*\d+/);
     // tick から bucket 刻みで窓を更新する。

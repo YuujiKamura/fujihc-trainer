@@ -12,6 +12,9 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HTML = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+// b12 Phase 2: 地図インスタンス生成 / load・error 結線 / buildMapStyle は
+// web/lib/map_renderer.js に移設済。 地図ライフサイクル系の pin はそちらを grep する。
+const RENDERER = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
 
 // CSS 内の z-index 抽出 helper.
 function getZIndex(selector) {
@@ -94,14 +97,15 @@ describe('brief 34 ε-6: 帰属表示 (= attribution control) の動的消失監
     expect(m[0]).toMatch(/getElementById\(['"]status['"]\)/);
   });
 
-  it('map load ハンドラ (onMapLoad) 内で verifyAttributionVisible を呼ぶ (= 起動 1 回限定)', () => {
-    // 2026-05-17: load handler 本体を onMapLoad() に括り出した (= 'load' 永遠未発火時の
-    // fallback から再利用するため)。 verifyAttributionVisible は onMapLoad 内で呼ばれ、
-    // onMapLoad は map.on('load') に結線される。 起動 1 回限定の意図は不変。
-    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+  it('map load 完了後の viewer 起動継続 (onMapLoaded) 内で verifyAttributionVisible を呼ぶ (= 起動 1 回限定)', () => {
+    // b12 Phase 2: load handler の地図側 (setTerrain / 操作系 disable) は map_renderer に移り、
+    // 'load' 発火後の viewer 側継続は onMapLoaded() に括り出した。 verifyAttributionVisible は
+    // onMapLoaded 内で呼ばれ、 renderer が 'load' / 8 秒 fallback の両方から onLoaded を 1 度呼ぶ。
+    const m = VIEWER.match(/function\s+onMapLoaded\s*\(\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/verifyAttributionVisible\(\)/);
-    expect(VIEWER).toMatch(/map\.on\(['"]load['"]\s*,\s*onMapLoad\)/);
+    // 地図 'load' イベントへの結線は map_renderer.js が持つ。
+    expect(RENDERER).toMatch(/map\.on\(['"]load['"]\s*,\s*onMapLoad\)/);
   });
 });
 
@@ -110,27 +114,29 @@ describe('2026-05-17: loadCourse 起動が map "load" イベント単独依存�
   // 致命的初期化失敗 (= Range request 非対応サーバで byte-serving 失敗) で 'load' が永遠に
   // 発火しないと loadCourse が一度も走らず、 rideState 未生成 → 「描画準備中...」 overlay が
   // 永久に残る。 修正は load handler を onMapLoad() に括り出し fallback timeout から再実行。
-  it('onMapLoad は 多重実行ガード (_mapLoadHandled) を持つ', () => {
-    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+  it('onMapLoad は 多重実行ガード (_loadHandled) を持つ (= map_renderer.boot)', () => {
+    // b12 Phase 2: load handler は map_renderer.js の boot 内へ移設、 ガード変数は _loadHandled。
+    const m = RENDERER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n      \}/);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/_mapLoadHandled/);
+    expect(m[0]).toMatch(/_loadHandled/);
   });
 
-  it("'load' 未発火に備えた fallback timeout から onMapLoad を呼ぶ", () => {
-    // setTimeout(...) 内で _mapLoadHandled を見て onMapLoad() を呼ぶ fallback が存在する。
-    expect(VIEWER).toMatch(/setTimeout\(\s*\(\)\s*=>\s*\{[\s\S]{0,400}!_mapLoadHandled[\s\S]{0,200}onMapLoad\(\)/);
+  it("'load' 未発火に備えた fallback timeout から onMapLoad を呼ぶ (= map_renderer.boot)", () => {
+    // setTimeout(...) 内で _loadHandled を見て onMapLoad() を呼ぶ fallback が存在する。
+    expect(RENDERER).toMatch(/setTimeout\(\s*\(\)\s*=>\s*\{[\s\S]{0,400}!_loadHandled[\s\S]{0,200}onMapLoad\(\)/);
   });
 
-  it('onMapLoad 内で loadCourse を呼ぶ (= course/rideState 生成は load イベント成否に非依存)', () => {
-    const m = VIEWER.match(/function\s+onMapLoad\s*\(\)\s*\{[\s\S]*?\n  \}/);
+  it('viewer 側起動継続 (onMapLoaded) 内で loadCourse を呼ぶ (= course/rideState 生成は load イベント成否に非依存)', () => {
+    // renderer が 'load' / 8 秒 fallback の両方から onLoaded を呼ぶため onMapLoaded は必ず 1 度走る。
+    const m = VIEWER.match(/function\s+onMapLoaded\s*\(\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/loadCourse\(\)/);
   });
 
-  it('maplibre error ログは e.error の中身 (message/url) を出す (= [object Object] にしない)', () => {
-    expect(VIEWER).toMatch(/maplibre error:/);
+  it('maplibre error ログは e.error の中身 (message/url) を出す (= [object Object] にしない、 map_renderer)', () => {
+    expect(RENDERER).toMatch(/maplibre error:/);
     // e.error.message / e.error.url を拾う detail 抽出が存在する。
-    expect(VIEWER).toMatch(/err\.message\s*\|\|\s*err\.url/);
+    expect(RENDERER).toMatch(/err\.message\s*\|\|\s*err\.url/);
   });
 });
 
@@ -200,8 +206,9 @@ describe('brief 34 ε-6 integration: intro / footer の帰属メッセージ整�
     expect(HTML).toMatch(/コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換/);
   });
 
-  it('build_map_style の attribution に「国土地理院」「OpenStreetMap contributors」両方を含む (= ε-6 で動的消失監視と並ぶ静的 attribution)', () => {
-    expect(VIEWER).toMatch(/attribution:\s*['"]国土地理院 標高タイル['"]/);
-    expect(VIEWER).toMatch(/attribution:\s*['"]© OpenStreetMap contributors['"]/);
+  it('buildMapStyle の attribution に「国土地理院」「OpenStreetMap contributors」両方を含む (= ε-6 で動的消失監視と並ぶ静的 attribution、 map_renderer.js)', () => {
+    // b12 Phase 2: buildMapStyle は map_renderer.js に移設済。 静的 attribution もそちら。
+    expect(RENDERER).toMatch(/attribution:\s*['"]国土地理院 標高タイル['"]/);
+    expect(RENDERER).toMatch(/attribution:\s*['"]© OpenStreetMap contributors['"]/);
   });
 });

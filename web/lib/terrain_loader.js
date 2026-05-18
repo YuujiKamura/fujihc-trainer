@@ -20,6 +20,10 @@
 // - z=14 の x/y は viewer の lonToTileX/latToTileY と同じ tile_math 経由で計算するが、
 //   ここでは loader が独立して使える形で内製 (= 小規模 lib なので循環依存回避).
 
+// b12 Phase 1: 富士ヒル固有値 (DB 中央座標) は courses/fujihill.js に集約済。
+// fujihill.js は何も import しない純データなので循環依存は発生しない。
+import { fujihill } from '../courses/fujihill.js';
+
 // 経度・緯度 → z=14 タイル座標 (= 整数). EPSG:3857 Web Mercator.
 // tile_math.js と同等、 ただし z=14 固定でも汎用に z を受け取る.
 function lonToTileX(lon, z) {
@@ -33,11 +37,11 @@ function latToTileY(lat, z) {
   );
 }
 
-// 富士スバルライン DB bbox 中央 (= FUJIHILL_DB_CENTER と同値、 viewer-maplibre.js export).
-// 重複定義になるが、 ここは terrain_loader の責務単位として独立、 viewer 起動前に
-// import される module の循環依存を避ける目的で内製する。
-const DB_CENTER_LON = 138.75;
-const DB_CENTER_LAT = 35.40;
+// DB bbox 中央 = コース定義の dbCenter。 viewer / terrain_loader / zoom_bounds が
+// 同じ 1 個の定義 (courses/fujihill.js) を参照する (= 重複定義の撤去、 b12 Phase 1)。
+// 値は従来の inline literal (138.75 / 35.40) と完全同一、 動作は不変。
+const DB_CENTER_LON = fujihill.dbCenter[0];
+const DB_CENTER_LAT = fujihill.dbCenter[1];
 const GSI_PROBE_Z = 14;
 
 // z=14 の中央タイル + 隣 2 枚 (= 同 z の x±0, y±0 + x+1, y+1) を probe する。

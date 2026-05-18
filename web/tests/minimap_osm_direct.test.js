@@ -88,12 +88,14 @@ describe('brief 29: brief 28 の MapLibre 2nd instance 関連は完全削除', (
     expect(viewer).not.toMatch(/function\s+initMinimapMap\s*\(/);
   });
 
-  it('function buildMapStyle は brief 31 で再導入 (= bridge mode / static mode の 2-way style)', () => {
-    // brief 29 段階では buildMapStyle 不在を pin していたが、 brief 31 (= GitHub Pages
-    // 静的サイト化) で source URL 切替のために再導入。 brief 28 撤回当時の双子 helper
-    // とは別物 (= minimap 2nd instance ではなく main map の bridge / static mode 分岐)。
-    // ここでは存在のみ確認、 内容は brief 31 の build_map_style.test.js が pin する。
-    expect(viewer).toMatch(/function\s+buildMapStyle\s*\(/);
+  it('function buildMapStyle は map_renderer.js に存在 (= b12 Phase 2 で地図描画モジュールへ移設)', () => {
+    // brief 29 段階では buildMapStyle 不在を pin、 brief 31 で main map の bridge / static
+    // mode 分岐のため再導入。 b12 Phase 2 で viewer 本体から map_renderer.js へ移設済。
+    // ここでは存在のみ確認、 内容は build_map_style.test.js が map_renderer.js 上で pin する。
+    const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
+    expect(renderer).toMatch(/function\s+buildMapStyle\s*\(/);
+    // viewer 本体には buildMapStyle 定義が残っていない (= 二重実装防止)。
+    expect(viewer).not.toMatch(/function\s+buildMapStyle\s*\(/);
   });
 
   it('module-scope の minimapMap / minimapRider グローバル変数は不在', () => {
