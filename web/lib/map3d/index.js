@@ -385,7 +385,7 @@ export function createMapRenderer() {
 
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
-      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: 24, drapeOffset: 15 });
+      ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: 10, drapeOffset: 15 });
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
@@ -404,9 +404,9 @@ export function createMapRenderer() {
       });
       scene.add(labels3d.group);
 
-      // ライダー 3D mesh。 実寸 1.8m (= unit モデルを m 換算、 terrain3d.html L589)。
+      // ライダー 3D mesh。 2026-05-18: 実寸 1.8m では小さすぎると user 指摘、 2 倍の 3.6 に。
       rider3d = createRiderMesh3d(THREE);
-      rider3d.group.scale.setScalar(1.8);
+      rider3d.group.scale.setScalar(3.6);
       scene.add(rider3d.group);
 
       // 初期配置: 起点にライダーを置き、 カメラをそこへ寄せる。

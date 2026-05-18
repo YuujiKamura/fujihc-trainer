@@ -30,19 +30,18 @@ const M_PER_DEG_LAT = 111320;
 // ラベル目標間隔 (m)。 設計メモ部品7「約 50m 間隔」。
 export const LABEL_INTERVAL_M = 50;
 // ラベルをコース路面の脇に逃がす量 (m)。 勾配色リボンを文字で隠さないため。
-// MapLibre 版 viewer の buildSegmentLabels(polygonData, 50, 6) と同じ 6m。
-export const LABEL_SIDE_OFFSET_M = 6;
+// 2026-05-18: ラベル同士・コースとの重なりを user 指摘、 6m → 12m に拡げて横へ逃がす。
+export const LABEL_SIDE_OFFSET_M = 12;
 // 表示窓: ライダー現在地の後方 / 前方 (m)。 窓外のラベルは非表示にする。
 export const LABEL_WINDOW_BACK_M = 150;
 export const LABEL_WINDOW_FWD_M = 450;
 // 表示窓更新の間引き刻み (m)。 ライダーがこの刻みの bucket を跨いだ時だけ
 // 窓を再計算する (= 毎フレーム全 sprite を走査しない、 MapLibre 版の lastLabelBucket 相当)。
 export const LABEL_BUCKET_M = 50;
-// 倍率 1.0 のときの看板の高さ (m)。 道路リボン (widthM 24m) の脇に立つ標識として、
+// 倍率 1.0 のときの看板の高さ (m)。 道路リボン (widthM 10m) の脇に立つ標識として、
 // ride 視点 (= カメラがコース上、 看板が前方数十 m) で読めて画面を覆わない大きさ。
-// 旧値 40m は地形俯瞰目線で決めた過大値で、 ride 視点では画面上部を覆う巨大文字に
-// なった (40324 の画面確認指摘)。 道路幅の約 1/3 の 8m に下げる。
-export const LABEL_BASE_HEIGHT_M = 8;
+// 旧値 40m → 8m → 4m と段階的に縮小。 2026-05-18: 8m でも画面を覆うと user 指摘、 4m に。
+export const LABEL_BASE_HEIGHT_M = 4;
 
 /**
  * ライダー距離を表示窓更新の bucket index に量子化する純関数.
