@@ -11,7 +11,12 @@ import {
 function fakeDom() {
   const els = new Map();
   const getEl = (id) => {
-    if (!els.has(id)) els.set(id, { id, textContent: '', style: {} });
+    if (!els.has(id)) {
+      // style は実ブラウザ準拠で display/left/top を空文字初期化する。
+      // riderHudVisible が位置 (left/top) を書き換えないことを「'' のまま」で
+      // 検証できるようにするため (空オブジェクトだと undefined になり崩れる)。
+      els.set(id, { id, textContent: '', style: { display: '', left: '', top: '' } });
+    }
     return els.get(id);
   };
   return { getEl, els, text: (id) => getEl(id).textContent };
