@@ -110,11 +110,11 @@ export function createRiderMesh3d(THREE) {
     updatePose(ribbonPositions, course, distanceM) {
       const pl = riderPlacementAtDistance(ribbonPositions, course, distanceM);
       group.position.set(pl.position[0], pl.position[1], pl.position[2]);
-      // bike model 前方 (-Z) を forward へ回す。 riderPlacementAtDistance の forward は
-      // XZ 平面で単位化済 (= rider_placement.js L85-87) なので setFromUnitVectors に直接渡せる。
+      // bike model 前方 (-Z) を forward3d へ回す。 forward3d はピッチ (高低差) 込みの 3D 単位ベクトル。
+      // カメラ追従は水平の pl.forward を引き続き使う。
       group.quaternion.setFromUnitVectors(
         MODEL_FORWARD,
-        new THREE.Vector3(pl.forward[0], pl.forward[1], pl.forward[2]));
+        new THREE.Vector3(pl.forward3d[0], pl.forward3d[1], pl.forward3d[2]));
       return pl;
     },
   };

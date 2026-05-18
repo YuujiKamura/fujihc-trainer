@@ -113,4 +113,33 @@ describe('riderPlacementAtDistance', () => {
     expect(() => riderPlacementAtDistance(ribbon, [], 0)).toThrow(RangeError);
     expect(() => riderPlacementAtDistance(ribbon, [{ distance_m: 0 }], 0)).toThrow(RangeError);
   });
+
+  it('forward3d: 平坦区間では forward と一致、Y=0 (= 水平路面でピッチがゼロのままなのを検出)', () => {
+    // 点0→点1: Y=10→10 平坦
+    const p = riderPlacementAtDistance(ribbon, course, 4);
+    expect(p.forward3d[0]).toBeCloseTo(p.forward[0], 9);
+    expect(p.forward3d[1]).toBeCloseTo(0, 9);
+    expect(p.forward3d[2]).toBeCloseTo(p.forward[2], 9);
+  });
+
+  it('forward3d: 登り区間で Y > 0 (= 前上がりのピッチが出るのを検出)', () => {
+    // 点1→点2: Y=10→12 登り 2m / XZ 8m
+    const p = riderPlacementAtDistance(ribbon, course, 12);
+    expect(p.forward3d[1]).toBeGreaterThan(0);
+  });
+
+  it('forward3d: 下り区間で Y < 0 (= 前下がりのピッチが出るのを検出)', () => {
+    const downRibbon = new Float32Array([
+      0, 10, 0,  4, 10, 0,   // 点0 Y=10
+      0, 8,  -8, 4, 8,  -8,  // 点1 Y=8 (下り 2m)
+    ]);
+    const twoPt = [{ distance_m: 0 }, { distance_m: 8 }];
+    const p = riderPlacementAtDistance(downRibbon, twoPt, 4);
+    expect(p.forward3d[1]).toBeLessThan(0);
+  });
+
+  it('forward3d が単位ベクトル (= 3D 正規化漏れを検出)', () => {
+    const p = riderPlacementAtDistance(ribbon, course, 12);  // 登り区間
+    expect(Math.hypot(p.forward3d[0], p.forward3d[1], p.forward3d[2])).toBeCloseTo(1, 9);
+  });
 });

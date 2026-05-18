@@ -80,11 +80,18 @@ export function riderPlacementAtDistance(positions, course, distanceM) {
   const fc0 = fi === i ? c0 : ribbonCenterAt(positions, fi);
   const fc1 = fi + 1 === i1 ? c1 : ribbonCenterAt(positions, fi + 1);
   const fx = fc1[0] - fc0[0];
+  const fy = fc1[1] - fc0[1];
   const fz = fc1[2] - fc0[2];
   const len = Math.hypot(fx, fz);
   const forward = len > 1e-9
     ? [fx / len, 0, fz / len]
     : [0, 0, -1];  // XZ 退化 → 北向き fallback
 
-  return { position, forward };
+  // 3D forward: ピッチ込み。カメラ追従は水平 forward を使うのでこちらは別フィールド。
+  const len3d = Math.hypot(fx, fy, fz);
+  const forward3d = len3d > 1e-9
+    ? [fx / len3d, fy / len3d, fz / len3d]
+    : [0, 0, -1];
+
+  return { position, forward, forward3d };
 }
