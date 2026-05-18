@@ -47,17 +47,17 @@ describe('brief b-segment-labels: ラベル symbol レイヤー統合層 (= map_
   });
 
   it('ラベルサイズは slider 連動の icon-size (= renderer 内 labelScale)', () => {
-    // route-labels の icon-size は renderer 内の labelScale。 viewer 側は slider 入力で
-    // setLabelScale を頼み、 値を localStorage に永続する。
+    // route-labels の icon-size は renderer 内の labelScale。 viewer 側は CONTROL_DEFS の
+    // labelSize 定義の apply で setLabelScale を頼む (= control_panel.js が localStorage 永続)。
     expect(renderer).toMatch(/['"]icon-size['"]\s*:\s*labelScale/);
-    expect(viewer).toMatch(/function\s+applyLabelSize/);
+    expect(viewer).toMatch(/CONTROL_DEFS/);
     expect(viewer).toMatch(/mapRenderer\.setLabelScale\(/);
-    expect(viewer).toMatch(/localStorage\.setItem\(\s*['"]fujihill\.labelSize['"]/);
   });
 
-  it('機器設定パネルに ラベルサイズ slider (#rngLabelSize) がある', () => {
-    expect(html).toMatch(/id="rngLabelSize"\s+type="range"/);
-    expect(html).toMatch(/id="labelSizeVal"/);
+  it('機器設定パネルに ラベルサイズ slider コンテナ (#control-sliders) がある', () => {
+    // b13-1: control_panel.js が動的生成するため静的 HTML にスライダー行は無い。
+    // コンテナ div の id だけ静的 HTML に存在する。
+    expect(html).toMatch(/id="control-sliders"/);
   });
 
   it('rider 距離窓で間引く: setFilter で近傍だけ表示 (= 地平の潰れ対策、 map_renderer.js)', () => {

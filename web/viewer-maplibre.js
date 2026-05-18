@@ -64,6 +64,8 @@ import {
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
 import { createTerrainLoader } from './lib/terrain_loader.js';
+// b13-1: 機器設定パネルの共通スライダー機構
+import { mountControlPanel } from './lib/control_panel.js';
 
 // b12 Phase 2: 地図描画 renderer。 viewer 本体が地図を触る唯一の窓口。
 const mapRenderer = createMapRenderer();
@@ -258,11 +260,7 @@ try {
   const _ls = parseFloat(localStorage.getItem('fujihill.labelSize'));
   if (Number.isFinite(_ls) && _ls > 0) labelSizeScale = _ls;
 } catch { /* localStorage 不可は default のまま */ }
-// ラベル倍率を地図に適用する (= 機器設定パネルの slider 連動)。
-function applyLabelSize(scale) {
-  labelSizeScale = scale;
-  mapRenderer.setLabelScale(scale);
-}
+
 function setAppState(s) {
   // 2026-05-15 fix: 旧 `body.className = 'state-X'` は全クラス上書きで、 mode-view (= 観るモード)
   // クラスを副作用で消す bug。 classList で state-* だけ置換、 他クラス (= mode-view 等) は維持。
@@ -2247,89 +2245,21 @@ document.getElementById('btnClosePairing').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('visible');
 });
 
-function bindSlider(rangeId, valId, store, applyFn) {
-  const r = document.getElementById(rangeId); const v = document.getElementById(valId);
-  if (!r || !v) return;
-  applyFn(parseFloat(r.value));
-  r.addEventListener('input', () => { const pct = parseFloat(r.value); applyFn(pct); try { localStorage.setItem(store, String(pct / 100)); } catch {} });
-}
-const rDiff = document.getElementById('rngDiff'); const rSpd = document.getElementById('rngSpd');
-if (rDiff) rDiff.value = String(Math.round(diffMult * 100));
-if (rSpd) rSpd.value = String(Math.round(speedMult * 100));
-bindSlider('rngDiff', 'diffVal', 'fujihill.diff', (pct) => { diffMult = pct / 100; setText('diffVal', String(Math.round(pct))); lastSlopeSent = null; });
-bindSlider('rngSpd', 'spdVal', 'fujihill.spd', (pct) => { speedMult = pct / 100; setText('spdVal', (pct / 100).toFixed(2)); });
-// 2026-05-17: 慣性 slider はフライホイール慣性 (kg 相当) を指す。 bindSlider は値を pct/100 で
-// 保存する設計なので kg 値には使えない、 専用 binding にする。 slider は 0..3000 kg、 step 50。
-const rIner = document.getElementById('rngInertia');
-if (rIner) {
-  rIner.value = String(inertiaKg);
-  setText('inertiaVal', String(Math.round(inertiaKg)));
-  rIner.addEventListener('input', () => {
-    const kg = parseFloat(rIner.value);
-    if (Number.isFinite(kg)) {
-      inertiaKg = kg;
-      setText('inertiaVal', String(Math.round(kg)));
-      try { localStorage.setItem('fujihill.inertiaKg', String(kg)); } catch {}
-    }
-  });
-}
-
-// 2026-05-17: 慣性シミュと同じ 質量 / 転がり抵抗 / 空気抵抗 slider。 slider 生値と物理値を
-// scale 変換し、 物理値を localStorage 保存。 wsHandlers.state の applyPhysicsStep opts に効く。
-function bindBikeSlider(rangeId, valId, storeKey, physToRaw, rawToPhys, fmt, setGlobal, phys) {
-  const r = document.getElementById(rangeId);
-  if (!r) return;
-  r.value = String(physToRaw(phys));
-  setText(valId, fmt(physToRaw(phys)));
-  r.addEventListener('input', () => {
-    const raw = parseFloat(r.value);
-    if (!Number.isFinite(raw)) return;
-    const p = rawToPhys(raw);
-    setGlobal(p);
-    setText(valId, fmt(raw));
-    try { localStorage.setItem(storeKey, String(p)); } catch {}
-  });
-}
-bindBikeSlider('rngMass', 'massVal', 'fujihill.mass',
-  (p) => Math.round(p), (r) => r, (r) => String(Math.round(r)), (p) => { bikeMass = p; }, bikeMass);
-bindBikeSlider('rngRr', 'rrVal', 'fujihill.crr',
-  (p) => Math.round(p * 1000), (r) => r / 1000, (r) => String(Math.round(r)), (p) => { bikeCrr = p; }, bikeCrr);
-bindBikeSlider('rngCda', 'cdaVal', 'fujihill.cda',
-  (p) => Math.round(p * 100), (r) => r / 100, (r) => (r / 100).toFixed(2), (p) => { bikeCda = p; }, bikeCda);
-
-// 光源 slider: 方向 0..360° / 強度 0..100。 地図への反映は map_renderer に頼む。
-// b12 Phase 2.5: hillshade paint property の直接操作は地図描画モジュールの中。
-function applyLightDir(deg) {
-  setText('lightDirVal', String(Math.round(deg)));
-  setText('dbgLightDir', String(Math.round(deg)));
-  mapRenderer.setSunlightDirection(deg);
-}
-function applyLightStr(pct) {
-  const exag = pct / 100;
-  setText('lightStrVal', String(Math.round(pct)));
-  setText('dbgLightExag', exag.toFixed(2));
-  mapRenderer.setSunlightStrength(exag);
-}
-const rLightDir = document.getElementById('rngLightDir');
-if (rLightDir) rLightDir.addEventListener('input', () => applyLightDir(parseFloat(rLightDir.value)));
-const rLightStr = document.getElementById('rngLightStr');
-if (rLightStr) rLightStr.addEventListener('input', () => applyLightStr(parseFloat(rLightStr.value)));
-
-// b9: ラベルサイズ slider (= route-labels の icon-size 倍率)。 slider 生値 40..200 を
-// 0.4..2.0 倍に変換、 localStorage 'fujihill.labelSize' に永続。 現物を見ながら調整可。
-const rLabelSize = document.getElementById('rngLabelSize');
-if (rLabelSize) {
-  rLabelSize.value = String(Math.round(labelSizeScale * 100));
-  setText('labelSizeVal', labelSizeScale.toFixed(1));
-  rLabelSize.addEventListener('input', () => {
-    const pct = parseFloat(rLabelSize.value);
-    if (!Number.isFinite(pct)) return;
-    const scale = pct / 100;
-    applyLabelSize(scale);
-    setText('labelSizeVal', scale.toFixed(1));
-    try { localStorage.setItem('fujihill.labelSize', String(scale)); } catch {}
-  });
-}
+// b13-1: 旧5系統スライダー配線を共通機構に一本化。
+// 形式不一致の旧キーを先に消去 (inertiaKg / mass は生値一致のため保持)。
+['fujihill.diff','fujihill.spd','fujihill.crr','fujihill.cda','fujihill.labelSize'].forEach(k => { try { localStorage.removeItem(k); } catch {} });
+const CONTROL_DEFS = [
+  { key:'diff',       label:'負荷',        min:10,  max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ diffMult=raw/100; lastSlopeSent=null; } },
+  { key:'spd',        label:'速度倍率',    min:50,  max:200,  step:5,  value:100, unit:'x',      format:raw=>(raw/100).toFixed(2),         apply(raw){ speedMult=raw/100; } },
+  { key:'inertiaKg',  label:'慣性',        min:0,   max:3000, step:50, value:800, unit:'kg相当', format:raw=>String(Math.round(raw)),      apply(raw){ inertiaKg=raw; } },
+  { key:'mass',       label:'質量',        min:60,  max:110,  step:1,  value:88,  unit:'kg',     format:raw=>String(Math.round(raw)),      apply(raw){ bikeMass=raw; } },
+  { key:'crr',        label:'転がり抵抗',  min:1,   max:25,   step:1,  value:1,   unit:'‰',      format:raw=>String(Math.round(raw)),      apply(raw){ bikeCrr=raw/1000; } },
+  { key:'cda',        label:'空気抵抗',    min:18,  max:60,   step:1,  value:35,  unit:'m²',     format:raw=>(raw/100).toFixed(2),         apply(raw){ bikeCda=raw/100; } },
+  { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
+  { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
+  { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
+];
+mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');

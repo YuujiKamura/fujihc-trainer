@@ -88,12 +88,17 @@ describe('viewer 物理駆動: 慣性 slider は kg、 localStorage キーは新
     expect(viewer).toMatch(/fujihill\.inertiaKg/);
   });
 
-  it('rngInertia slider は 0..3000 kg、 step 50 (= index.html)', () => {
-    expect(indexHtml).toMatch(/id="rngInertia"[^>]*min="0"[^>]*max="3000"[^>]*step="50"/);
+  it('rngInertia slider は 0..3000 kg、 step 50 (= CONTROL_DEFS で定義)', () => {
+    // b13-1: slider は control_panel.js が動的生成するため静的 HTML には無い。
+    // viewer-maplibre.js の CONTROL_DEFS に inertiaKg の定義があることを pin する。
+    expect(viewer).toMatch(/key\s*:\s*['"]inertiaKg['"]/);
+    expect(viewer).toMatch(/min\s*:\s*0.*max\s*:\s*3000|max\s*:\s*3000.*min\s*:\s*0/);
+    expect(viewer).toMatch(/step\s*:\s*50/);
   });
 
   it('慣性 slider のラベル単位が kg相当 (= % ではない)', () => {
-    const m = indexHtml.match(/id="rngInertia"[\s\S]{0,160}/);
+    // b13-1: CONTROL_DEFS の inertiaKg エントリに unit:'kg相当' があることを pin する。
+    const m = viewer.match(/key\s*:\s*['"]inertiaKg['"][\s\S]{0,200}/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/kg相当/);
   });

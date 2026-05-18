@@ -88,6 +88,8 @@
   #controls .row label { flex: 0 0 6rem; color: #ffd54a; font-size: 16px; }
   #controls .row input[type=range] { flex: 1; height: 24px; }
   #controls .row .val { flex: 0 0 4rem; text-align: right; font-size: 16px; }
+  #controls .panel-header { cursor: pointer; font-weight: bold; margin-top: 0.6rem; color: #ffd54a; }
+  #controls .panel-body {}
   #status {
     position: fixed; right: 1rem; top: 1rem; z-index: 999;
     color: #aaa; font: 12px ui-monospace, monospace;
@@ -426,23 +428,7 @@
     <button id="btnPause">pause</button>
     <button id="btnOpenPairing">機器設定</button>
   </div>
-  <div class="row"><label>負荷</label><input id="rngDiff" type="range" min="10" max="200" step="5" value="100"><span class="val"><span id="diffVal">100</span>%</span></div>
-  <div class="row"><label>速度倍率</label><input id="rngSpd" type="range" min="50" max="200" step="5" value="100"><span class="val"><span id="spdVal">1.00</span>x</span></div>
-  <!-- 2026-05-17: 慣性 slider はフライホイール慣性 (= kg 相当)。 物理の加速度の分母に足され、
-       速度変化に抗う本物の慣性。 漕ぎ出しは重く、 足を止めても長く転がる。 重力には効かない。
-       0..3000 kg相当、 step 50、 default 800 (= inertia-sim.html と揃える)。 -->
-  <div class="row"><label>慣性</label><input id="rngInertia" type="range" min="0" max="3000" step="50" value="800"><span class="val"><span id="inertiaVal">800</span>kg相当</span></div>
-  <!-- 2026-05-17: 慣性シミュ (inertia-sim.html) と同じ自転車パラメータ。 質量 = rider+bike 総重量、
-       転がり抵抗 = タイヤ+ベアリングの常時抵抗 (‰)、 空気抵抗 = 前面 CdA (m²)。
-       いずれも applyPhysicsStep に渡され速度積分に効く。 -->
-  <div class="row"><label>質量</label><input id="rngMass" type="range" min="60" max="110" step="1" value="88"><span class="val"><span id="massVal">88</span>kg</span></div>
-  <div class="row"><label>転がり抵抗</label><input id="rngRr" type="range" min="1" max="25" step="1" value="1"><span class="val"><span id="rrVal">1</span>‰</span></div>
-  <div class="row"><label>空気抵抗</label><input id="rngCda" type="range" min="18" max="60" step="1" value="35"><span class="val"><span id="cdaVal">0.35</span>m²</span></div>
-  <!-- 光源 (hillshade) 調整: 方向 0..360° / 強度 0..100 (= MapLibre 0..1 を ×100) -->
-  <div class="row"><label>光源方向</label><input id="rngLightDir" type="range" min="0" max="360" step="5" value="135"><span class="val"><span id="lightDirVal">135</span>°</span></div>
-  <div class="row"><label>光源強度</label><input id="rngLightStr" type="range" min="0" max="100" step="5" value="100"><span class="val"><span id="lightStrVal">100</span>%</span></div>
-  <!-- b9: 距離+勾配ラベルの表示サイズ (= route-labels の icon-size 倍率)。 40..200 → 0.4..2.0x。 -->
-  <div class="row"><label>ラベルサイズ</label><input id="rngLabelSize" type="range" min="40" max="200" step="10" value="100"><span class="val"><span id="labelSizeVal">1.0</span>x</span></div>
+  <div id="control-sliders"></div>
   <div style="margin-top:0.4rem; font-size:13px; color:#aaa;">
     hillshade dbg:
     dir <span id="dbgLightDir">135</span>°,
@@ -805,6 +791,6 @@
   <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
-<script type="module" src="viewer-maplibre.js?v=39"></script>
+<script type="module" src="viewer-maplibre.js?v=40"></script>
 </body>
 </html>
