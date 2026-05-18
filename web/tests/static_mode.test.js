@@ -167,7 +167,9 @@ describe('brief 31 / b12 Phase 2: bootMap helper (= 地図生成は map_renderer
     // b12 Phase 2: 旧 `let map = null` は撤去、 viewer は mapRenderer 1 個だけ持つ。
     expect(viewer).not.toMatch(/^let\s+map\s*=\s*null/m);
     expect(viewer).toMatch(/const\s+mapRenderer\s*=\s*createMapRenderer\(\)/);
-    expect(viewer).toMatch(/import\s+\{\s*createMapRenderer\s*\}\s+from\s+['"]\.\/lib\/map_renderer\.js['"]/);
+    // b12 Phase 4: 描画エンジンを Three.js 実装に差し替え。 createMapRenderer の
+    // import 元が map_renderer.js (MapLibre) から map3d/index.js (Three.js) に変わった。
+    expect(viewer).toMatch(/import\s+\{\s*createMapRenderer\s*\}\s+from\s+['"]\.\/lib\/map3d\/index\.js['"]/);
   });
 
   it('function bootMap(env) は map_renderer.boot に委譲する (= 地図生成を地図描画モジュールに集約)', () => {
