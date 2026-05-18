@@ -717,6 +717,13 @@ async function main() {
       new THREE.Vector3(0, 0, -1),
       new THREE.Vector3(pl.forward[0], pl.forward[1], pl.forward[2]));
 
+    // オービットカメラの起点をライダー現在位置に追随させる。
+    // target を毎フレーム更新することで、ドラッグ回転がライダーを中心に動く。
+    if (!followMode) {
+      target.set(pl.position[0], pl.position[1], pl.position[2]);
+      applyCamera();
+    }
+
     // 追従カメラ: forward の水平成分でカメラを配置し、坂の傾きによる上下振れを抑える。
     if (followMode) {
       const fwdX = pl.forward[0], fwdZ = pl.forward[2];
