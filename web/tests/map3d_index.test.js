@@ -1,0 +1,100 @@
+// b12 Phase 3 部品0 ファサード index.js のユニットテスト.
+//
+// index.js は three / three 依存部品を boot() 内で動的 import するので、 createMapRenderer()
+// 自体は three 非依存で評価でき node 環境から import できる。 boot() を呼ばない範囲
+// ── 差し替え口15メソッドが揃うか、 距離補間の純関数 ── を検証する。 実描画 (boot 後の
+// シーン構築・カメラ・rider) は three / DOM が要るので Phase 4 の画面確認で見る。
+
+import { describe, it, expect } from 'vitest';
+import { createMapRenderer, distanceAlongCourse } from '../lib/map3d/index.js';
+
+// map_renderer.js が定める意味メソッド15個。 Three.js 実装も同じ顔ぶれを満たす。
+const CONTRACT_METHODS = [
+  'isBooted', 'boot', 'onceIdle',
+  'setCameraDefaults', 'updateCamera', 'projectToScreen', 'getCameraInfo', 'render',
+  'renderCourse',
+  'updateRider',
+  'setLabelScale', 'updateLabelWindow',
+  'setSunlightDirection', 'setSunlightStrength',
+  'setStartGoalVisible',
+];
+
+describe('createMapRenderer — 差し替え口15メソッド', () => {
+  it('15個のメソッドが揃い、すべて関数である', () => {
+    const r = createMapRenderer();
+    for (const name of CONTRACT_METHODS) {
+      expect(typeof r[name], `${name} が関数でない`).toBe('function');
+    }
+  });
+
+  it('契約外の余計なメソッドを生やしていない (15個ちょうど)', () => {
+    const r = createMapRenderer();
+    const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
+    expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
+  });
+
+  it('boot 前は isBooted() が false', () => {
+    const r = createMapRenderer();
+    expect(r.isBooted()).toBe(false);
+  });
+
+  it('boot 前に render / updateRider / updateCamera を呼んでも例外にならない', () => {
+    const r = createMapRenderer();
+    expect(() => r.render()).not.toThrow();
+    expect(() => r.updateRider({ course: [], curIdx: 0, lat: 0, lon: 0 })).not.toThrow();
+    const cam = r.updateCamera({ course: [], curIdx: 0, lon: 0, lat: 0, apply: false });
+    expect(cam).toHaveProperty('headingRad');
+    expect(cam).toHaveProperty('bearingDeg');
+  });
+
+  it('boot 前の projectToScreen は visible=false の安全な値を返す', () => {
+    const r = createMapRenderer();
+    const p = r.projectToScreen(138.7, 35.4);
+    expect(p.visible).toBe(false);
+  });
+
+  it('onceIdle のコールバックは idle 未発火なら即時には呼ばれない', () => {
+    const r = createMapRenderer();
+    let called = false;
+    r.onceIdle(() => { called = true; });
+    expect(called).toBe(false);
+  });
+
+  it('各レンダラは独立した状態を持つ (factory が状態を共有しない)', () => {
+    const a = createMapRenderer();
+    const b = createMapRenderer();
+    expect(a).not.toBe(b);
+    expect(a.isBooted()).toBe(false);
+    expect(b.isBooted()).toBe(false);
+  });
+});
+
+describe('distanceAlongCourse — curIdx + lat/lon から走行距離', () => {
+  const course = [
+    { lat: 0, lon: 0, distance_m: 0 },
+    { lat: 0, lon: 1, distance_m: 100 },
+    { lat: 0, lon: 2, distance_m: 250 },
+  ];
+
+  it('区間の始点では区間始点の distance_m', () => {
+    expect(distanceAlongCourse(course, 0, 0, 0)).toBe(0);
+  });
+
+  it('区間の中点では distance_m を線形補間する', () => {
+    expect(distanceAlongCourse(course, 0, 0, 0.5)).toBe(50);
+    expect(distanceAlongCourse(course, 1, 0, 1.5)).toBe(175);
+  });
+
+  it('区間を越える lat/lon は frac を 0..1 にクランプする', () => {
+    expect(distanceAlongCourse(course, 0, 0, 2)).toBe(100);
+    expect(distanceAlongCourse(course, 0, 0, -1)).toBe(0);
+  });
+
+  it('最終点の curIdx は最終点の distance_m を返す', () => {
+    expect(distanceAlongCourse(course, 2, 0, 2)).toBe(250);
+  });
+
+  it('空コースは 0 を返す (= course load 前の事故耐性)', () => {
+    expect(distanceAlongCourse([], 0, 0, 0)).toBe(0);
+  });
+});
