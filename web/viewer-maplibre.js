@@ -2252,6 +2252,10 @@ const CONTROL_DEFS = [
   { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
   { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
   { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
+  { key:'riderScale', label:'ライダー倍率', min:10,  max:80,   step:5,  value:36,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setRiderScale(raw/10); } },
+  { key:'courseWidth',label:'コース幅',     min:4,   max:40,   step:2,  value:10,  unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setCourseWidth(raw); } },
+  { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
+  { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:4,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
 
