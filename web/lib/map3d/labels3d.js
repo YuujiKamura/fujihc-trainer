@@ -40,8 +40,8 @@ export const LABEL_WINDOW_FWD_M = 450;
 export const LABEL_BUCKET_M = 50;
 // 倍率 1.0 のときの看板の高さ (m)。 道路リボン (widthM 10m) の脇に立つ標識として、
 // ride 視点 (= カメラがコース上、 看板が前方数十 m) で読めて画面を覆わない大きさ。
-// 旧値 40m → 8m → 4m と段階的に縮小。 2026-05-18: 8m でも画面を覆うと user 指摘、 4m に。
-export const LABEL_BASE_HEIGHT_M = 4;
+// 旧値 40m → 8m → 4m → 2m と段階的に縮小。 2026-05-19: 4m は道幅 10m を幅 16m で超えると指摘、 2m (幅 8m) に。
+export const LABEL_BASE_HEIGHT_M = 2;
 
 /**
  * ライダー距離を表示窓更新の bucket index に量子化する純関数.

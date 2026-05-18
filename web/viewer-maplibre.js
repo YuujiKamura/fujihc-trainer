@@ -2255,7 +2255,7 @@ const CONTROL_DEFS = [
   { key:'riderScale', label:'ライダー倍率', min:10,  max:80,   step:5,  value:36,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setRiderScale(raw/10); } },
   { key:'courseWidth',label:'コース幅',     min:4,   max:40,   step:2,  value:10,  unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setCourseWidth(raw); } },
   { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
-  { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:4,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
+  { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
 
