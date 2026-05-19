@@ -812,25 +812,27 @@ function maybeSendSlope(slope_pct) {
   lastSlopeSent = scaled; lastSlopeSendT = now;
 }
 
-// brief 34 ε-6: attribution control の display 監視.
-// MapLibre の標準 attribution (= 国土地理院 / OSM / MapLibre 出典) が DevTools 経由で
-// `display:none` を inject されると ODbL / 国土地理院 規約違反、 ただし harm 主体は inject
-// した訪問者本人 (= 第三者には影響しない、 LOAD-BEARING 上限) なので block ではなく
-// warning banner を出すだけ。 起動 1 回限定。
+// brief 34 ε-6 / task-g: 帰属表示 (#attrib) の display 監視.
+// 地図タイルの出典 (= 国土地理院 / OpenStreetMap) を表示する #attrib 要素 (index.html) が
+// DevTools 経由で `display:none` を inject される / DOM から消されると ODbL / 国土地理院
+// 規約違反、 ただし harm 主体は inject した訪問者本人 (= 第三者には影響しない、 LOAD-BEARING
+// 上限) なので block ではなく warning banner を出すだけ。 起動 1 回限定。
+// task-g: b12 Phase 4 の Three.js 化で MapLibre 標準 AttributionControl (= DOM class
+// `.maplibregl-ctrl-attrib`) が消えたため、 監視対象を index.html の静的要素 #attrib に更新。
 function verifyAttributionVisible() {
   try {
-    const attribEl = document.querySelector('.maplibregl-ctrl-attrib');
+    const attribEl = document.getElementById('attrib');
     if (!attribEl) {
-      // attribution control が DOM に居ない (= disable された) → これも違反
-      showAttributionWarning('attribution control が DOM に存在しません');
+      // 出典 DOM (#attrib) が居ない (= 消された) → 出典明示義務違反
+      showAttributionWarning('帰属表示要素 (#attrib) が DOM に存在しません');
       return;
     }
     const cs = getComputedStyle(attribEl);
     if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) {
-      showAttributionWarning(`attribution が表示されていません (display=${cs.display}, visibility=${cs.visibility}, opacity=${cs.opacity})`);
+      showAttributionWarning(`帰属表示が表示されていません (display=${cs.display}, visibility=${cs.visibility}, opacity=${cs.opacity})`);
     }
   } catch (err) {
-    // querySelector / getComputedStyle が失敗するのは jsdom 等の test 環境、 silent。
+    // getElementById / getComputedStyle が失敗するのは jsdom 等の test 環境、 silent。
   }
 }
 function showAttributionWarning(detail) {
@@ -839,7 +841,7 @@ function showAttributionWarning(detail) {
   const st = document.getElementById('status');
   if (st) {
     st.style.color = '#ff8866';
-    st.textContent = '[警告] 帰属表示 (国土地理院 / OSM / MapLibre) が消えています';
+    st.textContent = '[警告] 帰属表示 (国土地理院 / OpenStreetMap) が消えています';
   }
 }
 

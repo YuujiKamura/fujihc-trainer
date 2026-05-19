@@ -52,8 +52,8 @@
   body.state-checking #dbinit-overlay { display: none !important; }
 
   #hud {
-    /* bottom 2.5rem = 40px: 画面下端の MapLibre attribution (= 国土地理院 / OSM / MapLibre 出典) に
-       重ならないように UI を上に逃がす. attribution 自体は MapLibre が canvas に bottom: 0 で固定描画する.
+    /* bottom 2.5rem = 40px: 画面下端の帰属表示 #attrib (= 国土地理院 / OpenStreetMap 出典) に
+       重ならないように UI を上に逃がす. #attrib は画面右下隅・最下部に position:fixed で常時表示する.
        font-size 18px に拡大 (= rider HUD と統一、 読みやすさ優先). */
     position: fixed; left: 1rem; bottom: 2.5rem; z-index: 999;
     background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
@@ -75,7 +75,7 @@
   body.state-dbinit #rider-hud,
   body.state-pairing #rider-hud { display: none !important; }
   #controls {
-    /* attribution と重ならないよう bottom 2.5rem (= #hud と同じ).
+    /* 帰属表示 #attrib と重ならないよう bottom 2.5rem (= #hud と同じ).
        font-size 18px に拡大 (= rider HUD と統一)、 button / slider も視認性 up. */
     position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
     font: 18px ui-monospace, monospace;
@@ -94,6 +94,20 @@
     color: #aaa; font: 12px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
   }
+  /* task-g: 地図タイル出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
+     b12 Phase 4 で描画エンジンが Three.js になり MapLibre 標準 AttributionControl が消えた
+     ため、 terrain3d.html の #attrib と同型の静的 HTML 出典 DOM を新設した。
+     位置: 画面右下隅・最下部 (= #hud / #controls が bottom:2.5rem に逃げて空けた帯).
+     z-index 2001: 全 overlay (intro 1450 〜 loading-indicator 2000) より上 ── intro /
+     setup / dbinit の半透明 overlay 越しにも 3D 地形タイルは見えており、 タイルが見えて
+     いる間は出典が要るため、 全 state で常時・読める形で見せる。 */
+  #attrib {
+    position: fixed; right: 1rem; bottom: 8px; z-index: 2001;
+    font: 12px/1.4 ui-monospace, monospace; color: #e6edf3;
+    background: rgba(13, 17, 23, 0.92); border: 1px solid #30363d;
+    padding: 5px 10px; border-radius: 6px;
+  }
+  #attrib a { color: #58a6ff; }
   /* brief 29: minimap 上半分を旧 OSM 直叩き方式 (= canvas + loadOsmTile + drawImage)
      に rollback。 brief 28 の MapLibre 2nd instance は撤回、 上下 2 canvas 構造は維持。
      上半分: course bbox を覆う z=11 周辺 9-16 OSM タイルを起動時 1-shot fetch、
@@ -800,6 +814,14 @@
   <canvas id="minimap-top" width="320" height="561"></canvas>
   <canvas id="minimap-bottom" width="320" height="159"></canvas>
 </div>
+
+<!-- task-g: 地図タイルの出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
+     地形 (3D メッシュ) = 国土地理院 (DEM + seamlessphoto 航空写真)、 minimap 上半分 = OpenStreetMap。
+     b12 Phase 4 の Three.js 化で MapLibre 標準 AttributionControl が消えたため静的 HTML で新設。
+     消失監視は viewer-maplibre.js の verifyAttributionVisible() が #attrib を見る。
+     静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
+<div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
+
 <script type="module" src="viewer-maplibre.js?v=40"></script>
 </body>
 </html>

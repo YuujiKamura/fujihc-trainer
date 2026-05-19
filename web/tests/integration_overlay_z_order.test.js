@@ -77,11 +77,14 @@ describe('brief 34 ε-6: 帰属表示 (= attribution control) の動的消失監
     expect(VIEWER).toMatch(/function\s+verifyAttributionVisible\s*\(\s*\)/);
   });
 
-  it('verifyAttributionVisible は .maplibregl-ctrl-attrib の display / visibility / opacity を check', () => {
+  it('verifyAttributionVisible は #attrib の display / visibility / opacity を check', () => {
     const m = VIEWER.match(/function\s+verifyAttributionVisible[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    expect(body).toMatch(/querySelector\(['"]\.maplibregl-ctrl-attrib['"]\)/);
+    // task-g: b12 Phase 4 の Three.js 化で MapLibre AttributionControl が消えたため、
+    // 監視対象は index.html の静的要素 #attrib。 dead な .maplibregl-ctrl-attrib は使わない。
+    expect(body).toMatch(/getElementById\(['"]attrib['"]\)/);
+    expect(body).not.toMatch(/maplibregl-ctrl-attrib/);
     expect(body).toMatch(/getComputedStyle\(/);
     expect(body).toMatch(/display\s*===?\s*['"]none['"]/);
     expect(body).toMatch(/visibility\s*===?\s*['"]hidden['"]/);
@@ -206,9 +209,17 @@ describe('brief 34 ε-6 integration: intro / footer の帰属メッセージ整�
     expect(HTML).toMatch(/コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換/);
   });
 
-  it('buildMapStyle の attribution に「国土地理院」「OpenStreetMap contributors」両方を含む (= ε-6 で動的消失監視と並ぶ静的 attribution、 map_renderer.js)', () => {
-    // b12 Phase 2: buildMapStyle は map_renderer.js に移設済。 静的 attribution もそちら。
-    expect(RENDERER).toMatch(/attribution:\s*['"]国土地理院 標高タイル['"]/);
-    expect(RENDERER).toMatch(/attribution:\s*['"]© OpenStreetMap contributors['"]/);
+  it('index.html の #attrib 要素が GSI / OSM 両方の出典と地理院タイル一覧リンクを含む (= 帰属表示文字列の SoT)', () => {
+    // task-g: b12 Phase 4 の Three.js 化で MapLibre AttributionControl が消えたため、
+    // 帰属表示文字列の SoT は index.html の静的 #attrib 要素。 dormant な map_renderer.js は
+    // production viewer に import されないので grep 対象にしない (= 旧テストは「壊れているのに
+    // green」な misleading test だった)。
+    const m = HTML.match(/<div\s+id="attrib"[^>]*>[\s\S]*?<\/div>/);
+    expect(m).not.toBeNull();
+    const attrib = m[0];
+    expect(attrib).toMatch(/国土地理院/);
+    expect(attrib).toMatch(/OpenStreetMap/);
+    // GSI 利用規約が要求する地理院タイル一覧へのリンク (CLAUDE.md の #attrib 要件)。
+    expect(attrib).toMatch(/maps\.gsi\.go\.jp\/development\/ichiran\.html/);
   });
 });
