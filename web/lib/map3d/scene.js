@@ -13,6 +13,7 @@
 // render(camera) の引数で受け取る (= カメラ部品は別ワーカーが作る)。
 
 import * as THREE from 'three';
+import { sunElevationFromAzimuth } from './sun_model.js';
 
 // グラデーション青空の色 (= MapLibre 版 map_renderer.js の COMMON_SKY を Three.js に移植).
 // b12 Phase 4 の Three.js 化で MapLibre の sky レイヤが失われ、 背景が単色の暗色になっていた。
@@ -24,16 +25,19 @@ const FOG_COLOR = 0xd8d0c8;
 const SKY_DOME_SPAN_FACTOR = 1.5;
 // 太陽の既定方位。 MapLibre の hillshade-illumination-direction 既定 135 に合わせる
 // (= 同じ deg を viewer から受け取るので MapLibre 実装と見えの起点を揃える)。
+// 仰角は固定せず sun_model.js が方位 (= 時間帯) から計算する。
 const DEFAULT_SUN_AZIMUTH_DEG = 135;
-// 太陽の仰角 (度)。 朝〜昼の斜め光で地形の凹凸が陰影として読める角度。
-const SUN_ELEVATION_DEG = 50;
+// 影の長さ計算に使う自機の高さ (m、 riderScale 3.6 の bike 全高ぶん)。
+const RIDER_HEIGHT_M = 2.6;
 // configureScale() 前に render されても破綻しないための span 既定値 (m)。
 const DEFAULT_SPAN_M = 10000;
 // 影用の太陽光と自機の距離 (m)。 影は shadow map で落とす ── 太陽本体は hillshade 用に
 // span 距離へ置くが、 影オルソカメラは自機を狭い範囲で覆うため別にこの距離へ置く。
 const SHADOW_LIGHT_DIST = 60;
-// 影オルソカメラの半幅 (m)。 自機 (riderScale 3.6 ≒ 3.6m) を覆える広さ。
-const SHADOW_CAM_HALF = 5;
+// 影オルソカメラの半幅 ── 基本 (自機本体ぶん) と上限。 太陽が低い (朝夕) ほど影が
+// 長いので、 focusShadowOn が仰角から半幅を SHADOW_CAM_MAX まで可変に広げる。
+const SHADOW_CAM_BASE = 3;
+const SHADOW_CAM_MAX = 18;
 
 /**
  * 方位 (deg) と仰角 (deg) と距離から太陽光源のワールド座標を返す.
@@ -129,10 +133,10 @@ export function createScene({ container }) {
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0008;
-  sun.shadow.camera.left = -SHADOW_CAM_HALF;
-  sun.shadow.camera.right = SHADOW_CAM_HALF;
-  sun.shadow.camera.top = SHADOW_CAM_HALF;
-  sun.shadow.camera.bottom = -SHADOW_CAM_HALF;
+  sun.shadow.camera.left = -SHADOW_CAM_BASE;
+  sun.shadow.camera.right = SHADOW_CAM_BASE;
+  sun.shadow.camera.top = SHADOW_CAM_BASE;
+  sun.shadow.camera.bottom = -SHADOW_CAM_BASE;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = SHADOW_LIGHT_DIST * 2.2;
   sun.shadow.camera.updateProjectionMatrix();
@@ -147,11 +151,15 @@ export function createScene({ container }) {
   let span = DEFAULT_SPAN_M;
 
   function applySun() {
-    const p = sunPosition(sunAzimuthDeg, SUN_ELEVATION_DEG, span);
+    // 仰角は方位 (= 時間帯) から日周で計算する。 太陽が地平線下 (夜) でも光源の y が
+    // マイナスだと地中から照らすので、 位置計算は最低 2° でクランプ。
+    const elevation = sunElevationFromAzimuth(sunAzimuthDeg);
+    const p = sunPosition(sunAzimuthDeg, Math.max(elevation, 2), span);
     sun.position.set(p.x, p.y, p.z);
-    // exaggeration 0..1 を光の強度 0..2 に線形マップする。 強度 0 = 平行光が消え
-    // 環境光だけ ── MapLibre で hillshade を弱めたときの「陰影が薄い」見えに対応する。
-    sun.intensity = Math.max(0, sunStrength) * 2.0;
+    // exaggeration 0..1 を光の強度 0..2 に線形マップ。 さらに太陽が地平線下 (夜) は
+    // 平行光をほぼ消す ── 北回りの「ありえない方向」では陽が差さない。
+    const daylight = elevation > 0 ? 1 : 0.18;
+    sun.intensity = Math.max(0, sunStrength) * 2.0 * daylight;
   }
   applySun();
 
@@ -169,7 +177,19 @@ export function createScene({ container }) {
     // の直前に毎フレーム呼ぶ。
     focusShadowOn(pos) {
       if (!pos) return;
-      const d = sunPosition(sunAzimuthDeg, SUN_ELEVATION_DEG, SHADOW_LIGHT_DIST);
+      // 仰角は方位 (= 時間帯) から計算。 太陽が低い (朝夕) ほど影が長いので、 影オルソ
+      // カメラの半幅も影長 (≒ 自機高さ / tan(仰角)) に合わせて広げる ── 影が途中で
+      // 切れない。 上限は SHADOW_CAM_MAX。
+      const elevation = sunElevationFromAzimuth(sunAzimuthDeg);
+      const elevForCalc = Math.max(elevation, 2);
+      const reach = Math.min(
+        SHADOW_CAM_BASE + RIDER_HEIGHT_M / Math.tan((elevForCalc * Math.PI) / 180),
+        SHADOW_CAM_MAX);
+      const cam = sun.shadow.camera;
+      cam.left = -reach; cam.right = reach;
+      cam.top = reach; cam.bottom = -reach;
+      cam.updateProjectionMatrix();
+      const d = sunPosition(sunAzimuthDeg, elevForCalc, SHADOW_LIGHT_DIST);
       sun.position.set(pos.x + d.x, pos.y + d.y, pos.z + d.z);
       sun.target.position.set(pos.x, pos.y, pos.z);
       sun.target.updateMatrixWorld();
