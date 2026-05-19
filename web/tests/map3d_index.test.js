@@ -18,17 +18,18 @@ const CONTRACT_METHODS = [
   'setSunlightDirection', 'setSunlightStrength',
   'setStartGoalVisible',
   'setRiderScale', 'setCourseWidth', 'setRoadHeight', 'setLabelHeight',
+  'setRiderShape',
 ];
 
-describe('createMapRenderer — 差し替え口19メソッド', () => {
-  it('19個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口20メソッド', () => {
+  it('20個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (19個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (20個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
@@ -69,12 +70,13 @@ describe('createMapRenderer — 差し替え口19メソッド', () => {
     expect(b.isBooted()).toBe(false);
   });
 
-  it('boot 前に setRiderScale / setCourseWidth / setRoadHeight / setLabelHeight を呼んでも例外にならない (pending 経路)', () => {
+  it('boot 前に setRiderScale / setCourseWidth / setRoadHeight / setLabelHeight / setRiderShape を呼んでも例外にならない (pending 経路)', () => {
     const r = createMapRenderer();
     expect(() => r.setRiderScale(2.0)).not.toThrow();
     expect(() => r.setCourseWidth(8)).not.toThrow();
     expect(() => r.setRoadHeight(3)).not.toThrow();
     expect(() => r.setLabelHeight(6)).not.toThrow();
+    expect(() => r.setRiderShape({ wheelR: 0.3 })).not.toThrow();
   });
 });
 

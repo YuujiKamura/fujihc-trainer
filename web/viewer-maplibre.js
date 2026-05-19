@@ -5,6 +5,8 @@
 // MapLibre 実装 (web/lib/map_renderer.js) も同じ差し替え口を満たすので、 import 行を
 // web/lib/map3d/index.js に差し替えるだけで描画エンジンが入れ替わる。
 import { createMapRenderer } from './lib/map3d/index.js';
+// 自機形状エディタ: 自転車の部品ごと形状パラメータの既定値と範囲 (control panel 用).
+import { BIKE_SHAPE_DEFAULTS, BIKE_SHAPE_RANGE } from './lib/map3d/rider_mesh3d.js';
 // b12 Phase 1: 富士ヒル固有値 (bounds / center / course file) は course 定義に集約.
 import { fujihill } from './courses/fujihill.js';
 // brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
@@ -381,9 +383,9 @@ function updateTerrainStep(phase) {
   } else if (phase === 'failed') {
     // failed 用 class は無いので、 active を付けつつ赤系の inline color を当てる.
     el.classList.add('active');
-    el.style.color = '#ff5050';
-    el.style.borderColor = '#ff5050';
-    el.style.background = '#221408';
+    el.style.color = '#e56b6f';
+    el.style.borderColor = '#e56b6f';
+    el.style.background = '#3a1c20';
   } else {
     el.classList.add('active');
   }
@@ -398,14 +400,14 @@ function setTerrainStatusUI(snap) {
   if (!el) return;
   if (snap.phase === 'done') {
     el.textContent = `地形データ準備 完了 — 「走る」「観る」を選べるようになりました (${snap.label})`;
-    el.style.color = '#7fff00';
+    el.style.color = '#62d0a2';
   } else if (snap.phase === 'failed') {
     el.textContent = `地形データ準備 失敗: ${snap.error || ''} ── ページを reload してください`;
-    el.style.color = '#ff5050';
+    el.style.color = '#e56b6f';
   } else {
     // 2026-05-15 fix: load 中の案内文を「何をしてる / なぜ操作できない」明示に強化.
     el.textContent = `地形データを準備しています... コースの起伏を描く地図タイルを読み込み中です。 完了するまで「走る」「観る」ボタンは押せません。  ${snap.label} (${snap.percent}%)`;
-    el.style.color = '#ffd54a';
+    el.style.color = '#f2c14e';
   }
   // brief 34 ε-10: rangeWarning が立ったら status text に追記。 done 後でも user が
   // 「準備完了なのに地図が出ない」を疑える文言を残す (= warn を見える化)。
@@ -692,11 +694,11 @@ function showSetupResults(devices) {
 function copyToClipboard(text, statusEl) {
   if (!text) return;
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => { if (statusEl) { statusEl.style.color = '#7fff00'; statusEl.textContent = '✓ コピー済'; } })
-    .catch((err) => { if (statusEl) { statusEl.style.color = '#ff5050'; statusEl.textContent = `失敗 (${err.message || err})`; } });
+    navigator.clipboard.writeText(text).then(() => { if (statusEl) { statusEl.style.color = '#62d0a2'; statusEl.textContent = '✓ コピー済'; } })
+    .catch((err) => { if (statusEl) { statusEl.style.color = '#e56b6f'; statusEl.textContent = `失敗 (${err.message || err})`; } });
     return;
   }
-  try { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); if (statusEl) { statusEl.style.color = '#7fff00'; statusEl.textContent = '✓ コピー済'; } }
+  try { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); if (statusEl) { statusEl.style.color = '#62d0a2'; statusEl.textContent = '✓ コピー済'; } }
   catch { if (statusEl) statusEl.textContent = '失敗'; }
 }
 
@@ -855,7 +857,7 @@ function showAttributionWarning(detail) {
   // warning banner を画面上端に表示 (= 既存 #status を借りる、 別 DOM 追加せず軽量).
   const st = document.getElementById('status');
   if (st) {
-    st.style.color = '#ff8866';
+    st.style.color = '#f0a96a';
     st.textContent = '[警告] 帰属表示 (国土地理院 / OpenStreetMap) が消えています';
   }
 }
@@ -1830,7 +1832,7 @@ async function buildMinimapTopBase() {
   const off = document.createElement('canvas');
   off.width = W; off.height = H;
   const ctx = off.getContext('2d');
-  ctx.fillStyle = 'rgba(15,15,20,0.85)';
+  ctx.fillStyle = 'rgba(10,18,18,0.88)';
   ctx.fillRect(0, 0, W, H);
 
   // OSM タイル 1-shot 並列 fetch (= z=11 周辺、 buffer=1 で 9-16 タイル)
@@ -1850,24 +1852,24 @@ async function buildMinimapTopBase() {
   }
   await Promise.all(ps);
 
-  // course polyline (= 黄)
+  // course polyline (= muted amber)
   ctx.beginPath();
   for (let i = 0; i < course.length; i++) {
     const [x, y] = project(course[i].lat, course[i].lon);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#ffd54a';
+  ctx.strokeStyle = '#f2c14e';
   ctx.lineWidth = 3;
   ctx.stroke();
-  // start dot (= 緑)
+  // start dot (= soft green)
   const [sx, sy] = project(course[0].lat, course[0].lon);
-  ctx.fillStyle = '#7fff00';
-  ctx.strokeStyle = '#000';
+  ctx.fillStyle = '#62d0a2';
+  ctx.strokeStyle = '#07110f';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-  // goal dot (= 赤)
+  // goal dot (= soft red)
   const [gx, gy] = project(course[course.length - 1].lat, course[course.length - 1].lon);
-  ctx.fillStyle = '#ff3030';
+  ctx.fillStyle = '#e56b6f';
   ctx.beginPath(); ctx.arc(gx, gy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
 
   // 180 度回転 (= 画面下が進行方向前方になる視覚整合、 旧版踏襲)
@@ -1905,7 +1907,7 @@ function buildMinimapBottomBase() {
 
   const off = document.createElement('canvas'); off.width = W; off.height = H;
   const ctx = off.getContext('2d');
-  ctx.fillStyle = 'rgba(15,15,20,0.85)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(10,18,18,0.88)'; ctx.fillRect(0, 0, W, H);
   // 標高プロファイルの塗り (= gradient)
   ctx.beginPath(); ctx.moveTo(PAD, botBaseY);
   for (let i = 0; i < course.length; i++) {
@@ -1916,8 +1918,8 @@ function buildMinimapBottomBase() {
   }
   ctx.lineTo(PAD + botInnerW, botBaseY); ctx.closePath();
   const grad = ctx.createLinearGradient(0, botTopY, 0, botBaseY);
-  grad.addColorStop(0, 'rgba(255,213,74,0.7)');
-  grad.addColorStop(1, 'rgba(255,213,74,0.15)');
+  grad.addColorStop(0, 'rgba(98,208,162,0.62)');
+  grad.addColorStop(1, 'rgba(242,193,78,0.14)');
   ctx.fillStyle = grad; ctx.fill();
   // 標高プロファイルの白線
   ctx.beginPath();
@@ -1927,9 +1929,9 @@ function buildMinimapBottomBase() {
     const y = botBaseY - ((p.elevation_m - minE) / (maxE - minE)) * botInnerH;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = '#eef4f1'; ctx.lineWidth = 2; ctx.stroke();
   // min/max 標高ラベル
-  ctx.fillStyle = '#aaa'; ctx.font = '14px ui-monospace, monospace';
+  ctx.fillStyle = '#9aaaa5'; ctx.font = '14px ui-monospace, monospace';
   ctx.fillText(`${maxE.toFixed(0)}m`, 4, botTopY + 14);
   ctx.fillText(`${minE.toFixed(0)}m`, 4, botBaseY - 4);
   minimapBottomBase = off;
@@ -2118,10 +2120,10 @@ function tick(t) {
       if (dEl) {
         if (checks.length === 0) {
           dEl.textContent = '✓ ok';
-          dEl.style.color = '#7fff00';
+          dEl.style.color = '#62d0a2';
         } else {
           dEl.textContent = checks.join(' ');
-          dEl.style.color = '#ff5050';
+          dEl.style.color = '#e56b6f';
         }
       }
     } else {
@@ -2330,6 +2332,21 @@ const CONTROL_DEFS = [
   { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
+
+// 自機 (自転車) の部品ごと形状エディタ。 各スライダーが bikeShape の 1 フィールドを
+// 更新し、 mapRenderer.setRiderShape で自転車を組み直す。 control_panel が
+// localStorage 永続 (fujihill.bike*) を担う。 「調整」 とは別の折りたたみパネルにする。
+const bikeShape = { ...BIKE_SHAPE_DEFAULTS };
+const BIKE_SHAPE_DEFS = [
+  { key:'bikeWheelR',     label:'車輪 半径',      min:BIKE_SHAPE_RANGE.wheelR[0],     max:BIKE_SHAPE_RANGE.wheelR[1],     step:0.01,  value:BIKE_SHAPE_DEFAULTS.wheelR,     unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.wheelR=raw;     mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeTubeR',      label:'タイヤ 太さ',    min:BIKE_SHAPE_RANGE.tubeR[0],      max:BIKE_SHAPE_RANGE.tubeR[1],      step:0.002, value:BIKE_SHAPE_DEFAULTS.tubeR,      unit:'m', format:raw=>raw.toFixed(3), apply(raw){ bikeShape.tubeR=raw;      mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeWheelbase',  label:'ホイールベース', min:BIKE_SHAPE_RANGE.wheelbase[0],  max:BIKE_SHAPE_RANGE.wheelbase[1],  step:0.05,  value:BIKE_SHAPE_DEFAULTS.wheelbase, unit:'x', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.wheelbase=raw;  mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeFrameThick', label:'フレーム 太さ',  min:BIKE_SHAPE_RANGE.frameThick[0], max:BIKE_SHAPE_RANGE.frameThick[1], step:0.002, value:BIKE_SHAPE_DEFAULTS.frameThick,unit:'m', format:raw=>raw.toFixed(3), apply(raw){ bikeShape.frameThick=raw; mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeSaddleY',    label:'サドル 高さ',    min:BIKE_SHAPE_RANGE.saddleY[0],    max:BIKE_SHAPE_RANGE.saddleY[1],    step:0.01,  value:BIKE_SHAPE_DEFAULTS.saddleY,   unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.saddleY=raw;    mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeBarY',       label:'ハンドル 高さ',  min:BIKE_SHAPE_RANGE.barY[0],       max:BIKE_SHAPE_RANGE.barY[1],       step:0.01,  value:BIKE_SHAPE_DEFAULTS.barY,      unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.barY=raw;       mapRenderer.setRiderShape(bikeShape); } },
+  { key:'bikeBarW',       label:'ハンドル 幅',    min:BIKE_SHAPE_RANGE.barW[0],       max:BIKE_SHAPE_RANGE.barW[1],       step:0.01,  value:BIKE_SHAPE_DEFAULTS.barW,      unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.barW=raw;       mapRenderer.setRiderShape(bikeShape); } },
+];
+mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');

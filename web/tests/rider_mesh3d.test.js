@@ -7,11 +7,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   BIKE_DIMENSIONS, bikeTotalLength, createRiderMesh3d,
+  BIKE_SHAPE_DEFAULTS, BIKE_SHAPE_RANGE, resolveBikeShape,
 } from '../lib/map3d/rider_mesh3d.js';
 
 describe('BIKE_DIMENSIONS / bikeTotalLength', () => {
-  it('自転車 unit モデルの全長はちょうど 1.0 m', () => {
-    expect(bikeTotalLength()).toBeCloseTo(1.0, 9);
+  it('自転車 unit モデルの全長は約 0.98 m (= 実ジオメトリを正規化した値)', () => {
+    expect(bikeTotalLength()).toBeCloseTo(0.98, 9);
   });
 
   it('寸法定数を差し替えても全長計算式は (rearZ+wheelR)-(frontZ-wheelR)', () => {
@@ -47,6 +48,7 @@ function makeThreeStub() {
       this.lookAtCalls = [];
     }
     add(o) { this.children.push(o); return this; }
+    clear() { this.children.length = 0; return this; }
     lookAt(x, y, z) {
       // THREE.lookAt は (Vector3) でも (x,y,z) でも受け付ける
       if (typeof x === 'object') { this.lookAtCalls.push({ x: x.x, y: x.y, z: x.z }); }
@@ -142,5 +144,61 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     expect(over.position[0]).toBeCloseTo(200, 6);  // 終点でクランプ
     const under = r.updatePose(positions, course, -50);
     expect(under.position[0]).toBeCloseTo(0, 6);    // 起点でクランプ
+  });
+});
+
+describe('resolveBikeShape: 形状パラメータの既定値補完 + クランプ', () => {
+  it('引数なしで全フィールドが既定値で揃う', () => {
+    const s = resolveBikeShape();
+    expect(Object.keys(s).sort()).toEqual(Object.keys(BIKE_SHAPE_DEFAULTS).sort());
+    expect(s.wheelR).toBe(BIKE_SHAPE_DEFAULTS.wheelR);
+    expect(s.barW).toBe(BIKE_SHAPE_DEFAULTS.barW);
+  });
+
+  it('部分指定はそのフィールドだけ反映、 残りは既定値', () => {
+    const s = resolveBikeShape({ wheelR: 0.3 });
+    expect(s.wheelR).toBe(0.3);
+    expect(s.tubeR).toBe(BIKE_SHAPE_DEFAULTS.tubeR);
+  });
+
+  it('範囲外の値は許容範囲にクランプする', () => {
+    expect(resolveBikeShape({ wheelR: 99 }).wheelR).toBe(BIKE_SHAPE_RANGE.wheelR[1]);
+    expect(resolveBikeShape({ wheelR: -5 }).wheelR).toBe(BIKE_SHAPE_RANGE.wheelR[0]);
+  });
+
+  it('非数 (NaN / 文字列 / undefined) は既定値へ落とす', () => {
+    expect(resolveBikeShape({ saddleY: NaN }).saddleY).toBe(BIKE_SHAPE_DEFAULTS.saddleY);
+    expect(resolveBikeShape({ saddleY: 'abc' }).saddleY).toBe(BIKE_SHAPE_DEFAULTS.saddleY);
+    expect(resolveBikeShape({ saddleY: undefined }).saddleY).toBe(BIKE_SHAPE_DEFAULTS.saddleY);
+  });
+});
+
+describe('createRiderMesh3d.setShape: 部品ごと形状の差し替え', () => {
+  it('setShape 後も車輪 2 + フレーム 6 + サドル/ハンドル 2 = 10 部品を保つ', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    r.setShape({ wheelR: 0.3 });
+    expect(r.group.children.length).toBe(10);
+  });
+
+  it('車輪半径を変えるとトーラスの geometry 引数に反映される', () => {
+    // buildBikeParts は車輪を最初に 2 枚足す → children[0] が前輪トーラス。
+    // TorusGeometry(wheelR, tubeR, ...) の第 1 引数が車輪半径。
+    const r = createRiderMesh3d(makeThreeStub());
+    r.setShape({ wheelR: 0.3 });
+    expect(r.group.children[0].geometry.args[0]).toBe(0.3);
+  });
+
+  it('範囲外の指定は resolveBikeShape でクランプされてから組まれる', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    r.setShape({ wheelR: 99 });
+    expect(r.group.children[0].geometry.args[0]).toBe(BIKE_SHAPE_RANGE.wheelR[1]);
+  });
+
+  it('部分指定を重ねても直前の形状が保たれる (= スライダー 1 個ずつ動かす運用)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    r.setShape({ wheelR: 0.3 });
+    r.setShape({ tubeR: 0.03 });
+    expect(r.group.children[0].geometry.args[0]).toBe(0.3);   // 1 回目の wheelR が残る
+    expect(r.group.children[0].geometry.args[1]).toBe(0.03);  // 2 回目の tubeR が反映
   });
 });

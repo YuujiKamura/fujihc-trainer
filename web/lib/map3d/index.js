@@ -138,7 +138,8 @@ export function createMapRenderer() {
 
   // boot / renderCourse 前に呼ばれた set 系の値を保留し、 部品生成時に流し込む。
   const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null,
-                    riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null };
+                    riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null,
+                    riderShape: null };
 
   function fireIdle() {
     if (idleFired) return;
@@ -425,6 +426,7 @@ export function createMapRenderer() {
       // ライダー 3D mesh。
       rider3d = createRiderMesh3d(THREE);
       rider3d.group.scale.setScalar(pending.riderScale != null ? pending.riderScale : 3.6);
+      if (pending.riderShape) rider3d.setShape(pending.riderShape);
       scene.add(rider3d.group);
 
       // 初期配置: 起点にライダーを置き、 カメラをそこへ寄せる。
@@ -488,6 +490,16 @@ export function createMapRenderer() {
     setRiderScale(scale) {
       if (rider3d) rider3d.group.scale.setScalar(scale);
       else pending.riderScale = scale;
+    },
+
+    // 部品ごとの形状を差し替える (= 自機形状エディタ)。 rider3d 未生成なら pending に
+    // 貯め (= スライダー複数分をマージ)、 renderCourse で rider 生成後に流し込む。
+    setRiderShape(shape) {
+      if (rider3d) {
+        rider3d.setShape(shape);
+      } else {
+        pending.riderShape = { ...(pending.riderShape || {}), ...shape };
+      }
     },
 
     setCourseWidth(widthM) {
