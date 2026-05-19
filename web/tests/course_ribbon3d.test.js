@@ -1,14 +1,15 @@
 // b12 Phase3 部品3 course_ribbon3d のユニットテスト.
 //
 // 各 test は「落ちたら何のバグを検出したことになるか」を 1 行で言える形にする。
-// Three.js の描画 (リボンの見た目) は実画面目視 (Phase4) に委ね、 ここでは
-//   - ribbonVertexColors: slope_pct → 頂点色 RGB の変換 (純関数)
-//   - createCourseRibbon: BufferGeometry の構成 / attribute 長 / material (mock THREE)
-// を検証する。
+// Three.js の実描画 (リボンの見た目) は実画面目視に委ね、 ここでは
+//   - ribbonSegmentBins:  course → 区間ごとのグレード bin 色 (純関数)
+//   - ribbonColorGroups:  区間色 → 同色連続区間の geometry group 配列 (純関数)
+//   - createCourseRibbon: BufferGeometry の構成 / attribute 長 / group / material (mock THREE)
+// を検証する。 配色を区間フラット塗り (1 区間 1 色、 bin 境界で段差) に pin する。
 
 import { describe, it, expect } from 'vitest';
-import { ribbonVertexColors, createCourseRibbon } from '../lib/map3d/course_ribbon3d.js';
-import { classifyGrade } from '../lib/route_styling.js';
+import { ribbonSegmentBins, ribbonColorGroups, createCourseRibbon } from '../lib/map3d/course_ribbon3d.js';
+import { gradeColorContinuous } from '../lib/route_styling.js';
 import { meshGridStep } from '../lib/map3d/terrain_surface.js';
 import { buildTerrainGeometry } from '../lib/terrain3d.js';
 import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
@@ -19,38 +20,33 @@ const TS = 16;
 const stitched = { grid: new Float32Array(TS * TS).fill(1400), width: TS, height: TS };
 const centerLat = 35.40, centerLon = 138.72;
 const geo = { range, stitched, centerLat, centerLon, tileSize: TS };
-// 勾配が点ごとに違うコース (= 全点同色にならない、 色の対応を実際に走らせる)。
+// 区間ごとに勾配が違うコース (= 全区間同色にならない、 色の対応を実際に走らせる)。
+// 区間 i の色 = gradeColorContinuous(course[i].slope_pct)。 区間 0 → 始点 slope 0、
+// 区間 1 → 始点 slope 7 ── 0.5% 刻みの連続ランプで別色になる。
 const course = [
   { lat: 35.395, lon: 138.715, slope_pct: 0 },
   { lat: 35.405, lon: 138.720, slope_pct: 7 },
   { lat: 35.420, lon: 138.720, slope_pct: 15 },
 ];
 
-// '#rrggbb' → 0..1 RGB。 期待色の照合用 (= ribbonVertexColors と同じ変換)。
-function hexToRgb01(hex) {
-  return [
-    parseInt(hex.slice(1, 3), 16) / 255,
-    parseInt(hex.slice(3, 5), 16) / 255,
-    parseInt(hex.slice(5, 7), 16) / 255,
-  ];
-}
-
-// ribbonVertexColors の出力 (Float32Array) から course 点 i の頂点色 (左頂点) を取り出す。
-function pointColor(colors, i) {
-  const vi = i * 2 * 3;
-  return [colors[vi], colors[vi + 1], colors[vi + 2]];
-}
-
 // createCourseRibbon が使う Three.js API だけを持つ最小 mock。
-// 実 Three.js の描画挙動は pin しない (= Phase4 の実画面目視)。 ここでは
-// 「BufferGeometry に position/color/index、 頂点色 material、 dispose」 を pin する。
+// 実 Three.js の描画挙動は pin しない (= 実画面目視)。 ここでは
+// 「BufferGeometry に position/index/group、 単色 material 配列、 dispose」 を pin する。
 function mockThree() {
   return {
     DoubleSide: 'DoubleSide',
     BufferGeometry: class {
-      constructor() { this.attributes = {}; this.index = null; this.disposed = false; }
+      constructor() {
+        this.attributes = {};
+        this.index = null;
+        this.groups = [];
+        this.disposed = false;
+      }
       setAttribute(name, attr) { this.attributes[name] = attr; }
       setIndex(attr) { this.index = attr; }
+      addGroup(start, count, materialIndex) {
+        this.groups.push({ start, count, materialIndex });
+      }
       dispose() { this.disposed = true; }
     },
     Float32BufferAttribute: class {
@@ -61,6 +57,7 @@ function mockThree() {
     },
     MeshBasicMaterial: class {
       constructor(o) {
+        this.color = o.color;
         this.vertexColors = !!o.vertexColors;
         this.side = o.side;
         this.disposed = false;
@@ -73,135 +70,194 @@ function mockThree() {
   };
 }
 
-describe('ribbonVertexColors', () => {
-  it('長さ = course.length*2*3 (= 左右 2 頂点 / 点の RGB 配列形を pin)', () => {
-    expect(ribbonVertexColors(course).length).toBe(course.length * 2 * 3);
+describe('ribbonSegmentBins', () => {
+  it('長さ = course.length-1 (= 区間ごとに 1 色、 区間数の配列形を pin)', () => {
+    expect(ribbonSegmentBins(course).length).toBe(course.length - 1);
   });
 
-  it('左右頂点 (2i, 2i+1) が同色 (= 道路の片側だけ色が違うバグを検出)', () => {
-    const c = ribbonVertexColors(course);
-    for (let i = 0; i < course.length; i++) {
-      const left = i * 2 * 3;
-      const right = (i * 2 + 1) * 3;
-      expect([c[left], c[left + 1], c[left + 2]])
-        .toEqual([c[right], c[right + 1], c[right + 2]]);
+  it('区間 i の色 = gradeColorContinuous(course[i].slope_pct) (= 始点勾配採用、 0.5% 刻みの連続ランプ色)', () => {
+    const bins = ribbonSegmentBins(course);
+    for (let i = 0; i < course.length - 1; i++) {
+      expect(bins[i]).toBe(gradeColorContinuous(course[i].slope_pct));
     }
   });
 
-  it('各点の色が classifyGrade(slope_pct).color と一致 (= 勾配ビン配色の取り違えを検出)', () => {
-    const c = ribbonVertexColors(course);
-    for (let i = 0; i < course.length; i++) {
-      const want = hexToRgb01(classifyGrade(course[i].slope_pct).color);
-      const vi = i * 2 * 3;
-      expect(c[vi]).toBeCloseTo(want[0], 6);
-      expect(c[vi + 1]).toBeCloseTo(want[1], 6);
-      expect(c[vi + 2]).toBeCloseTo(want[2], 6);
-    }
+  it('区間色は始点 course[i] 由来 ── 終点 course[i+1] 由来ではない (= 色が勾配区間より 1 区間後ろへずれる回帰を検出)', () => {
+    // fixture course は点ごとに slope_pct が違う (0 / 7 / 15)。 区間 0 を終点 course[1]
+    // (slope 7) で塗ると色が rider 体感勾配より 1 区間後ろにずれる ── 始点 course[0]
+    // (slope 0) を採ることを pin する。
+    const bins = ribbonSegmentBins(course);
+    expect(bins[0]).toBe(gradeColorContinuous(course[0].slope_pct));
+    expect(bins[0]).not.toBe(gradeColorContinuous(course[1].slope_pct));
   });
 
-  it('勾配が違えば色も違う (= 全頂点が同色になり勾配が読めないバグを検出)', () => {
-    const c = ribbonVertexColors(course);
-    // slope 0 (course[0]) と slope 15 (course[2]) は別色のはず。
-    const flat = [c[0], c[1], c[2]];
-    const steep = [c[(2 * 2) * 3], c[(2 * 2) * 3 + 1], c[(2 * 2) * 3 + 2]];
-    expect(flat).not.toEqual(steep);
+  it('勾配が違えば区間色も違う (= 全区間が同色になり勾配が読めないバグを検出)', () => {
+    // 区間 0 (始点 slope 0) と区間 1 (始点 slope 7) は連続ランプ上で別色のはず。
+    const bins = ribbonSegmentBins(course);
+    expect(bins[0]).not.toBe(bins[1]);
   });
 
-  it('slope_pct 欠損点は flat (緑) 色 (= NaN が色計算に漏れるのを防ぐ)', () => {
-    const c = ribbonVertexColors([
-      { lat: 35.4, lon: 138.7 },              // slope_pct なし
-      { lat: 35.41, lon: 138.71, slope_pct: 5 },
+  it('始点 slope 欠損は終点 slope へ fallback (= 欠損点でも区間色が決まる)', () => {
+    // 区間 0 の始点 course[0] は slope_pct 無し → 終点 course[1] の slope 8 を使う。
+    const bins = ribbonSegmentBins([
+      { lat: 35.4, lon: 138.7 },                  // slope_pct なし
+      { lat: 35.41, lon: 138.71, slope_pct: 8 },
     ]);
-    const want = hexToRgb01(classifyGrade(undefined).color);  // = flat 緑
-    expect(c[0]).toBeCloseTo(want[0], 6);
-    expect(c[1]).toBeCloseTo(want[1], 6);
-    expect(c[2]).toBeCloseTo(want[2], 6);
+    expect(bins[0]).toBe(gradeColorContinuous(8));
   });
 
-  it('全成分が 0..1 (= 0..255 のまま渡してリボンが白飛びするのを検出)', () => {
-    const c = ribbonVertexColors(course);
-    for (const v of c) {
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThanOrEqual(1);
+  it('始点・終点とも slope 欠損なら flat (= 勾配 0 の色、 NaN が色計算に漏れるのを防ぐ)', () => {
+    const bins = ribbonSegmentBins([
+      { lat: 35.4, lon: 138.7 },
+      { lat: 35.41, lon: 138.71 },
+    ]);
+    expect(bins[0]).toBe(gradeColorContinuous(0));  // = flat 緑
+  });
+
+  it('2 点未満は RangeError (= 区間を張れない退化入力を弾く)', () => {
+    expect(() => ribbonSegmentBins([{ slope_pct: 5 }])).toThrow(RangeError);
+    expect(() => ribbonSegmentBins([])).toThrow(RangeError);
+  });
+
+  it('色は 0.5% 勾配刻みで変わる ── 同じ 0.5% バケットの区間は同色、 別バケットは別色', () => {
+    // gradeColorContinuous は slope を 0.5% に量子化してからランプをサンプルする。
+    // 区間色は始点 slope_pct。 5.0% と 5.2% は同じ 0.5% バケット (round で 5.0) → 同色。
+    const sameBucket = ribbonSegmentBins([
+      { lat: 35.40, lon: 138.71, slope_pct: 5.0 },
+      { lat: 35.41, lon: 138.72, slope_pct: 5.2 },
+      { lat: 35.42, lon: 138.73, slope_pct: 0 },
+    ]);
+    expect(sameBucket[0]).toBe(sameBucket[1]);
+    // 5.0% と 6.0% は別の 0.5% バケット → 色が段で変わる。
+    const diffBucket = ribbonSegmentBins([
+      { lat: 35.40, lon: 138.71, slope_pct: 5.0 },
+      { lat: 35.41, lon: 138.72, slope_pct: 6.0 },
+      { lat: 35.42, lon: 138.73, slope_pct: 0 },
+    ]);
+    expect(diffBucket[0]).not.toBe(diffBucket[1]);
+  });
+});
+
+describe('ribbonColorGroups', () => {
+  it('group が index 0 から隙間なく連続し count 総和 = 区間数*6 (= 塗り残し / 重なりが無い)', () => {
+    const groups = ribbonColorGroups(['#3aa055', '#f4d03f', '#f4d03f', '#e74c3c']);  // 4 区間
+    let cursor = 0;
+    for (const g of groups) {
+      expect(g.start).toBe(cursor);  // 前 group の直後から始まる
+      cursor += g.count;
+    }
+    expect(cursor).toBe(4 * 6);  // 全 index (区間数*6) を覆う
+  });
+
+  it('各 group の start / count が 6 の倍数 (= 1 区間が group に分断されず単色)', () => {
+    const groups = ribbonColorGroups(['#3aa055', '#f4d03f', '#f4d03f', '#e74c3c']);
+    for (const g of groups) {
+      expect(g.start % 6).toBe(0);
+      expect(g.count % 6).toBe(0);
     }
   });
 
-  it('2 点未満は RangeError (= リボンを張れない退化入力を弾く)', () => {
-    expect(() => ribbonVertexColors([{ slope_pct: 5 }])).toThrow(RangeError);
-    expect(() => ribbonVertexColors([])).toThrow(RangeError);
+  it('同色の連続区間は 1 group にまとまる (= 区間ラン、 同一ビン区間が同色)', () => {
+    // 区間 1,2 は同色 → 1 group (count 12) にまとまるはず。
+    const groups = ribbonColorGroups(['#3aa055', '#f4d03f', '#f4d03f', '#e74c3c']);
+    expect(groups.length).toBe(3);
+    expect(groups[1]).toEqual({ start: 6, count: 12, color: '#f4d03f' });
   });
 
-  // --- 離散ビン (タイル状) 配色の本質を pin する。 配色を連続グラデーション
-  //     (gradeColorContinuous) へ戻すと下記が落ちる ── それが回帰検出の役目。 ---
-
-  it('同一 bin 内の点は同色 (= 区間ごとフラット色、 離散ビンの「同一区間 1 色」を pin)', () => {
-    // 4.5% も 6.5% も classifyGrade の moderate bin (4-7%)。 連続グラデーションなら
-    // 別色になる ── このテストが落ちたら配色が連続補間に戻っている。
-    const c = ribbonVertexColors([
-      { lat: 35.40, lon: 138.71, slope_pct: 4.5 },
-      { lat: 35.41, lon: 138.72, slope_pct: 6.5 },
-    ]);
-    expect(pointColor(c, 0)).toEqual(pointColor(c, 1));
+  it('色が変わる隣接区間は別 group・別色 (= bin 境界で段差)', () => {
+    const groups = ribbonColorGroups(['#3aa055', '#f4d03f']);
+    expect(groups.length).toBe(2);
+    expect(groups[0].color).not.toBe(groups[1].color);
+    expect(groups[0]).toEqual({ start: 0, count: 6, color: '#3aa055' });
+    expect(groups[1]).toEqual({ start: 6, count: 6, color: '#f4d03f' });
   });
 
-  it('bin 境界をまたぐと色が段に切り替わる (= タイル状配色、 隣接ビンは別色)', () => {
-    // 3.9% は gentle (1-4%)、 4.1% は moderate (4-7%) ── 隣接ビンなので別色。
-    const c = ribbonVertexColors([
-      { lat: 35.40, lon: 138.71, slope_pct: 3.9 },
-      { lat: 35.41, lon: 138.72, slope_pct: 4.1 },
-    ]);
-    expect(pointColor(c, 0)).not.toEqual(pointColor(c, 1));
+  it('全区間が同色なら group は 1 つ (= 連続する同一ビン区間が 1 ラン)', () => {
+    const groups = ribbonColorGroups(['#f4d03f', '#f4d03f', '#f4d03f']);
+    expect(groups).toEqual([{ start: 0, count: 18, color: '#f4d03f' }]);
   });
 
-  it('GRADE_THRESHOLDS の境界値 1/4/7/10/15% で色が変わる (min inclusive / max exclusive)', () => {
-    // 各境界値の直前は下のビン、 境界値そのものは上のビン (min inclusive)。
-    // 例: 3.999% は gentle、 4.0% は moderate ── 境界で別色になる。
-    for (const b of [1, 4, 7, 10, 15]) {
-      const c = ribbonVertexColors([
-        { lat: 35.40, lon: 138.71, slope_pct: b - 0.001 },  // 境界直前 = 下のビン
-        { lat: 35.41, lon: 138.72, slope_pct: b },          // 境界値 = 上のビン
-      ]);
-      expect(pointColor(c, 0)).not.toEqual(pointColor(c, 1));
-    }
+  it('1 区間でも 1 group (= 2 点コースの退化ケース)', () => {
+    expect(ribbonColorGroups(['#3aa055'])).toEqual([{ start: 0, count: 6, color: '#3aa055' }]);
+  });
+
+  it('区間ゼロは RangeError (= 描画する区間が無い退化入力を弾く)', () => {
+    expect(() => ribbonColorGroups([])).toThrow(RangeError);
   });
 });
 
 describe('createCourseRibbon', () => {
-  it('mesh は BufferGeometry + MeshBasicMaterial で構成される', () => {
+  it('mesh は BufferGeometry + material 配列で構成される', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
     expect(r.mesh.geometry).toBeDefined();
-    expect(r.mesh.material).toBeDefined();
+    expect(Array.isArray(r.mesh.material)).toBe(true);
+    expect(r.mesh.material.length).toBeGreaterThan(0);
   });
 
-  it('position / color attribute 長 = n*2*3 (= リボン頂点数の取り違えを検出)', () => {
+  it('position attribute 長 = n*2*3 (= rider 配置 ribbonCenterAt が読む n*2 頂点レイアウトを保つ)', () => {
+    // 落ちたら: 頂点を複製 (de-index) して position 属性長を変えてしまった
+    //          ── map3d/index.js → rider_placement.js の rider 配置が静かに壊れる。
     const r = createCourseRibbon(mockThree(), course, geo);
     expect(r.mesh.geometry.attributes.position.array.length).toBe(course.length * 2 * 3);
-    expect(r.mesh.geometry.attributes.color.array.length).toBe(course.length * 2 * 3);
   });
 
-  it('index attribute 長 = (n-1)*6 (= 区間あたり 2 三角形の数え違いを検出)', () => {
+  it('color (頂点色) attribute は持たない (= 補間する頂点色をやめ単色 material に移行済)', () => {
+    // 落ちたら: 頂点色 attribute を残している ── 単色 material 方式では未使用、
+    //          残すと vertexColors 描画へ逆戻りした疑い。
+    const r = createCourseRibbon(mockThree(), course, geo);
+    expect(r.mesh.geometry.attributes.color).toBeUndefined();
+  });
+
+  it('index attribute 長 = (n-1)*6 (= 区間あたり 2 三角形、 index は buildCourseRibbon のまま不変)', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
     expect(r.mesh.geometry.index.array.length).toBe((course.length - 1) * 6);
   });
 
-  it('material は頂点色 ON + DoubleSide (= 色が出ない / 裏面が抜けるバグを検出)', () => {
+  it('geometry.groups が ribbonColorGroups(ribbonSegmentBins(course)) と一致 (= 区間ランを material 別に分割)', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
-    expect(r.mesh.material.vertexColors).toBe(true);
-    expect(r.mesh.material.side).toBe('DoubleSide');
+    const expectGroups = ribbonColorGroups(ribbonSegmentBins(course));
+    expect(r.mesh.geometry.groups.length).toBe(expectGroups.length);
+    for (let k = 0; k < expectGroups.length; k++) {
+      expect(r.mesh.geometry.groups[k].start).toBe(expectGroups[k].start);
+      expect(r.mesh.geometry.groups[k].count).toBe(expectGroups[k].count);
+    }
   });
 
-  it('color attribute の中身が ribbonVertexColors と一致 (= 色の詰め違いを検出)', () => {
+  it('各 group の material が単色 MeshBasicMaterial (頂点色 OFF) + DoubleSide で、 色が区間 bin 色と一致 (= 混色 / 裏面抜け / 色取り違えを検出)', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
-    expect(Array.from(r.mesh.geometry.attributes.color.array))
-      .toEqual(Array.from(ribbonVertexColors(course)));
+    const expectGroups = ribbonColorGroups(ribbonSegmentBins(course));
+    for (let k = 0; k < r.mesh.geometry.groups.length; k++) {
+      const mat = r.mesh.material[r.mesh.geometry.groups[k].materialIndex];
+      expect(mat.vertexColors).toBe(false);   // 頂点色補間を使わない (= 区間内で混色しない)
+      expect(mat.side).toBe('DoubleSide');
+      expect(mat.color).toBe(expectGroups[k].color);
+    }
   });
 
-  it('dispose で geometry と material を解放 (= course 再読込時の GPU leak を検出)', () => {
+  it('区間 i の 6 index がちょうど 1 つの group・1 色に対応 (= 1 区間が単色、 区間内で混色しない)', () => {
+    // 区間ごとに勾配を変えたコースで、 各区間の index 範囲 [seg*6, seg*6+6) を覆う
+    // group がちょうど 1 つと確認する ── 2 つに割れていたら 1 区間が 2 色 = 混色回帰。
+    const c = [
+      { lat: 35.40, lon: 138.71, slope_pct: 0 },
+      { lat: 35.41, lon: 138.72, slope_pct: 2 },   // 区間 0 終点 → gentle
+      { lat: 35.42, lon: 138.73, slope_pct: 8 },   // 区間 1 終点 → hard
+    ];
+    const r = createCourseRibbon(mockThree(), c, geo);
+    for (let seg = 0; seg < c.length - 1; seg++) {
+      const lo = seg * 6, hi = seg * 6 + 6;
+      const covering = r.mesh.geometry.groups.filter(
+        (g) => g.start <= lo && g.start + g.count >= hi);
+      expect(covering.length).toBe(1);
+    }
+  });
+
+  it('dispose で geometry と全 material を解放 (= course 再読込時の GPU leak を検出)', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
-    const { geometry, material } = r.mesh;
+    const geometry = r.mesh.geometry;
+    const materials = r.mesh.material;
     r.dispose();
     expect(geometry.disposed).toBe(true);
-    expect(material.disposed).toBe(true);
+    for (const m of materials) expect(m.disposed).toBe(true);
   });
 });
 
