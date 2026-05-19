@@ -99,7 +99,7 @@ function addBikeTube(THREE, group, material, from, to, radius) {
   group.add(mesh);
 }
 
-// 自転車の 16 部品 (車輪 2 + フレーム 12 + サドル/ハンドル 2) を group に組み付ける。
+// 自転車の 17 部品 (車輪 2 + フレーム 13 + サドル/ハンドル 2) を group に組み付ける。
 // terrain3d.html buildBikeMesh (L331-379) の移植を、 形状パラメータ shape 駆動 + 既存
 // group へ追加する形に変えたもの。 shape は resolveBikeShape 済 (全フィールド揃い範囲内)。
 function buildBikeParts(THREE, group, shape) {
@@ -128,36 +128,41 @@ function buildBikeParts(THREE, group, shape) {
   }
 
   // フレーム結節点 ── 実ロードバイクの三面図 (the-blueprints.com road bike) のレイアウトに
-  // 合わせた正規化座標。 二重三角形 + head tube / シートポスト / ステムが独立要素。
-  // フォーク・チェーンステー・シートステーは実車どおり左右二股 (= 車輪を ±X で挟む)、
-  // メインの三角 (トップ/ダウン/シート/head tube) は中央 1 本。 旧来は全チューブを中心線
-  // (X=0) に置いていたため奥行きゼロの板状だった ── 二股化で実車の幅を持たせる。
+  // 合わせた正規化座標。 フォークは実車構造どおり: ステアラー (= head tube) → クラウン
+  // (幅のある接合部) → 左右ほぼ平行なブレード 2 本 → 前ハブ。 旧来はブレードを head tube
+  // 下端の 1 点から V 字に出していた (= 誤り、 クラウンが無くブレードが平行でない)。
+  // チェーンステーは BB シェルの幅から、 シートステーはシートクラスタ (≒シートチューブ
+  // 上端) から、 それぞれ後輪を ±X で挟む。 メインの三角は中央 1 本。
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const ft = frameThick;
-  // ハブ端の X 半幅 (= 二股のフォーク/ステーが車輪を挟む量)。 実車のドロップアウト間隔相当。
-  const hubHalf = 0.045;
+  const hubHalf = 0.045;   // 車軸端の X 半幅 (= フォークブレード/ステーが車輪を挟む量)
+  const bbHalf = 0.025;    // BB シェルの X 半幅 (= チェーンステーの起点)
   const bb = V(0, hubY - 0.042, 0.05);                   // BB (車軸線より BB ドロップ下)
   const seatTubeTop = V(0, bb.y + 0.29, bb.z + 0.085);   // シートチューブ上端 (シート角 73.5°)
   const headTop = V(0, bb.y + 0.34, bb.z - 0.238);       // head tube 上端 (実スタック/リーチ)
-  const headBottom = V(0, headTop.y - 0.086, headTop.z - 0.026); // head tube 下端 (ヘッド角 73.5°)
+  const headBottom = V(0, headTop.y - 0.086, headTop.z - 0.026); // head tube 下端 = クラウン位置
   const saddle = V(0, saddleY, seatTubeTop.z + 0.04);    // サドル (高さは編集可、 シートポスト上)
   const bar = V(0, barY, headTop.z - 0.06);              // ハンドル (高さは編集可、 ステム先)
-  // 前後ハブの左右端 (= 車軸の両端)。 二股のフォーク/ステーがここに刺さる。
+  // 前後ハブ・BB シェル・フォーククラウンの左右端。 二股のブレード/ステーはこの ±X を結ぶ。
   const frontHubL = V(-hubHalf, hubY, frontZ), frontHubR = V(hubHalf, hubY, frontZ);
   const rearHubL = V(-hubHalf, hubY, rearZ), rearHubR = V(hubHalf, hubY, rearZ);
+  const bbL = V(-bbHalf, bb.y, bb.z), bbR = V(bbHalf, bb.y, bb.z);
+  const crownL = V(-hubHalf, headBottom.y, headBottom.z), crownR = V(hubHalf, headBottom.y, headBottom.z);
 
   // 中央 1 本のフレーム 6 本 (前三角 + head tube + シートチューブ + シートポスト + ステム)。
   addBikeTube(THREE, group, frameMat, bb, seatTubeTop, ft);          // シートチューブ
   addBikeTube(THREE, group, frameMat, bb, headBottom, ft);           // ダウンチューブ
   addBikeTube(THREE, group, frameMat, seatTubeTop, headTop, ft);     // トップチューブ
-  addBikeTube(THREE, group, frameMat, headTop, headBottom, ft * 1.4); // head tube
+  addBikeTube(THREE, group, frameMat, headTop, headBottom, ft * 1.4); // head tube (ステアラー)
   addBikeTube(THREE, group, frameMat, seatTubeTop, saddle, ft);      // シートポスト
   addBikeTube(THREE, group, frameMat, headTop, bar, ft);             // ステム
-  // 左右二股のフレーム 6 本: フォーク 2 + チェーンステー 2 + シートステー 2 (車輪を挟む)。
-  addBikeTube(THREE, group, frameMat, headBottom, frontHubL, ft);    // フォーク (左)
-  addBikeTube(THREE, group, frameMat, headBottom, frontHubR, ft);    // フォーク (右)
-  addBikeTube(THREE, group, frameMat, bb, rearHubL, ft);             // チェーンステー (左)
-  addBikeTube(THREE, group, frameMat, bb, rearHubR, ft);             // チェーンステー (右)
+  // フォーク: クラウン (幅のある接合部) + 左右ほぼ平行なブレード 2 本。
+  addBikeTube(THREE, group, frameMat, crownL, crownR, ft * 1.4);     // フォーククラウン
+  addBikeTube(THREE, group, frameMat, crownL, frontHubL, ft);        // フォークブレード (左)
+  addBikeTube(THREE, group, frameMat, crownR, frontHubR, ft);        // フォークブレード (右)
+  // 後三角の左右ペア: チェーンステー 2 (BB シェル幅から) + シートステー 2 (後輪を挟む)。
+  addBikeTube(THREE, group, frameMat, bbL, rearHubL, ft);            // チェーンステー (左)
+  addBikeTube(THREE, group, frameMat, bbR, rearHubR, ft);            // チェーンステー (右)
   addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubL, ft);    // シートステー (左)
   addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubR, ft);    // シートステー (右)
 
