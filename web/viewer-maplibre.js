@@ -51,6 +51,11 @@ import {
 } from './lib/consent.js';
 // brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
 import { clearAllLocalData } from './lib/clear_local_data.js';
+// task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタンの純ロジック (= URL 引数変換 + 文言定数).
+import {
+  buildToggledSearch,
+  MODE_LABEL_TEST, MODE_LABEL_PROD, SWITCH_BTN_TO_PROD, SWITCH_BTN_TO_TEST,
+} from './lib/mode_toggle.js';
 // preflight + save_summary + autosave (= ride 開始前 validation / 保存予定 summary / 走行中保護).
 import { runPreflight } from './lib/preflight_check.js';
 import { renderPreflightPanel, hidePreflight } from './lib/preflight_panel.js';
@@ -1070,6 +1075,43 @@ if (typeof document !== 'undefined') {
     hideConsentOverlay();
     // 何も保存しない、 ride 開始もしない (= setup 画面に戻る).
   });
+
+  // task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン (#mode-toggle) の配線。
+  // TEST_MODE は ?test の有無で起動時に決まる定数。 画面に切替入口が無く、 本番モード
+  // (= initBleMode、 実機トレーナーの BLE 接続) に移るには URL を手書きするしかなかった。
+  // 切替方式は reload 固定 ── TEST_MODE 定数はそのまま、 URL の test 引数を付け外して
+  // 再読込する (= 起動経路を最初から組み直す、 ランタイム切替の init 二重走を構造的に回避)。
+  const modeToggleLabel = document.getElementById('mode-toggle-label');
+  const modeToggleBtn = document.getElementById('mode-toggle-btn');
+  if (modeToggleLabel) {
+    modeToggleLabel.textContent = TEST_MODE ? MODE_LABEL_TEST : MODE_LABEL_PROD;
+  }
+  if (modeToggleBtn) {
+    modeToggleBtn.textContent = TEST_MODE ? SWITCH_BTN_TO_PROD : SWITCH_BTN_TO_TEST;
+    modeToggleBtn.addEventListener('click', () => {
+      // 走行中ガード: 本番モードで実走中 (= body.state-riding) は未保存の走行ログ (trkpt)
+      // がありうるため、 reload で失う旨を confirm する。 テストモードの「走行」は fake
+      // state で失う実データが無いため confirm しない (= 非対称ガード)。
+      if (!TEST_MODE && document.body.classList.contains('state-riding')) {
+        if (!window.confirm('走行中です。 モードを切り替えると現在の走行内容は失われます。 続けますか?')) {
+          return;
+        }
+      }
+      // view consent 短絡を塞ぐ: dispatchAfterIntro は getIntroConsent().mode === 'view'
+      // を TEST_MODE 判定より前に見て initViewMode へ短絡する。 localStorage に view
+      // consent が残っていると reload しても本番モード / テストモードに到達しないため、
+      // view のときだけ ride に正規化する (= 切替ボタンを押す行為はトレーナー経路の明示
+      // 選択であり、 intro gate ロジック自体は変更しない ── consent が null や ride の
+      // ときは何もしない)。
+      const ic = getIntroConsent();
+      if (ic && ic.mode === 'view') {
+        setIntroConsent({ mode: 'ride' });
+      }
+      // test 引数だけを付け外し、 他の引数 (consent=dev / debug / bridge 等) は保持して
+      // reload。 location.search への代入で再読込が走る。
+      location.search = buildToggledSearch(location.search, !TEST_MODE);
+    });
+  }
 }
 
 // brief 26b: 起動時の DB 充足度チェック → 不足なら dbinit overlay、 ready なら従来 BLE.

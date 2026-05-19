@@ -71,3 +71,39 @@ describe('brief 32: index.html の ble-section', () => {
     expect(html).not.toMatch(/id="btnSkip"/);
   });
 });
+
+// task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン (#mode-toggle)。
+// 切替方式は reload 固定 (= URL の test 引数を付け外して再読込)。 URL 引数保持の
+// 正しさは web/tests/mode_toggle.test.js の純関数テスト、 click → reload → 経路到達の
+// 挙動は e2e/mode_toggle.spec.js が pin する。 ここでは viewer / index.html 側に配線が
+// 在ること (= 構造) を source-grep で pin する。
+describe('task-testmode-toggle: 切替ボタンの配線', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+  const html = readFileSync(INDEX_PATH, 'utf8');
+
+  it('viewer が ./lib/mode_toggle.js から buildToggledSearch を import している', () => {
+    expect(viewer).toMatch(/import\s*\{[^}]*buildToggledSearch[^}]*\}\s*from\s*['"]\.\/lib\/mode_toggle\.js['"]/);
+  });
+
+  it('切替は location.search = buildToggledSearch(location.search, !TEST_MODE) で reload する', () => {
+    expect(viewer).toMatch(/location\.search\s*=\s*buildToggledSearch\(location\.search,\s*!TEST_MODE\)/);
+  });
+
+  it('#mode-toggle-btn の click 配線が走行中 confirm + view consent 正規化を含む', () => {
+    const m = viewer.match(/getElementById\(['"]mode-toggle-btn['"]\)[\s\S]{0,1400}/);
+    expect(m).not.toBeNull();
+    const block = m[0];
+    // 本番モードで state-riding 中のみ confirm (= 非対称ガード、 走行ログ消失防止)
+    expect(block).toMatch(/!TEST_MODE\s*&&\s*document\.body\.classList\.contains\(['"]state-riding['"]\)/);
+    expect(block).toMatch(/window\.confirm\(/);
+    // view consent 残留時のみ ride に正規化 (= dispatchAfterIntro の initViewMode 短絡を回避)
+    expect(block).toMatch(/ic\.mode\s*===\s*['"]view['"]/);
+    expect(block).toMatch(/setIntroConsent\(\{\s*mode:\s*['"]ride['"]\s*\}\)/);
+  });
+
+  it('index.html に静的 #mode-toggle 要素 (label + button) が存在', () => {
+    expect(html).toMatch(/<div\s+id="mode-toggle">/);
+    expect(html).toMatch(/id="mode-toggle-label"/);
+    expect(html).toMatch(/id="mode-toggle-btn"/);
+  });
+});

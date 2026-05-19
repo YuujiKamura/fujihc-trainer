@@ -108,6 +108,24 @@
     padding: 5px 10px; border-radius: 6px;
   }
   #attrib a { color: #58a6ff; }
+  /* task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン.
+     ?test の有無で起動時に決まる TEST_MODE を画面から切り替える入口。
+     位置: 画面下端中央 ── #hud (左下) / #controls (右下) / #attrib (右下隅) /
+     #minimap-container (左上) / #status (右上) が埋まっており、 空きは下端中央帯のみ。
+     z-index 2001: #attrib と同じく全 overlay より上、 全 state で常時可視。 */
+  #mode-toggle {
+    position: fixed; left: 50%; bottom: 2.5rem; transform: translateX(-50%); z-index: 2001;
+    display: flex; align-items: center; gap: 0.5rem;
+    font: 12px/1.4 ui-monospace, monospace; color: #e6edf3;
+    background: rgba(13, 17, 23, 0.92); border: 1px solid #30363d;
+    padding: 5px 10px; border-radius: 6px;
+  }
+  #mode-toggle-label { font-weight: bold; }
+  #mode-toggle-btn {
+    font: inherit; cursor: pointer; padding: 4px 10px; min-height: 28px;
+    background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px;
+  }
+  #mode-toggle-btn:hover { background: #30363d; }
   /* brief 29: minimap 上半分を旧 OSM 直叩き方式 (= canvas + loadOsmTile + drawImage)
      に rollback。 brief 28 の MapLibre 2nd instance は撤回、 上下 2 canvas 構造は維持。
      上半分: course bbox を覆う z=11 周辺 9-16 OSM タイルを起動時 1-shot fetch、
@@ -821,6 +839,15 @@
      消失監視は viewer-maplibre.js の verifyAttributionVisible() が #attrib を見る。
      静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
 <div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
+
+<!-- task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン。
+     静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。
+     文言は viewer-maplibre.js が起動時に mode_toggle.js の定数で textContent 設定し、
+     #mode-toggle-btn の click を配線する。 -->
+<div id="mode-toggle">
+  <span id="mode-toggle-label">モード</span>
+  <button id="mode-toggle-btn" type="button">切替</button>
+</div>
 
 <script type="module" src="viewer-maplibre.js?v=40"></script>
 </body>
