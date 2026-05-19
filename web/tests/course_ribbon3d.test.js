@@ -9,6 +9,9 @@
 import { describe, it, expect } from 'vitest';
 import { ribbonVertexColors, createCourseRibbon } from '../lib/map3d/course_ribbon3d.js';
 import { gradeColorContinuous } from '../lib/route_styling.js';
+import { meshGridStep } from '../lib/map3d/terrain_surface.js';
+import { buildTerrainGeometry } from '../lib/terrain3d.js';
+import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
 
 // terrain3d.test.js と同じ最小 fixture (= buildCourseRibbon が通る投影パラメータ)。
 const range = { zoom: 14, xMin: 14503, yMin: 6464 };
@@ -159,5 +162,76 @@ describe('createCourseRibbon', () => {
     r.dispose();
     expect(geometry.disposed).toBe(true);
     expect(material.disposed).toBe(true);
+  });
+});
+
+// 連続ピクセル (px,py) に対応する緯度経度 (= terrain3d.js の投影の逆)。
+function pixelToLatLon(rg, px, py, tileSize) {
+  return {
+    lon: tileXToLon(rg.xMin + px / tileSize, rg.zoom),
+    lat: tileYToLat(rg.yMin + py / tileSize, rg.zoom),
+  };
+}
+
+describe('createCourseRibbon — 地形メッシュ追随 (埋まり修正)', () => {
+  // 間引き頂点 (step 刻み画素) は標高 H、 その間の画素は H-D に凹ませた DEM。
+  // 地形メッシュ (buildTerrainGeometry を step 付きで呼ぶ) はこの間引き頂点だけで
+  // 張られるので標高 H の平面、 フル解像度 DEM は頂点間で H-D に凹む。
+  function concaveGrid(W, H, D) {
+    const grid = new Float32Array(W * W);
+    for (let py = 0; py < W; py++) {
+      for (let px = 0; px < W; px++) {
+        grid[py * W + px] = (px % 2 === 0 && py % 2 === 0) ? H : H - D;
+      }
+    }
+    return { grid, width: W, height: W };
+  }
+
+  it('間引き地形メッシュに埋まる / 浮くリボン頂点が無い', () => {
+    // 落ちたら: リボンがフル解像度 DEM で drape され凹区間で地形メッシュより下に
+    //          潜る (= 「コースが地形に埋まる」バグそのもの)。 conformRibbonToMesh を
+    //          外すとこのテストが落ちる (= 真正性確認の対象)。
+    const W = 401, H = 1400, D = 50, OFFSET = 2;
+    const stitched = concaveGrid(W, H, D);
+    const rg = { zoom: 14, xMin: 14503, yMin: 6464 };
+    const TS = 256;
+    expect(meshGridStep(W, W)).toBe(2);  // 間引きが効いている前提
+
+    // 前提確認: この合成 grid の地形メッシュは標高 H の平面である。
+    const tg = buildTerrainGeometry(stitched, rg, { tileSize: TS, step: 2, exaggeration: 1 });
+    for (let k = 1; k < tg.positions.length; k += 3) {
+      expect(tg.positions[k]).toBeCloseTo(H, 3);
+    }
+
+    // grid を斜めに横切るコース (= 多くの頂点が間引きセルの内側に落ちる)。
+    const courseX = [];
+    for (let p = 20; p <= 380; p += 13) {
+      const { lat, lon } = pixelToLatLon(rg, p, p, TS);
+      courseX.push({ lat, lon, slope_pct: 5, distance_m: p });
+    }
+    const geoX = { range: rg, stitched, centerLat: 35.40, centerLon: 138.72, tileSize: TS };
+    const r = createCourseRibbon(mockThree(), courseX, geoX, { drapeOffset: OFFSET });
+    const pos = r.mesh.geometry.attributes.position.array;
+
+    let minY = Infinity, maxY = -Infinity;
+    for (let k = 1; k < pos.length; k += 3) {
+      minY = Math.min(minY, pos[k]);
+      maxY = Math.max(maxY, pos[k]);
+    }
+    // 全頂点が地形メッシュ平面 (H) 以上 = 埋まらない。
+    expect(minY).toBeGreaterThanOrEqual(H);
+    // かつ H + offset 付近 = 浮かない (= 間引き面そのものに乗る)。
+    expect(maxY).toBeLessThanOrEqual(H + OFFSET + 0.01);
+  });
+
+  it('step 1 のフラット grid では従来どおり drape する (= 回帰なし)', () => {
+    // 落ちたら: 間引きの無い小グリッドで Y 補正が従来の drape を壊している。
+    // course / geo は本ファイル冒頭の 16×16 フラット fixture (全標高 1400、 step 1)。
+    const r = createCourseRibbon(mockThree(), course, geo);
+    const pos = r.mesh.geometry.attributes.position.array;
+    for (let k = 1; k < pos.length; k += 3) {
+      // 全点 DEM 1400 + 既定 drapeOffset 15。
+      expect(pos[k]).toBeCloseTo(1415, 3);
+    }
   });
 });

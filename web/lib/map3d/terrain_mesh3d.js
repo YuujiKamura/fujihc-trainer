@@ -9,24 +9,11 @@
 
 import * as THREE from 'three';
 import { buildTerrainGeometry } from '../terrain3d.js';
+import { meshGridStep } from './terrain_surface.js';
 
-// 頂点格子の片辺の目標上限。 数枚 × 256px を 1:1 で頂点化すると数百万頂点になるため、
-// stitch 後のグリッドを step 間引きしてこの程度に収める (= terrain3d.html 準拠)。
-const TARGET_GRID_DIM = 400;
-
-/**
- * 標高グリッドの大きさから頂点格子の間引き step を決める.
- *
- * 長辺を targetGridDim 程度に収める最小の step。 1 未満にはしない (= 間引き無し下限)。
- *
- * @param {number} width
- * @param {number} height
- * @param {number} [targetGridDim=TARGET_GRID_DIM]
- * @returns {number}
- */
-export function terrainStep(width, height, targetGridDim = TARGET_GRID_DIM) {
-  return Math.max(1, Math.ceil(Math.max(width, height) / targetGridDim));
-}
+// 頂点格子の間引き step は terrain_surface.js の meshGridStep が SoT。
+// コースリボンの drape (sampleMeshHeight) と同じ間引き面を共有するため、 ここで
+// 別定義せず terrain_surface.js から import する (= 2 箇所定義は食い違いの元)。
 
 /**
  * 連結標高グリッド + 航空写真 Canvas から地形メッシュを組む.
@@ -39,7 +26,7 @@ export function terrainStep(width, height, targetGridDim = TARGET_GRID_DIM) {
  *   vertexCount)。 カメラ初期化・fog 距離・コースリボン投影が参照する。
  */
 export function buildTerrainMesh({ stitched, range, photoCanvas, exaggeration = 1.0 }) {
-  const step = terrainStep(stitched.width, stitched.height);
+  const step = meshGridStep(stitched.width, stitched.height);
   const geo = buildTerrainGeometry(stitched, range, { tileSize: 256, step, exaggeration });
 
   const geometry = new THREE.BufferGeometry();

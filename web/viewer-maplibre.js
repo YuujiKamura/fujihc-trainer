@@ -213,6 +213,9 @@ let physicsSpeedMps = 0;
 let lastPhysicsStateT = null;
 let lastPositionSendT = 0;
 let rideStartedAt = null;
+// ride 終了時の走行時間 (秒) を確定保存する。 ended ハンドラが rideStartedAt を null に
+// する前にここへ書き、 postride の buildRideSummary がこれを参照する (= 保存時間 0 バグ修正)。
+let lastRideDurationS = 0;
 const POSITION_SEND_INTERVAL_MS = 1000;
 let scanMode = 'ftms';
 
@@ -585,10 +588,16 @@ const wsHandlers = {
       if (rideState) rideState.start();
       else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
       rideStartedAt = performance.now();
+      lastRideDurationS = 0;  // 新しい ride 開始、 前回の確定走行時間をクリア
       hidePairing();
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = false;
     } else if (msg.state === 'ended') {
       if (rideState) rideState.end();
+      // 2026-05-19 fix: rideStartedAt を null にする前に走行時間を確定させる。
+      // 旧コードは ended で rideStartedAt=null にした後 showPostride → buildRideSummary が
+      // 呼ばれるため、 保存される duration_s が常に 0 だった (=「記録の時間が 0」の正体)。
+      lastRideDurationS = rideStartedAt
+        ? Math.round((performance.now() - rideStartedAt) / 1000) : lastRideDurationS;
       rideStartedAt = null;
       rideStartedIso = null;
       // ride 終了で autosave を消す (= 復元 dialog の対象から外す).
@@ -2324,7 +2333,7 @@ function buildRideSummary(rideState, course) {
     id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
     date: new Date().toISOString(),
     distance_m: snap.distance || 0,
-    duration_s: rideStartedAt ? Math.round((performance.now() - rideStartedAt) / 1000) : 0,
+    duration_s: rideStartedAt ? Math.round((performance.now() - rideStartedAt) / 1000) : lastRideDurationS,
     elevation_gain_m: 0,  // TODO: course から差分計算 (= 別 brief、 brief 33 範囲外)
     avg_power_w: null,
     course_name: 'fujihill',

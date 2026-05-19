@@ -96,8 +96,8 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
   // 保存したライドが履歴一覧に 1 件出ている
   await expect(page.locator('#history-list li')).toHaveCount(1, { timeout: 5_000 });
 
-  // 保存されたライドの生の走行距離 (m) を IndexedDB から読む。
-  const savedDistM = await page.evaluate(async ({ dbName, dbVersion, store }) => {
+  // 保存されたライドの生データ (走行距離 m / 走行時間 s / 走行ログ点数) を IndexedDB から読む。
+  const saved = await page.evaluate(async ({ dbName, dbVersion, store }) => {
     const db = await new Promise((res, rej) => {
       const r = indexedDB.open(dbName, dbVersion);
       r.onsuccess = () => res(r.result);
@@ -109,14 +109,21 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
       rq.onerror = () => rej(rq.error);
     });
     db.close();
-    return rides.length && rides[0].summary ? rides[0].summary.distance_m : null;
+    if (!rides.length) return null;
+    const r = rides[0];
+    return {
+      distM: r.summary ? r.summary.distance_m : null,
+      durS: r.summary ? r.summary.duration_s : null,
+      trkptN: Array.isArray(r.trkpts) ? r.trkpts.length : null,
+    };
   }, { dbName: RIDE_DB_NAME, dbVersion: RIDE_DB_VERSION, store: RIDE_STORE });
 
-  // ライド中に rider が前進し、 その距離が記録に正しく入っていることを確認する。
-  // (= 「ライダーは動いたのに記録は 0」という症状を pin する end-to-end チェック)
+  // 走行が記録に正しく入っているかを 距離・時間・走行ログ点数 の 3 つで確認する。
+  // どれか 1 つでも 0 なら「ライダーは動いたのに記録は 0」── テストが掴んで赤くなる。
   expect(liveDistM, 'ライド中に rider が前進したか').toBeGreaterThan(0);
-  expect(savedDistM, '保存された記録に走行距離があるか').toBeGreaterThan(0);
-  // 保存された距離が画面の走行距離と一致する (= 記録が走行を取りこぼしていない)。
-  // 差の許容は ride 終了クリックまでの数 m + 表示の丸め分。
-  expect(Math.abs(savedDistM - liveDistM), '画面の距離と保存距離の差(m)').toBeLessThan(3);
+  expect(saved, '保存されたライドがあるか').not.toBeNull();
+  expect(saved.distM, '保存された走行距離(m)').toBeGreaterThan(0);
+  expect(Math.abs(saved.distM - liveDistM), '画面の距離と保存距離の差(m)').toBeLessThan(3);
+  expect(saved.trkptN, '保存された走行ログの点数').toBeGreaterThan(0);
+  expect(saved.durS, '保存された走行時間(秒)').toBeGreaterThan(0);
 });
