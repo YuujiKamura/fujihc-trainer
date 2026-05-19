@@ -6,8 +6,8 @@
 // 薄い描画層に徹する:
 //   - リボン頂点 (course 点ごとに左右 2 点) の XZ / index / uv は terrain3d.js の
 //     buildCourseRibbon (純関数、 node test 済) が出す。
-//   - 各頂点の色は route_styling.js の gradeColorContinuous (純関数) が course 点の
-//     slope_pct から決める。
+//   - 各頂点の色は route_styling.js の classifyGrade (純関数) が course 点の
+//     slope_pct を 6 段階の勾配グレード bin に離散分類して決める。
 //   本 module はこの純関数の出力を Three.js の BufferGeometry に詰めるだけで、
 //   幾何計算・色計算のロジックは自前で持たない。
 //
@@ -28,7 +28,7 @@
 // 座標系 SoT: 東 = +X、 上 = +Y、 北 = -Z。 terrain3d.js / buildCourseRibbon と一致。
 
 import { buildCourseRibbon } from '../terrain3d.js';
-import { gradeColorContinuous } from '../route_styling.js';
+import { classifyGrade } from '../route_styling.js';
 import { sampleMeshHeight, meshGridStep } from './terrain_surface.js';
 
 // 緯度 1 度あたりのメートル (= terrain3d.js / terrain_surface.js と同値)。
@@ -39,10 +39,13 @@ const M_PER_DEG_LAT = 111320;
  *
  * buildCourseRibbon は course 点 i ごとに左右 2 頂点 (index 2i = 左、 2i+1 = 右) を
  * 出す。 その頂点順に合わせ、 点 i の勾配色を左右両頂点へ同色で入れる。
- * 色は gradeColorContinuous (route_styling.js) が SoT ── MapLibre 版の道路 polygon と
- * 同じ勾配色パレットを使うので、 レンダラを変えても走路の色は一致する。
+ * 色は classifyGrade (route_styling.js) が SoT ── slope_pct を 6 段階の勾配グレード
+ * bin (flat/gentle/moderate/hard/very_hard/extreme) に離散分類し、 各 bin のフラット色を
+ * 返す。 MapLibre 版の道路 polygon と同じ離散ビン配色なので、 レンダラを変えても走路の
+ * 色は一致する。 同一 bin 内の点は同色、 bin 境界で色が段に切り替わる ── 連続グラデーション
+ * でなく区間ごとフラットの「タイル状」配色。
  *
- * gradeColorContinuous は null / undefined / NaN を flat (緑) 扱いするため、
+ * classifyGrade は null / undefined / NaN を flat (緑) 扱いするため、
  * slope_pct 欠損点もそのまま渡してよい (= NaN が色に漏れない)。
  *
  * @param {Array<{slope_pct?:number}>} course - コース点列 (2 点以上)
@@ -55,7 +58,7 @@ export function ribbonVertexColors(course) {
   const n = course.length;
   const colors = new Float32Array(n * 2 * 3);
   for (let i = 0; i < n; i++) {
-    const hex = gradeColorContinuous(course[i].slope_pct);
+    const hex = classifyGrade(course[i].slope_pct).color;
     // '#rrggbb' → 0..1 の RGB。 GPU の頂点色 attribute は 0..1 正規化値を取る。
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;

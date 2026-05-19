@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ribbonVertexColors, createCourseRibbon } from '../lib/map3d/course_ribbon3d.js';
-import { gradeColorContinuous } from '../lib/route_styling.js';
+import { classifyGrade } from '../lib/route_styling.js';
 import { meshGridStep } from '../lib/map3d/terrain_surface.js';
 import { buildTerrainGeometry } from '../lib/terrain3d.js';
 import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
@@ -33,6 +33,12 @@ function hexToRgb01(hex) {
     parseInt(hex.slice(3, 5), 16) / 255,
     parseInt(hex.slice(5, 7), 16) / 255,
   ];
+}
+
+// ribbonVertexColors の出力 (Float32Array) から course 点 i の頂点色 (左頂点) を取り出す。
+function pointColor(colors, i) {
+  const vi = i * 2 * 3;
+  return [colors[vi], colors[vi + 1], colors[vi + 2]];
 }
 
 // createCourseRibbon が使う Three.js API だけを持つ最小 mock。
@@ -82,10 +88,10 @@ describe('ribbonVertexColors', () => {
     }
   });
 
-  it('各点の色が gradeColorContinuous(slope_pct) と一致 (= 勾配色パレットの取り違えを検出)', () => {
+  it('各点の色が classifyGrade(slope_pct).color と一致 (= 勾配ビン配色の取り違えを検出)', () => {
     const c = ribbonVertexColors(course);
     for (let i = 0; i < course.length; i++) {
-      const want = hexToRgb01(gradeColorContinuous(course[i].slope_pct));
+      const want = hexToRgb01(classifyGrade(course[i].slope_pct).color);
       const vi = i * 2 * 3;
       expect(c[vi]).toBeCloseTo(want[0], 6);
       expect(c[vi + 1]).toBeCloseTo(want[1], 6);
@@ -106,7 +112,7 @@ describe('ribbonVertexColors', () => {
       { lat: 35.4, lon: 138.7 },              // slope_pct なし
       { lat: 35.41, lon: 138.71, slope_pct: 5 },
     ]);
-    const want = hexToRgb01(gradeColorContinuous(undefined));  // = flat 緑
+    const want = hexToRgb01(classifyGrade(undefined).color);  // = flat 緑
     expect(c[0]).toBeCloseTo(want[0], 6);
     expect(c[1]).toBeCloseTo(want[1], 6);
     expect(c[2]).toBeCloseTo(want[2], 6);
@@ -123,6 +129,40 @@ describe('ribbonVertexColors', () => {
   it('2 点未満は RangeError (= リボンを張れない退化入力を弾く)', () => {
     expect(() => ribbonVertexColors([{ slope_pct: 5 }])).toThrow(RangeError);
     expect(() => ribbonVertexColors([])).toThrow(RangeError);
+  });
+
+  // --- 離散ビン (タイル状) 配色の本質を pin する。 配色を連続グラデーション
+  //     (gradeColorContinuous) へ戻すと下記が落ちる ── それが回帰検出の役目。 ---
+
+  it('同一 bin 内の点は同色 (= 区間ごとフラット色、 離散ビンの「同一区間 1 色」を pin)', () => {
+    // 4.5% も 6.5% も classifyGrade の moderate bin (4-7%)。 連続グラデーションなら
+    // 別色になる ── このテストが落ちたら配色が連続補間に戻っている。
+    const c = ribbonVertexColors([
+      { lat: 35.40, lon: 138.71, slope_pct: 4.5 },
+      { lat: 35.41, lon: 138.72, slope_pct: 6.5 },
+    ]);
+    expect(pointColor(c, 0)).toEqual(pointColor(c, 1));
+  });
+
+  it('bin 境界をまたぐと色が段に切り替わる (= タイル状配色、 隣接ビンは別色)', () => {
+    // 3.9% は gentle (1-4%)、 4.1% は moderate (4-7%) ── 隣接ビンなので別色。
+    const c = ribbonVertexColors([
+      { lat: 35.40, lon: 138.71, slope_pct: 3.9 },
+      { lat: 35.41, lon: 138.72, slope_pct: 4.1 },
+    ]);
+    expect(pointColor(c, 0)).not.toEqual(pointColor(c, 1));
+  });
+
+  it('GRADE_THRESHOLDS の境界値 1/4/7/10/15% で色が変わる (min inclusive / max exclusive)', () => {
+    // 各境界値の直前は下のビン、 境界値そのものは上のビン (min inclusive)。
+    // 例: 3.999% は gentle、 4.0% は moderate ── 境界で別色になる。
+    for (const b of [1, 4, 7, 10, 15]) {
+      const c = ribbonVertexColors([
+        { lat: 35.40, lon: 138.71, slope_pct: b - 0.001 },  // 境界直前 = 下のビン
+        { lat: 35.41, lon: 138.72, slope_pct: b },          // 境界値 = 上のビン
+      ]);
+      expect(pointColor(c, 0)).not.toEqual(pointColor(c, 1));
+    }
   });
 });
 
