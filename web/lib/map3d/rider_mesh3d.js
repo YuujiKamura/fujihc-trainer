@@ -213,9 +213,10 @@ function disposeTree(obj) {
 //  - ハンドル: ブルホーンバー。 中央の水平トップ + 左右端から前方かつ上向きに伸びる角。
 //  - 駆動系: BB から左右へクランクアーム 2 本 (180° 位相) + ペダル + チェーンリング。
 //  - リムブレーキ: 前後輪のリム上に跨がるキャリパー 2 セット (本体 + 左右アーム)。
-//  - ドロップシャドウ: 足元の地面に落とす暗い半透明の楕円。
+//  - 影: 全 Mesh に castShadow を立て、 scene の shadow map が地形に自機の影を投影する
+//    (= scene 側で太陽光を castShadow、 地形を receiveShadow に設定)。
 // group 直下 = 前輪/後輪/駆動系の 3 グループ + フレーム 14 + サドル 1 + ハンドル 3 +
-//   リムブレーキ 6 + 影 1 = 計 28。 shape は resolveBikeShape 済。
+//   リムブレーキ 6 = 計 27。 shape は resolveBikeShape 済。
 function buildBikeParts(THREE, group, shape) {
   // 陰影で 3D の形が読めるよう StandardMaterial (= シーンの太陽光 + 環境光を受ける)。
   const frameMat = new THREE.MeshStandardMaterial({
@@ -306,21 +307,14 @@ function buildBikeParts(THREE, group, shape) {
   addRimBrake(THREE, group, partMat, (headBottom.z + frontZ) / 2, frontZ, hubY + wheelR);
   addRimBrake(THREE, group, partMat, rearZ - 0.04, rearZ, hubY + wheelR);
 
-  // ドロップシャドウ: bike の足元、 地面 (y≈0) に落とす暗い半透明の楕円。 超扁平な
-  // 円柱を地面のわずか上に置き、 X を縮めて前後に長い楕円にする。
-  const shadowMat = new THREE.MeshStandardMaterial({
-    color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
-  const shadow = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.5, 0.5, 0.002, 24), shadowMat);
-  shadow.scale.set(0.55, 1, 1);
-  shadow.position.set(0, 0.006, (frontZ + rearZ) / 2);
-  group.add(shadow);
-
   // 駆動系: クランク 2 本 + ペダル + チェーンリングを回転グループに入れ、 BB 位置へ運ぶ。
   const crankSet = new THREE.Group();
   const pedals = buildCrankset(THREE, crankSet, partMat, wheelR);
   crankSet.position.set(0, bb.y, bb.z);
   group.add(crankSet);
+
+  // 全 Mesh に castShadow を立てる ── scene の shadow map が地形に自機の影を投影する。
+  group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 
   return { frontWheel, rearWheel, crankSet, pedals };
 }

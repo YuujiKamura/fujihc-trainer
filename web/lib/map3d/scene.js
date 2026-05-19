@@ -29,6 +29,11 @@ const DEFAULT_SUN_AZIMUTH_DEG = 135;
 const SUN_ELEVATION_DEG = 50;
 // configureScale() 前に render されても破綻しないための span 既定値 (m)。
 const DEFAULT_SPAN_M = 10000;
+// 影用の太陽光と自機の距離 (m)。 影は shadow map で落とす ── 太陽本体は hillshade 用に
+// span 距離へ置くが、 影オルソカメラは自機を狭い範囲で覆うため別にこの距離へ置く。
+const SHADOW_LIGHT_DIST = 60;
+// 影オルソカメラの半幅 (m)。 自機 (riderScale 3.6 ≒ 3.6m) を覆える広さ。
+const SHADOW_CAM_HALF = 5;
 
 /**
  * 方位 (deg) と仰角 (deg) と距離から太陽光源のワールド座標を返す.
@@ -111,11 +116,27 @@ export function createScene({ container }) {
   scene.add(skyDome);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // 影を shadow map で描く (= 自機の影を地形へ投影する)。 PCFSoft で影の縁を柔らかく。
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   // 太陽 (= 平行光源)。 位置は configureScale() / setSunlightDirection() で更新する。
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
   scene.add(sun);
+  // 太陽光に shadow map を持たせ、 自機の影を地形へ落とす。 影オルソカメラは自機を
+  // 覆う狭い範囲に絞って解像度を確保し、 focusShadowOn が毎フレーム自機へ追従させる。
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0008;
+  sun.shadow.camera.left = -SHADOW_CAM_HALF;
+  sun.shadow.camera.right = SHADOW_CAM_HALF;
+  sun.shadow.camera.top = SHADOW_CAM_HALF;
+  sun.shadow.camera.bottom = -SHADOW_CAM_HALF;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = SHADOW_LIGHT_DIST * 2.2;
+  sun.shadow.camera.updateProjectionMatrix();
+  scene.add(sun.target);  // target は focusShadowOn が動かすので scene グラフに乗せる
   // 環境光 + 半球光 (= 陰側が真っ黒に潰れないための底上げ、 強さは固定)。
   scene.add(new THREE.AmbientLight(0xffffff, 0.35));
   scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202820, 0.6));
@@ -141,6 +162,18 @@ export function createScene({ container }) {
     // 地形メッシュ / コースリボン / マーカー等を scene に足す (= 他部品の成果物を載せる)。
     add(obj) { scene.add(obj); },
     remove(obj) { scene.remove(obj); },
+
+    // 影オルソカメラを自機 (pos) 中心へ寄せる。 太陽光の向き (= hillshade) は変えず、
+    // light の position と target を pos 基準に平行移動するだけ ── 影カメラだけが自機を
+    // 覆う狭い範囲に収まり、 shadow map の解像度を自機へ集中できる。 facade が render
+    // の直前に毎フレーム呼ぶ。
+    focusShadowOn(pos) {
+      if (!pos) return;
+      const d = sunPosition(sunAzimuthDeg, SUN_ELEVATION_DEG, SHADOW_LIGHT_DIST);
+      sun.position.set(pos.x + d.x, pos.y + d.y, pos.z + d.z);
+      sun.target.position.set(pos.x, pos.y, pos.z);
+      sun.target.updateMatrixWorld();
+    },
 
     // 1 フレーム描画する。 camera は別部品が作るので引数で受け取る。
     // viewer 本体の tick がこれを毎フレーム呼ぶ (= 差し替え口の render())。

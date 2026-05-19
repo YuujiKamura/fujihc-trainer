@@ -257,6 +257,7 @@ export function createMapRenderer() {
           const built = buildTerrainMesh({ stitched: dem.stitched, range: dem.range, photoCanvas });
           terrainMesh = built.mesh;
           geoMeta = built.geo;
+          terrainMesh.receiveShadow = true;  // 自機の影 (shadow map) を地形に受ける
           scene.add(terrainMesh);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
@@ -370,9 +371,12 @@ export function createMapRenderer() {
     // 地形が組まれた後の最初の描画で idle を発火する。
     render() {
       if (!scene || !camera3d) return;
+      // 影オルソカメラを自機へ追従させてから描く (= 自機の影を地形に投影する)。
+      if (rider3d) scene.focusShadowOn(rider3d.group.position);
       scene.render(camera3d.camera);
       if (terrainReady && !idleFired) fireIdle();
     },
+
 
     // === コース描画 ===
 
@@ -402,6 +406,7 @@ export function createMapRenderer() {
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
       ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: savedCourseWidth, drapeOffset: currentRoadOffset });
+      ribbon3d.mesh.receiveShadow = true;  // コースリボンも自機の影を受ける
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
