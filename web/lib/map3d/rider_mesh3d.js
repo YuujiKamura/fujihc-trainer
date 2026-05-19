@@ -347,20 +347,20 @@ export function createRiderMesh3d(THREE) {
     },
 
     // 毎フレーム、 走行距離からライダーを course 上の現在位置へ置き、 車輪と駆動系を回す。
-    // bike は前後に長い剛体なので、 中心 1 点ではなく前輪・後輪をそれぞれコース面の点に
-    // 置き (= 前後の車軸距離だけ離した 2 点を riderPlacementAtDistance で取る)、 bike を
-    // その 2 点を結ぶ線に合わせる ── 1 点配置だとコースの勾配変化で前後輪が浮く/めり込む。
+    // 中心は distanceM のコース点そのもの (= 必ずコース面に乗る)、 向き (ピッチ) は前後
+    // ±車軸間隔/2 の 2 点で決める。 中心を 2 点の中点にすると、 コースが曲がる急勾配
+    // 区間で中点がコース曲面から浮く (弦は曲面の内側を通る) ので、 位置は中心点だけ・
+    // 向きだけ 2 点。 こうして「剛体 bike をコースの傾きに沿わせつつ浮かせない」。
     updatePose(ribbonPositions, course, distanceM) {
       // 前後の車軸間隔 (m) = unit モデルの前後ハブ間隔 × wheelbase × group scale。
       const wheelbaseM = (BIKE_DIMENSIONS.rearZ - BIKE_DIMENSIONS.frontZ)
         * currentShape.wheelbase * (group.scale.x || 1);
       const half = wheelbaseM / 2;
+      const center = riderPlacementAtDistance(ribbonPositions, course, distanceM);
       const front = riderPlacementAtDistance(ribbonPositions, course, distanceM + half);
       const rear = riderPlacementAtDistance(ribbonPositions, course, distanceM - half);
-      // bike 中心 = 前後輪接地点の中点。
-      const cx = (front.position[0] + rear.position[0]) / 2;
-      const cy = (front.position[1] + rear.position[1]) / 2;
-      const cz = (front.position[2] + rear.position[2]) / 2;
+      // bike 中心 = distanceM のコース点 (中点ではない ── 中点はカーブで浮く)。
+      const cx = center.position[0], cy = center.position[1], cz = center.position[2];
       group.position.set(cx, cy, cz);
       // bike の向き = 後輪→前輪。 bike は −Z 前方、 lookAt は +Z を対象へ向けるので
       // 後方の点 (中心 − 前方ベクトル) を lookAt する。 up=+Y でロール 0 に固定。

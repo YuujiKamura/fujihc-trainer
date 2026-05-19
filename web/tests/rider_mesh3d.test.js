@@ -188,6 +188,21 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     expect(pedalR.rotation.x).toBeCloseTo(-crankSet.rotation.x, 9);
     expect(pedalL.rotation.x).toBeCloseTo(-crankSet.rotation.x, 9);
   });
+
+  it('山なり (凸) コースの頂点で bike 中心はコース面に乗る (= 中点ではなく distanceM 点)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    // 中央が高い凸コース。 distanceM=100 (頂点) で bike 中心 y は頂点の高さ 10。
+    // 前後 2 点の中点配置だと中点が曲面より下に沈み 10 未満になる (= カーブで浮く回帰)。
+    const course = [{ distance_m: 0 }, { distance_m: 100 }, { distance_m: 200 }];
+    const positions = [
+      0, 0, 1, 0, 0, -1,
+      100, 10, 1, 100, 10, -1,
+      200, 0, 1, 200, 0, -1,
+    ];
+    const pl = r.updatePose(positions, course, 100);
+    expect(pl.position[1]).toBeCloseTo(10, 6);
+    expect(r.group.position.y).toBeCloseTo(10, 6);
+  });
 });
 
 describe('resolveBikeShape: 形状パラメータの既定値補完 + クランプ', () => {
