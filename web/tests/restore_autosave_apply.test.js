@@ -13,14 +13,16 @@
 import { describe, it, expect } from 'vitest';
 import { createRideState } from '../lib/ride_state.js';
 import { applyAutosaveToRideState } from '../lib/ride_autosave.js';
+import { withCumulativeDistance, DEG_LAT_PER_M } from './_helpers/course_fixture.js';
 
-// 1m 等間隔・全長 1000m の合成コース.
+// 1m 等間隔・全長 ≒1000m の合成コース (= lat を DEG_LAT_PER_M 刻みで動かし
+// haversine 1 セグメント ≒ 1.0m に揃える). distance_m も haversine 累積で自己整合.
 function buildCourse(n = 1001) {
-  const arr = [];
+  const pts = [];
   for (let i = 0; i < n; i++) {
-    arr.push({ lat: 35 + i * 0.00001, lon: 138, distance_m: i, elevation_m: 100 + i * 0.1, slope_pct: 2 });
+    pts.push({ lat: 35 + i * DEG_LAT_PER_M, lon: 138, elevation_m: 100 + i * 0.1, slope_pct: 2 });
   }
-  return arr;
+  return withCumulativeDistance(pts);
 }
 
 function makeRec(distanceM, trkptCount = 0) {
@@ -62,10 +64,11 @@ describe('applyAutosaveToRideState — 復元の本経路', () => {
   });
 
   it('distanceM がコース全長を超えたら全長に clamp する', () => {
-    const rideState = createRideState(buildCourse()); // 全長 1000m
+    const rideState = createRideState(buildCourse()); // 全長 ≒1000m
+    const total = rideState._terrain.totalDistance;
     const applied = applyAutosaveToRideState(rideState, makeRec(99999));
-    expect(applied.distanceM).toBe(1000);
-    expect(rideState._rider.distanceTraveled).toBe(1000);
+    expect(applied.distanceM).toBeCloseTo(total, 6);
+    expect(rideState._rider.distanceTraveled).toBeCloseTo(total, 6);
   });
 
   it('distanceM が undefined なら復元せず null を返す (= IndexedDB 不正 record 防御)', () => {

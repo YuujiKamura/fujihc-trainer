@@ -18,6 +18,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createTerrain } from '../lib/terrain.js';
 import { createRider } from '../lib/rider.js';
+import { withCumulativeDistance } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
@@ -151,32 +152,34 @@ describe('brief 35: ride_state.js は Terrain + Rider への shim', () => {
 });
 
 // === behavioral: Terrain + Rider の組合せが viewer の使い方で正しく動く ===
+// distance_m は haversine 累積で自己整合に埋める (= rider-position-model).
 function buildSimpleCourse() {
-  const out = [];
+  const pts = [];
   for (let i = 0; i <= 10; i++) {
-    out.push({
+    pts.push({
       lat: 35.4 + i * 0.001, lon: 138.7,
-      distance_m: i * 111, elevation_m: 1000 + i * 10, slope_pct: 5,
+      elevation_m: 1000 + i * 10, slope_pct: 5,
     });
   }
-  return out;
+  return withCumulativeDistance(pts);
 }
 
 describe('brief 35 behavioral: 観るモード section click → 即動き出す (= 1Hz workaround 撤去 後)', () => {
   it('rider.startFromIdx + rider.setSpeed(20/3.6) → tick で即進む (= 1Hz fake state を待たない)', () => {
     const t = createTerrain({ course: buildSimpleCourse() });
     const r = createRider({ terrain: t });
-    // section 5 (= idx=5) を click した状況.
+    // section 5 (= course 点 5) を click した状況.
     r.startFromIdx(5);
-    expect(r.distanceTraveled).toBe(555);
+    const base = r.distanceTraveled;
+    expect(base).toBeCloseTo(t.distanceAtIdx(5), 6);  // course 点 5 の累積距離
     expect(r.active).toBe(true);
     expect(r.paused).toBe(false);
     // 観るモードの即時セット.
     r.setSpeed(20 / 3.6);
     // 1 フレーム (= 16ms) tick → 即進む (= 旧 viewer は 1 秒後の fake state 待ちで進まなかった).
     r.tick(0.016, { speedMultiplier: 1.0 });
-    expect(r.distanceTraveled).toBeGreaterThan(555);
-    expect(r.distanceTraveled).toBeLessThan(555 + 1);  // 1 frame で 1m 未満
+    expect(r.distanceTraveled).toBeGreaterThan(base);
+    expect(r.distanceTraveled - base).toBeLessThan(1);  // 1 frame で 1m 未満
   });
 
   it('fake state push (= 1Hz で setSpeed 上書き) が来ても即時 setSpeed は drift しない (= idempotent)', () => {

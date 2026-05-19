@@ -1691,7 +1691,11 @@ async function loadCourse() {
     _pendingRideStart = false;
     if (!rideState.snapshot().active) rideState.start();
   }
-  totalDist = course[course.length - 1].distance_m;
+  // rider-position-model: 距離スケールは terrain の haversine 累積長に一本化する。
+  // course.json の distance_m は smoothCourse が lat/lon を平滑化しても再計算されず
+  // メモリ内で食い違う壊れた目盛り。 totalDist を terrain.totalDistance にすると
+  // viewer / rider / minimap / __goalTest が同じ haversine 距離スケールを共有する。
+  totalDist = terrain.totalDistance;
   hud.total(totalDist);
   status(`course loaded: ${course.length} pts, ${(totalDist/1000).toFixed(1)} km`);
 
@@ -1906,12 +1910,16 @@ async function buildMinimapTopBase() {
 // brief 28 の buildMinimapBottom と同仕様、 関数名のみ rename (= buildMinimapTopBase との対称性)。
 function buildMinimapBottomBase() {
   const onscreen = document.getElementById('minimap-bottom');
-  if (!onscreen || course.length === 0) return;
+  // terrain 未生成 / totalDistance=0 (= 単一点 course 等) は早期 return。 下のループが
+  // terrain.distanceAtIdx を呼び、 x = distanceAtIdx / totalD でゼロ除算するため。
+  if (!onscreen || course.length === 0 || !terrain || terrain.totalDistance === 0) return;
   const W = onscreen.width, H = onscreen.height;
   const PAD = 12;
   const eles = course.map(p => p.elevation_m);
   const minE = Math.min(...eles), maxE = Math.max(...eles);
-  const totalD = course[course.length - 1].distance_m;
+  // rider-position-model: x 軸は terrain の haversine 累積長 (= rider dot の curDistM と
+  // 同一スケール)。 course.json の distance_m は壊れた目盛りなので使わない。
+  const totalD = terrain.totalDistance;
   const botInnerW = W - 2 * PAD;
   const botInnerH = H - 2 * PAD;
   const botBaseY = H - PAD;
@@ -1927,7 +1935,7 @@ function buildMinimapBottomBase() {
   ctx.beginPath(); ctx.moveTo(PAD, botBaseY);
   for (let i = 0; i < course.length; i++) {
     const p = course[i];
-    const x = PAD + (p.distance_m / totalD) * botInnerW;
+    const x = PAD + (terrain.distanceAtIdx(i) / totalD) * botInnerW;
     const y = botBaseY - ((p.elevation_m - minE) / (maxE - minE)) * botInnerH;
     ctx.lineTo(x, y);
   }
@@ -1940,7 +1948,7 @@ function buildMinimapBottomBase() {
   ctx.beginPath();
   for (let i = 0; i < course.length; i++) {
     const p = course[i];
-    const x = PAD + (p.distance_m / totalD) * botInnerW;
+    const x = PAD + (terrain.distanceAtIdx(i) / totalD) * botInnerW;
     const y = botBaseY - ((p.elevation_m - minE) / (maxE - minE)) * botInnerH;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }

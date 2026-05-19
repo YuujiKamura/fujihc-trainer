@@ -6,21 +6,21 @@
 import { describe, it, expect } from 'vitest';
 import { createRideState } from '../lib/ride_state.js';
 import { buildGpxXml } from '../lib/gpx_builder.js';
+import { withCumulativeDistance, DEG_LAT_PER_M } from './_helpers/course_fixture.js';
 
 function makeCourse() {
-  // 1m 等間隔の 100 点。 lat は 0.0001 deg ずつ北上 (= 1 点で約 11m、 だが distance_m は 1m
-  // 等間隔で intentionally 不整合、 「distance ベースで idx 引く」 を test するため).
-  const arr = [];
+  // 1m 等間隔の 100 点 (= lat を DEG_LAT_PER_M 刻みで動かし haversine 1 セグメント
+  // ≒ 1.0m). distance_m も haversine 累積で自己整合 (rider-position-model)。
+  const pts = [];
   for (let i = 0; i < 100; i++) {
-    arr.push({
-      lat: 35.45 + i * 0.0001,
+    pts.push({
+      lat: 35.45 + i * DEG_LAT_PER_M,
       lon: 138.75,
-      distance_m: i,
       elevation_m: 1000 + i,
       slope_pct: 0,
     });
   }
-  return arr;
+  return withCumulativeDistance(pts);
 }
 
 describe('shim trkpt lat/lon が rider 進行に追従する (= viewer rewire 後の bug pin)', () => {

@@ -198,3 +198,155 @@ test('ゴール到達: viewer が固まらず、走行データが履歴に保�
   expect(saved.trkptN, '保存された走行ログ (trkpt) の点数').toBeGreaterThan(0);
   expect(saved.durS, '保存された走行時間 (秒)').toBeGreaterThan(0);
 });
+
+// ============================================================
+// J: 一定の力で漕ぐと、記録される速度はなめらか (スパイクしない)
+//
+// Actor:
+//   トレーナーにまたがったライダー。胸に心拍計も着けている。
+//   富士の登りを走行モードで、力を緩めず一定の強さで上っている。
+//
+// Narrative (ユーザ視点):
+//   1. ライダーは走行モードでライドを始めた。トレーナーを漕いで進む。
+//      胸に心拍計も着けている。
+//   2. 富士の登りを、ずっと同じ強さで漕ぎ続けた ── 力を緩めも強めもしない。
+//   3. 走り終えて、記録された速度の移り変わりを見た。一定の力で漕いだの
+//      だから、速度はなめらかに上がって落ち着くはず ── 1 秒ごとに上下へ
+//      跳ねるギザギザの記録ではおかしい。
+//   4. 走った記録を履歴に保存した。
+//   5. 履歴に残った速度の記録は、跳ねずになめらかだった。
+//
+// Catches (落ちたら何の regression か):
+//   - 物理計算が心拍メッセージで「パワー 0」を掴み、足を止めた扱いの減速が
+//     1 秒おきに混入して、記録速度がギザギザに振動する回帰。パワー計と
+//     心拍計は別デバイスで、state メッセージが power だけ / hr だけ と
+//     部分的に届くために起きる。
+//   - fake trainer が「全部入り 1 メッセージ」へ戻り、部分メッセージ経路が
+//     テストで歩かれなくなる回帰 (= 上のバグが再び不可視になる)。
+//
+// 物理は決定的 (乱数なし)。 速度倍率スライダーは localStorage 既定の 1.0 倍
+// なので、 コースは物理速度そのもので進む (= 復元した速度 = 物理速度)。
+// ============================================================
+
+// 巡航中、 1 秒ごとの速度変化がこの値 (m/s) を超えたら「スパイク」とみなす。
+// 較正値 (本テストの console.log で計測):
+//   修正後 (物理が sticky power を使う): 巡航の最大ステップ 約 ?.?? m/s
+//   バグ時 (物理が生 msg.power_w=0 を掴む): 約 ?.?? m/s
+const SPIKE_STEP_MPS = 0.4;
+
+test('一定の力で漕ぐと記録速度はなめらか — 1 秒おきに跳ねるスパイクが出ない', async ({ page }) => {
+  // 30 秒走行 + 保存 + 履歴 で既定 30s timeout を超えるため延長。
+  test.setTimeout(80_000);
+
+  // 1. 走行モードでライド開始 (?test=1 = fake trainer + 心拍計、 自動 ride start)。
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev`);
+  await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // 2. 富士の登りを 30 秒、 一定の力 (fake trainer = 150W) で漕ぎ続ける。
+  //   fake trainer はパワー計 message と心拍計 message を交互に分けて送る
+  //   (= 実機の複数デバイス構成、 ws_client.js)。 旧バグでは心拍 message のたびに
+  //   物理が power=0 を掴み、 速度が 1 秒おきに上下へ振動して記録されていた。
+  const RIDE_SEC = 30;
+  await page.waitForTimeout(RIDE_SEC * 1000);
+  const liveDistM = Number(await page.locator('#dist').innerText());
+
+  // 4. ライド終了 → 走行後画面 → 履歴に保存。
+  await page.locator('#btnRideEnd').click();
+  await expect(page.locator('#postride-overlay')).toHaveClass(/visible/, { timeout: 10_000 });
+  await page.locator('#btnSaveHistory').click();
+  await expect(page.locator('#postride-upload-status')).toContainText('履歴に保存', { timeout: 5_000 });
+
+  // 5. 履歴画面へ → 保存したライドが 1 件出ている。
+  await page.locator('#btnViewHistory').click();
+  await expect(page.locator('body')).toHaveClass(/state-history/, { timeout: 5_000 });
+  await expect(page.locator('#history-list li')).toHaveCount(1, { timeout: 5_000 });
+
+  // 保存されたライドの走行ログ (trkpt) を IndexedDB から読む。
+  const saved = await page.evaluate(async ({ dbName, dbVersion, store }) => {
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open(dbName, dbVersion);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const rides = await new Promise((res, rej) => {
+      const rq = db.transaction(store, 'readonly').objectStore(store).getAll();
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+    db.close();
+    if (!rides.length) return null;
+    const r = rides[0];
+    const powers = Array.isArray(r.trkpts)
+      ? r.trkpts.map((p) => p.power).filter((v) => Number.isFinite(v)) : [];
+    return {
+      distM: r.summary ? r.summary.distance_m : null,
+      durS: r.summary ? r.summary.duration_s : null,
+      trkpts: Array.isArray(r.trkpts)
+        ? r.trkpts.map((p) => ({ t: p.t, lat: p.lat, lon: p.lon })) : [],
+      avgPower: powers.length ? powers.reduce((a, b) => a + b, 0) / powers.length : null,
+    };
+  }, { dbName: RIDE_DB_NAME, dbVersion: RIDE_DB_VERSION, store: RIDE_STORE });
+
+  // --- まともな記録が残っているか (基本健全性) ---
+  expect(saved, '保存されたライドがある').not.toBeNull();
+  expect(saved.distM, '保存された走行距離(m)').toBeGreaterThan(10);
+  expect(saved.durS, '保存された走行時間(秒)').toBeGreaterThan(0);
+  expect(Math.abs(saved.distM - liveDistM), '画面の距離と保存距離の差(m)').toBeLessThan(3);
+  // 物理が壊れても power 記録自体は正しい (= バグは速度側) ことを pin する。
+  expect(saved.avgPower, '記録された平均パワー(W)').toBeGreaterThan(120);
+
+  // --- 速度グラフ: 走行ログの位置から 1 秒ごとの速度を復元する ---
+  // trkpt は緯度経度しか持たないので、 連続 2 点の距離 ÷ 経過秒 = その秒の速度。
+  // (Strava が結果ページで描く速度グラフと同じ導出。)
+  const tp = saved.trkpts;
+  expect(tp.length, '速度を復元できる走行ログ点数').toBeGreaterThan(15);
+  const speeds = [];
+  const dts = [];
+  let pathLen = 0;  // 記録された位置 (緯度経度) を順につないだ総道のり (m)
+  for (let i = 1; i < tp.length; i++) {
+    const dtSec = (new Date(tp[i].t) - new Date(tp[i - 1].t)) / 1000;
+    if (!(dtSec > 0)) continue;
+    // 数 m スケールでは平面近似で十分 (緯度 35 度)。
+    const latRad = (tp[i].lat * Math.PI) / 180;
+    const dx = (tp[i].lon - tp[i - 1].lon) * Math.cos(latRad) * 111320;
+    const dy = (tp[i].lat - tp[i - 1].lat) * 111320;
+    const segM = Math.hypot(dx, dy);
+    pathLen += segM;
+    dts.push(dtSec);
+    speeds.push(segM / dtSec);
+  }
+
+  // 漕ぎ出しの加速 (最初の数秒) はなめらかに上がって当然なので除外し、
+  // 巡航に入ったあとの「秒ごとの速度変化」を見る。 一定パワーで巡航中なら
+  // コース勾配の変化につれてゆるやかに動くだけ ── 1 秒で大きく跳ねたら
+  // それがスパイク (= 物理 0W バグの 1 秒おきの振動)。
+  const RAMP_SKIP = 6;
+  const cruise = speeds.slice(RAMP_SKIP);
+  expect(cruise.length, '巡航区間の速度サンプル数').toBeGreaterThan(10);
+  const steps = [];
+  for (let i = 1; i < cruise.length; i++) steps.push(Math.abs(cruise[i] - cruise[i - 1]));
+  const maxStep = Math.max(...steps);
+  const spikeCount = steps.filter((s) => s > SPIKE_STEP_MPS).length;
+
+  // 記録された速度グラフをそのまま出す (= 「まともかどうか」を目で見られるように)。
+  console.log(`[J-spike] trkpt=${tp.length} dist=${saved.distM.toFixed(1)}m `
+    + `avgPower=${saved.avgPower.toFixed(0)}W maxCruiseStep=${maxStep.toFixed(3)}m/s `
+    + `spike=${spikeCount}/${steps.length}`);
+  console.log(`[J-spike] 復元速度 km/h: ${speeds.map((v) => (v * 3.6).toFixed(1)).join(' ')}`);
+  const totalDt = dts.reduce((a, b) => a + b, 0);
+  console.log(`[J-diag] saved.distM=${saved.distM.toFixed(1)}m liveDist=${liveDistM}m `
+    + `位置の総道のり pathLen=${pathLen.toFixed(1)}m trkpt=${tp.length} `
+    + `totalDt=${totalDt.toFixed(1)}s dt[min/max]=${Math.min(...dts).toFixed(2)}/${Math.max(...dts).toFixed(2)}s`);
+
+  // --- 記録の距離と、記録された位置がたどる道のりが一致するか (= まともな記録の核) ---
+  // 距離欄に 52m と書いてあるのに、 記録された緯度経度が 16m ぶんしか動いていない、
+  // のような食い違いは「壊れた記録」── Strava 等は位置から地図/距離を再構成するので、
+  // 距離欄ではなく位置が正なら、 ライドは丸ごと縮む。 連続 trkpt の haversine を
+  // 足した pathLen は、 記録距離 distM とほぼ一致するはず (差は道の曲がりぶんのみ)。
+  expect(pathLen, '記録された位置の総道のり(m) — 走行距離(m) と一致しない = 壊れた記録')
+    .toBeGreaterThan(saved.distM * 0.9);
+
+  // 一定パワーで巡航中、 速度が 1 秒で大きく跳ねる箇所は無い。
+  // 旧バグ (心拍 message で物理 power=0) では 1 秒おきに振動 → spike が多発する。
+  expect(spikeCount, '巡航中に速度が跳ねた秒数 (= スパイク、 0 が正常)').toBe(0);
+});

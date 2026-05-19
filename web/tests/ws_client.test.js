@@ -281,4 +281,42 @@ describe('createTestModeClient', () => {
       vi.useRealTimers();
     }
   });
+
+  it('state を trainer message と HR message に交互に分けて送る (= 実機の複数デバイス構成を模す)', () => {
+    // 実機はパワー計と心拍計が別 BLE デバイス。 bridge は両者を別々の state message
+    // で送る。 fake もそれに寄せ、 全部入り 1 snapshot を trainer 系 / hr 系に分割して
+    // 交互に送る。 これが無いと「心拍 message でパワーが欠ける」経路がテストで歩かれず、
+    // 物理が欠けたパワーを 0 と誤認するバグ (記録速度が過小) を検出できない。
+    vi.useFakeTimers();
+    try {
+      const state = vi.fn();
+      // generator は「現在の全センサ値」を全部入り 1 snapshot で返す (= 従来通り)。
+      const gen = () => ({
+        speed_mps: 5, power_w: 200, cadence_rpm: 85, hr_bpm: 145,
+        distance_m: 10, slope_sent_pct: 3, last_ack: 'OK',
+      });
+      const client = createTestModeClient({ state }, { fakeStateInterval: 1000, fakeStateGenerator: gen });
+      vi.advanceTimersByTime(4000);  // 4 tick
+      expect(state).toHaveBeenCalledTimes(4);  // 1 tick = 1 message は不変
+
+      // 偶 tick (0,2) = trainer message: power/cadence/speed あり、 hr_bpm は載らない。
+      const m0 = state.mock.calls[0][0];
+      expect(m0.power_w).toBe(200);
+      expect(m0.cadence_rpm).toBe(85);
+      expect(m0.speed_mps).toBe(5);
+      expect('hr_bpm' in m0).toBe(false);  // 心拍は別デバイス、 trainer message に載せない
+
+      // 奇 tick (1,3) = HR message: hr_bpm だけ、 trainer 系の値は載らない。
+      const m1 = state.mock.calls[1][0];
+      expect(m1.hr_bpm).toBe(145);
+      expect('power_w' in m1).toBe(false);  // パワーは別デバイス、 HR message に載せない
+
+      // 交互であること (偶=trainer / 奇=HR) を 4 tick 分で固定する。
+      expect('hr_bpm' in state.mock.calls[2][0]).toBe(false);  // tick2 = trainer
+      expect(state.mock.calls[3][0].hr_bpm).toBe(145);          // tick3 = HR
+      client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

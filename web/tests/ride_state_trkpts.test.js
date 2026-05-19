@@ -2,19 +2,20 @@
 // 既存 ride_state.test.js とは独立 file (= 拡張部のみ verify、 既存 12 件は不変).
 import { describe, it, expect } from 'vitest';
 import { createRideState } from '../lib/ride_state.js';
+import { withCumulativeDistance } from './_helpers/course_fixture.js';
 
+// rider-position-model: distance_m は haversine 累積で自己整合に埋める.
 function buildCourse(n = 10) {
-  const arr = [];
+  const pts = [];
   for (let i = 0; i < n; i++) {
-    arr.push({
+    pts.push({
       lat: 35.4 + i * 0.001,
       lon: 138.7,
-      distance_m: i * 111,
       elevation_m: 1000 + i * 10,
       slope_pct: 5,
     });
   }
-  return arr;
+  return withCumulativeDistance(pts);
 }
 
 describe('ride_state trkpts (brief 33)', () => {

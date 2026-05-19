@@ -460,12 +460,19 @@ export function createMapRenderer() {
     // ライダーを course 上の現在位置に置く。 spin (車輪回転) は rider_mesh3d が
     // 受け口を持たないため Phase3 では未使用 (= 車輪アニメは Phase4 以降の課題)。
     updateRider({ course, curIdx, lat, lon } = {}) {
-      if (!rider3d || !ribbonPositions || !Array.isArray(course)) return;
+      if (!rider3d || !ribbonPositions || !Array.isArray(course)
+          || !Array.isArray(savedCourse)) return;
       if (lon != null) lastLon = lon;
       if (lat != null) lastLat = lat;
+      // distanceAlongCourse は viewer の course (= curIdx と同じ非 resampled 列) で
+      // 走行距離を求める。
       const distanceM = distanceAlongCourse(course, curIdx, lat, lon);
       lastRiderDistM = distanceM;
-      lastRiderPlacement = rider3d.updatePose(ribbonPositions, course, distanceM);
+      // rider 配置はリボンと同じ savedCourse (= renderCourse が resampleCourse した列)
+      // で引く。 ribbonPositions は resampled course の点数で組まれており、 非 resampled
+      // course の index でリボン頂点を引くと別地点を拾い rider が浮く/位置ずれする
+      // (= 056259c の course 再サンプリング導入で course と ribbon の点数が食い違った)。
+      lastRiderPlacement = rider3d.updatePose(ribbonPositions, savedCourse, distanceM);
     },
 
     // === 距離ラベル ===

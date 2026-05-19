@@ -22,6 +22,7 @@ import {
 } from '../lib/consent.js';
 import { splitCourseIntoSections } from '../lib/course_sections.js';
 import { createRideState } from '../lib/ride_state.js';
+import { withCumulativeDistance } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
@@ -38,19 +39,19 @@ function memStorage() {
   };
 }
 
-// 単純 course (= 11 点 / 1km / 5% 一定勾配).
+// 単純 course (= 11 点 / 5% 一定勾配). distance_m は haversine 累積で自己整合に埋める
+// (= rider-position-model: 新 terrain は lat/lon の haversine 実長を距離スケールに使う).
 function buildSimpleCourse() {
-  const out = [];
+  const pts = [];
   for (let i = 0; i <= 10; i++) {
-    out.push({
-      distance_m: i * 1000,
+    pts.push({
       elevation_m: 100 + i * 50,
       slope_pct: 5,
       lat: 35.0 + i * 0.001,
       lon: 138.7 + i * 0.001,
     });
   }
-  return out;
+  return withCumulativeDistance(pts);
 }
 
 // viewer-maplibre.js の dispatchAfterIntro logic を再現する shim.

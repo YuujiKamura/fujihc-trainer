@@ -157,6 +157,13 @@ export function createTestModeClient(handlers, options = {}) {
 
   let closed = false;
   let timer = null;
+  // fake state を実機の複数デバイス構成に寄せる ── 実機はパワー計と心拍計が別 BLE
+  // デバイスで、 bridge は両者を別々の state message として送る (power だけ / hr だけ
+  // の部分 message)。 fake が常に全部入り 1 message を送ると、 viewer の部分 message
+  // 処理経路 (心拍 message でパワーが欠ける側) がテストで一度も歩かれず、 そこのバグ
+  // (物理が欠けたパワーを 0 と誤認 → 記録速度が過小) を構造的に検出できない。 そこで
+  // tick ごとに trainer message と HR message を交互に分けて送る。
+  let _stateTick = 0;
 
   function _dispatch(type, msg) {
     const h = safeHandlers[type];
@@ -179,11 +186,22 @@ export function createTestModeClient(handlers, options = {}) {
     return true;
   }
 
-  // 定期 push 開始
+  // 定期 push 開始。 trainer message (power/cadence/speed、 hr なし) と HR message
+  // (hr のみ) を tick 交互に送る (= 上の複数デバイス comment)。 1 tick = 1 message
+  // は不変、 interval 契約は変えない。 最初の tick は trainer message。
   timer = _setInterval(() => {
     if (closed) return;
     const s = generator();
-    _dispatch('state', s);
+    if (_stateTick % 2 === 0) {
+      // trainer message: パワー計由来。 hr_bpm は別デバイスなので載せない。
+      const trainerMsg = { ...s };
+      delete trainerMsg.hr_bpm;
+      _dispatch('state', trainerMsg);
+    } else {
+      // HR message: 心拍計由来の hr_bpm だけ。
+      _dispatch('state', { hr_bpm: s.hr_bpm });
+    }
+    _stateTick++;
   }, interval);
 
   return {

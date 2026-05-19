@@ -12,16 +12,17 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRideState } from '../lib/ride_state.js';
+import { withCumulativeDistance, DEG_LAT_PER_M } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 
 function makeShortCourse() {
-  // 100m course、 2 点。 totalDist = 100。
-  return [
-    { lat: 35.45, lon: 138.75, distance_m: 0, elevation_m: 1000, slope_pct: 0 },
-    { lat: 35.46, lon: 138.75, distance_m: 100, elevation_m: 1100, slope_pct: 10 },
-  ];
+  // ≒100m course、 2 点 (lat を haversine 100m ぶん北へ動かす). totalDist ≒ 100。
+  return withCumulativeDistance([
+    { lat: 35.45, lon: 138.75, elevation_m: 1000, slope_pct: 0 },
+    { lat: 35.45 + 100 * DEG_LAT_PER_M, lon: 138.75, elevation_m: 1100, slope_pct: 10 },
+  ]);
 }
 
 describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', () => {
@@ -34,7 +35,7 @@ describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', ()
     }
     expect(rs._rider.atGoal).toBe(true);
     expect(rs.isAtEnd()).toBe(true);
-    expect(rs.snapshot().distance).toBe(100);  // totalDist にクランプ
+    expect(rs.snapshot().distance).toBeCloseTo(rs._terrain.totalDistance, 6);  // totalDist にクランプ
   });
 
   it('完走後の追加 advance は no-op (= distance 不変、 atGoal 維持)', () => {
