@@ -18,11 +18,11 @@ const CONTRACT_METHODS = [
   'setSunlightDirection', 'setSunlightStrength',
   'setStartGoalVisible',
   'setRiderScale', 'setCourseWidth', 'setRoadHeight', 'setLabelHeight',
-  'setRiderShape',
+  'setRiderShape', 'setShadowBoardEnabled',
 ];
 
-describe('createMapRenderer — 差し替え口20メソッド', () => {
-  it('20個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口21メソッド', () => {
+  it('21個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');

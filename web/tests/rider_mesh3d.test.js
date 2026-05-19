@@ -263,4 +263,23 @@ describe('createRiderMesh3d.setShape: 部品ごと形状の差し替え', () => 
     expect(tyre.geometry.args[0]).toBe(0.3);   // 1 回目の wheelR が残る
     expect(tyre.geometry.args[1]).toBe(0.03);  // 2 回目の tubeR が反映
   });
+
+  it('影ボードは既定で非表示、 setShadowBoard で表示が切り替わる', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    const board = r.group.children.find((c) => c.name === 'shadowBoard');
+    expect(board).toBeTruthy();
+    expect(board.visible).toBe(false);   // 既定オフ
+    r.setShadowBoard(true);
+    expect(board.visible).toBe(true);
+    r.setShadowBoard(false);
+    expect(board.visible).toBe(false);
+  });
+
+  it('setShape で組み直しても影ボードの表示状態を保つ', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    r.setShadowBoard(true);
+    r.setShape({ wheelR: 0.3 });
+    const board = r.group.children.find((c) => c.name === 'shadowBoard');
+    expect(board.visible).toBe(true);   // 組み直し後もオンを維持
+  });
 });

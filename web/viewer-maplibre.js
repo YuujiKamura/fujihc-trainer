@@ -495,6 +495,21 @@ const wsHandlers = {
     // trainer の speed は「平地 + power のみ」 の機種が多く、 下り勾配の重力加速や慣性が入らない
     // ため「足を止めて即減速」 の不自然挙動になっていた。 新経路は web/lib/bike_physics.js の
     // applyPhysicsStep で power とコース勾配から速度を時間積分する (= inertia-sim.html と同じ計算)。
+    // state push は値が部分的に届く ── パワーメーターと心拍センサーは別デバイスで、
+    // power_w だけ / hr_bpm だけ の message が別々のタイミングで来る。 各値は届いた時
+    // だけ current* に sticky 保持し、 物理計算・HUD・rider.setSensors はすべて「最後に
+    // 届いた各値」を使う。 生の msg.* を直接使うと 2 つの実害が出る:
+    //   (1) 心拍だけの message を物理に渡すと power=0 とみなされ「足を止めた」減速が
+    //       混入、 速度が実際より大幅に遅く・断続的になる (= ストラバ記録の速度が掛けた
+    //       パワーに対しておかしくなる実害)。
+    //   (2) HUD が power だけの message で心拍を、 心拍だけの message で power を "--"
+    //       に明滅させる。
+    // sticky 更新は物理ブロックより前に置く (= 物理が currentPower を読めるように)。
+    if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
+    if (typeof msg.power_w === 'number') currentPower = msg.power_w;
+    if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
+    if (typeof msg.speed_mps === 'number') currentSpeedMps = msg.speed_mps;
+
     if (rider) {
       const now = performance.now();
       // dt = 前回 state メッセージからの経過秒。 state push は約 1Hz。 初回は 1 秒とみなす。
@@ -502,7 +517,9 @@ const wsHandlers = {
       lastPhysicsStateT = now;
       if (dt < 0.1) dt = 0.1;
       if (dt > 2.0) dt = 2.0;
-      const power = (typeof msg.power_w === 'number' && Number.isFinite(msg.power_w)) ? msg.power_w : 0;
+      // パワーは sticky 保持の currentPower を使う ── 生の msg.power_w を使うと、 power を
+      // 含まない心拍 message のたびに 0 となり、 物理に偽の「足止め」減速が入る。
+      const power = Number.isFinite(currentPower) ? currentPower : 0;
       // 2026-05-17 (Critical fix): コース勾配は rider の現在位置から都度引く。
       // 旧経路は tick() で更新する module global を読んでいたが、
       // state push (約 1Hz) が初回 tick より先に来ると slope=0 で積分してしまい、
@@ -522,16 +539,6 @@ const wsHandlers = {
     }
     // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
     // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
-    // state push は値が部分的に届く ── パワーメーターと心拍センサーは別デバイスで、
-    // power_w だけ / hr_bpm だけ の message が別々のタイミングで来る。 各値は届いた
-    // 時だけ current* に sticky 保持し、 HUD/パネルは常に「最後に届いた各値」を表示する。
-    // 生の msg.* を直接 HUD に書くと、 power だけの message で心拍が "--" に飛び、
-    // 心拍だけの message でパワーが "--" に飛ぶ (= パワーと心拍が別々に明滅する) ため、
-    // 表示は current* 経由に統一する (rider.setSensors も従来 current* 経由)。
-    if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
-    if (typeof msg.power_w === 'number') currentPower = msg.power_w;
-    if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
-    if (typeof msg.speed_mps === 'number') currentSpeedMps = msg.speed_mps;
     if (rider) rider.setSensors({ power: currentPower, cad: currentCadence, hr: currentHr });
     const pw = formatPower(currentPower);
     const cd = formatCadence(currentCadence);
@@ -2383,6 +2390,8 @@ const BIKE_SHAPE_DEFS = [
   { key:'bikeSaddleY',    label:'サドル 高さ',    min:BIKE_SHAPE_RANGE.saddleY[0],    max:BIKE_SHAPE_RANGE.saddleY[1],    step:0.01,  value:BIKE_SHAPE_DEFAULTS.saddleY,   unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.saddleY=raw;    mapRenderer.setRiderShape(bikeShape); } },
   { key:'bikeBarY',       label:'ハンドル 高さ',  min:BIKE_SHAPE_RANGE.barY[0],       max:BIKE_SHAPE_RANGE.barY[1],       step:0.01,  value:BIKE_SHAPE_DEFAULTS.barY,      unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.barY=raw;       mapRenderer.setRiderShape(bikeShape); } },
   { key:'bikeBarW',       label:'ハンドル 幅',    min:BIKE_SHAPE_RANGE.barW[0],       max:BIKE_SHAPE_RANGE.barW[1],       step:0.01,  value:BIKE_SHAPE_DEFAULTS.barW,      unit:'m', format:raw=>raw.toFixed(2), apply(raw){ bikeShape.barW=raw;       mapRenderer.setRiderShape(bikeShape); } },
+  // 影ボード: オン=影が自機にくっつく / オフ=影はコースに落ちる。 既定オフ (value:0)。
+  { key:'bikeShadowBoard', label:'影ボード',      min:0, max:1, step:1, value:0, format:raw=>(raw>=0.5?'オン':'オフ'), apply(raw){ mapRenderer.setShadowBoardEnabled(raw>=0.5); } },
 ];
 mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 

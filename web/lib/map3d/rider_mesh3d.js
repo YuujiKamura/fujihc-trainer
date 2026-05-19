@@ -318,6 +318,8 @@ function buildBikeParts(THREE, group, shape) {
   shadowBoard.rotation.x = -Math.PI / 2;   // 水平に寝かせる
   shadowBoard.position.set(0, 0.012, 0);   // bike 足元、 コース面のわずか上
   shadowBoard.receiveShadow = true;
+  shadowBoard.visible = false;             // 既定オフ (= setShadowBoard で切り替え)
+  shadowBoard.name = 'shadowBoard';        // setShadowBoard / テストが children から拾う目印
   group.add(shadowBoard);
 
   // 駆動系: クランク 2 本 + ペダル + チェーンリングを回転グループに入れ、 BB 位置へ運ぶ。
@@ -330,7 +332,7 @@ function buildBikeParts(THREE, group, shape) {
   group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   shadowBoard.castShadow = false;
 
-  return { frontWheel, rearWheel, crankSet, pedals };
+  return { frontWheel, rearWheel, crankSet, pedals, shadowBoard };
 }
 
 // 走行距離 → 車輪回転角の換算半径 (m)。 700×28c の転がり半径 ≒ 0.34m、 回転角 = 距離 / 半径。
@@ -342,6 +344,7 @@ const CRANK_GEAR_RATIO = 2.0;
 export function createRiderMesh3d(THREE) {
   const group = new THREE.Group();
   let currentShape = resolveBikeShape();
+  let shadowBoardOn = false;   // 影ボード (足元の影専用ボード) の表示状態 ── 既定オフ
   // 車輪 2 組 + 駆動系の回転グループ。 updatePose が走行距離に応じて回す。
   let spinners = buildBikeParts(THREE, group, currentShape);
 
@@ -358,6 +361,14 @@ export function createRiderMesh3d(THREE) {
       disposeTree(group);
       group.clear();
       spinners = buildBikeParts(THREE, group, currentShape);
+      spinners.shadowBoard.visible = shadowBoardOn;  // 組み直し後も影ボードの表示状態を保つ
+    },
+
+    // 影ボード (足元の影専用の透明ボード) の表示を切り替える。 既定オフ ── オンにすると
+    // 影が bike にくっつき、 オフでは影はコースリボンが受ける。 facade 経由で呼ばれる。
+    setShadowBoard(on) {
+      shadowBoardOn = !!on;
+      spinners.shadowBoard.visible = shadowBoardOn;
     },
 
     // 毎フレーム、 走行距離からライダーを course 上の現在位置へ置き、 車輪と駆動系を回す。

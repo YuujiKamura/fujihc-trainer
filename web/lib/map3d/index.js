@@ -102,6 +102,7 @@ export function createMapRenderer() {
   let markers3d = null;   // 部品6
   let labels3d = null;    // 部品7
   let terrainMesh = null; // 部品2 の出力 mesh
+  let shadowBoardEnabled = false;  // 影ボード (自機足元の影専用ボード) の有効/無効、 既定オフ
 
   // --- 地形・コース由来の状態 ---
   let container = null;
@@ -406,7 +407,8 @@ export function createMapRenderer() {
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
       ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: savedCourseWidth, drapeOffset: currentRoadOffset });
-      // 影は自機足元の影ボード (rider_mesh3d) が受けるので、 リボンは受けない。
+      // 影ボードが有効なら影は影ボードが受ける。 無効ならコースリボンが受ける。
+      ribbon3d.mesh.receiveShadow = !shadowBoardEnabled;
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
@@ -432,6 +434,7 @@ export function createMapRenderer() {
       rider3d = createRiderMesh3d(THREE);
       rider3d.group.scale.setScalar(pending.riderScale != null ? pending.riderScale : 3.6);
       if (pending.riderShape) rider3d.setShape(pending.riderShape);
+      rider3d.setShadowBoard(shadowBoardEnabled);
       scene.add(rider3d.group);
 
       // 初期配置: 起点にライダーを置き、 カメラをそこへ寄せる。
@@ -507,6 +510,14 @@ export function createMapRenderer() {
       }
     },
 
+    // 影ボード (自機足元の影専用ボード) の有効/無効を切り替える。 有効 = 影が bike に
+    // くっつく、 無効 = 影はコースリボンが受ける。 既定オフ。
+    setShadowBoardEnabled(on) {
+      shadowBoardEnabled = !!on;
+      if (rider3d) rider3d.setShadowBoard(shadowBoardEnabled);
+      if (ribbon3d) ribbon3d.mesh.receiveShadow = !shadowBoardEnabled;
+    },
+
     setCourseWidth(widthM) {
       if (!ribbon3d || !scene || !THREE || !savedCourse || !savedGeoOpts) {
         pending.courseWidth = widthM;
@@ -515,6 +526,7 @@ export function createMapRenderer() {
       savedCourseWidth = widthM;
       scene.remove(ribbon3d.mesh);
       ribbon3d = createCourseRibbon(THREE, savedCourse, savedGeoOpts, { widthM, drapeOffset: currentRoadOffset });
+      ribbon3d.mesh.receiveShadow = !shadowBoardEnabled;
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
       if (rider3d) {
