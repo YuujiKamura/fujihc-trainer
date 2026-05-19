@@ -116,30 +116,34 @@ describe('createHud', () => {
     expect(dom.text('total')).toBe('23988');
   });
 
-  it('speed: #speed に整形文字列', () => {
+  it('speed: #r-speed (rider-hud の速度行) に物理速度の整形文字列', () => {
     const dom = fakeDom();
     createHud(dom.getEl).speed(25.4, { paused: false, connected: true });
-    expect(dom.text('speed')).toBe('25.4 km/h (bridge)');
+    expect(dom.text('r-speed')).toBe('25.4 km/h (bridge)');
   });
 
-  it('trainer: #power/#cadence/#hr と r-* の 7 要素を書く', () => {
+  it('trainer: #power/#cadence/#hr と r-power/r-cadence/r-hr の 6 要素を書く', () => {
     const dom = fakeDom();
-    createHud(dom.getEl).trainer({ powerW: 250, cadenceRpm: 87.6, hrBpm: 145, speedMps: 10 });
+    createHud(dom.getEl).trainer({ powerW: 250, cadenceRpm: 87.6, hrBpm: 145 });
     expect(dom.text('power')).toBe('250');
     expect(dom.text('cadence')).toBe('88');
     expect(dom.text('hr')).toBe('145');
     expect(dom.text('r-power')).toBe('250');
     expect(dom.text('r-cadence')).toBe('88');
     expect(dom.text('r-hr')).toBe('145');
-    expect(dom.text('r-speed')).toBe('36.0 km/h');
+  });
+
+  it('trainer: r-speed は書かない (= 物理速度は speed() の担当、 trainer 生速度で上書きしない)', () => {
+    const dom = fakeDom();
+    createHud(dom.getEl).trainer({ powerW: 250, cadenceRpm: 87.6, hrBpm: 145 });
+    expect(dom.text('r-speed')).toBe('');
   });
 
   it('trainer: 欠損値は "--" で書かれる', () => {
     const dom = fakeDom();
-    createHud(dom.getEl).trainer({ powerW: null, cadenceRpm: null, hrBpm: null, speedMps: null });
+    createHud(dom.getEl).trainer({ powerW: null, cadenceRpm: null, hrBpm: null });
     expect(dom.text('power')).toBe('--');
     expect(dom.text('r-hr')).toBe('--');
-    expect(dom.text('r-speed')).toBe('--');
   });
 
   it('ack: 成功は緑、 失敗は赤 (= trainer 応答の成否色を検出)', () => {
@@ -169,7 +173,7 @@ describe('createHud', () => {
     const hud = createHud(() => null);
     expect(() => {
       hud.ride({ elapsedSec: 1, dist: 1, ele: 1, slope: 1 });
-      hud.trainer({ powerW: 1, cadenceRpm: 1, hrBpm: 1, speedMps: 1 });
+      hud.trainer({ powerW: 1, cadenceRpm: 1, hrBpm: 1 });
       hud.ack('OK');
       hud.riderHudVisible(true);
       hud.speed(1, { paused: false, connected: false });

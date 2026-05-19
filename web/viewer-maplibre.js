@@ -544,8 +544,10 @@ const wsHandlers = {
     const cd = formatCadence(currentCadence);
     const hr = formatHr(currentHr);
     const sp = (currentSpeedMps != null && currentSpeedMps >= 0) ? (currentSpeedMps * 3.6).toFixed(1) : '--';
-    // HUD (#power/#cadence/#hr + #rider-hud の r-power/r-cadence/r-hr/r-speed)。
-    hud.trainer({ powerW: currentPower, cadenceRpm: currentCadence, hrBpm: currentHr, speedMps: currentSpeedMps });
+    // HUD (#power/#cadence/#hr + #rider-hud の r-power/r-cadence/r-hr)。
+    // r-speed (rider-hud の速度) は tick() の hud.speed() が物理速度で書く ──
+    // trainer 生速度 (currentSpeedMps) は下の #p-speed にのみ出す。
+    hud.trainer({ powerW: currentPower, cadenceRpm: currentCadence, hrBpm: currentHr });
     // ペアリングパネル p-* は本石の対象外、 viewer 側で従来通り更新。
     setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp); setText('p-hr', hr);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));

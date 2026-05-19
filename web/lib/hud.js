@@ -22,7 +22,7 @@ export function formatElapsed(sec) {
 }
 
 /**
- * 速度 (km/h) → #speed の表示文字列。
+ * 速度 (km/h) → #r-speed (rider-hud の速度行) の表示文字列。
  * paused 中は接続有無で「待機中」(bridge 接続) /「paused」(demo)、
  * 走行中は「N km/h (bridge)」/「N km/h (demo)」。
  */
@@ -87,23 +87,29 @@ export function createHud(getEl) {
       write('total', totalDist.toFixed(0));
     },
 
-    /** #speed。 速度は km/h、 flags は { paused, connected }。 */
+    /**
+     * #r-speed (= rider-hud の速度行)。 物理速度を km/h で書く ── ライダーが
+     * 実際に進む速度 (= 保存される速度) で、 trainer 生速度ではない。
+     * flags は { paused, connected }。
+     */
     speed(speedKmh, flags) {
-      write('speed', formatSpeed(speedKmh, flags));
+      write('r-speed', formatSpeed(speedKmh, flags));
     },
 
     /**
-     * trainer 値 → #power/#cadence/#hr と #rider-hud の r-power/r-cadence/r-hr/r-speed。
+     * trainer 値 → #power/#cadence/#hr と #rider-hud の r-power/r-cadence/r-hr。
      * 引数は生の数値 (or null)。 ペアリングパネル p-* は対象外だが、 そちらも
      * 整形は本モジュールの export 関数 (formatPower 等) を使うこと (= 整形の SoT)。
+     * 速度はここでは書かない ── rider-hud の r-speed は speed() が物理速度で書く
+     * (= trainer 生速度は平地 + power のみで坂を見ず、 実際の走行速度と食い違う)。
+     * trainer 生速度はペアリングパネル #p-speed にのみ出す。
      */
-    trainer({ powerW, cadenceRpm, hrBpm, speedMps }) {
+    trainer({ powerW, cadenceRpm, hrBpm }) {
       const pw = formatPower(powerW);
       const cd = formatCadence(cadenceRpm);
       const hr = formatHr(hrBpm);
       write('power', pw); write('cadence', cd); write('hr', hr);
       write('r-power', pw); write('r-cadence', cd); write('r-hr', hr);
-      write('r-speed', formatTrainerSpeed(speedMps));
     },
 
     /** trainer 応答 (#ack)。 last_ack の生文字列を渡す。 成否で色を変える。 */
