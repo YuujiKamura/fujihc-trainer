@@ -245,6 +245,7 @@ let minimapStats = null;
 let currentCadence = 0;
 let currentPower = 0;
 let currentHr = 0;
+let currentSpeedMps = 0;  // trainer 速度の last-known (= power/cad/hr と同じく sticky 保持)
 // brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
 let lastTrkptT = 0;
 // autosave: 30 秒毎 cadence で IndexedDB に進行状態を保存するための前回 save 時刻
@@ -521,16 +522,23 @@ const wsHandlers = {
     }
     // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
     // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
-    const pw = formatPower(msg.power_w);
-    const cd = formatCadence(msg.cadence_rpm);
-    const hr = formatHr(msg.hr_bpm);
+    // state push は値が部分的に届く ── パワーメーターと心拍センサーは別デバイスで、
+    // power_w だけ / hr_bpm だけ の message が別々のタイミングで来る。 各値は届いた
+    // 時だけ current* に sticky 保持し、 HUD/パネルは常に「最後に届いた各値」を表示する。
+    // 生の msg.* を直接 HUD に書くと、 power だけの message で心拍が "--" に飛び、
+    // 心拍だけの message でパワーが "--" に飛ぶ (= パワーと心拍が別々に明滅する) ため、
+    // 表示は current* 経由に統一する (rider.setSensors も従来 current* 経由)。
     if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
     if (typeof msg.power_w === 'number') currentPower = msg.power_w;
     if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
+    if (typeof msg.speed_mps === 'number') currentSpeedMps = msg.speed_mps;
     if (rider) rider.setSensors({ power: currentPower, cad: currentCadence, hr: currentHr });
-    const sp = (msg.speed_mps != null && msg.speed_mps >= 0) ? (msg.speed_mps * 3.6).toFixed(1) : '--';
+    const pw = formatPower(currentPower);
+    const cd = formatCadence(currentCadence);
+    const hr = formatHr(currentHr);
+    const sp = (currentSpeedMps != null && currentSpeedMps >= 0) ? (currentSpeedMps * 3.6).toFixed(1) : '--';
     // HUD (#power/#cadence/#hr + #rider-hud の r-power/r-cadence/r-hr/r-speed)。
-    hud.trainer({ powerW: msg.power_w, cadenceRpm: msg.cadence_rpm, hrBpm: msg.hr_bpm, speedMps: msg.speed_mps });
+    hud.trainer({ powerW: currentPower, cadenceRpm: currentCadence, hrBpm: currentHr, speedMps: currentSpeedMps });
     // ペアリングパネル p-* は本石の対象外、 viewer 側で従来通り更新。
     setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp); setText('p-hr', hr);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));
