@@ -44,6 +44,7 @@ function mockThree() {
       }
       setAttribute(name, attr) { this.attributes[name] = attr; }
       setIndex(attr) { this.index = attr; }
+      computeVertexNormals() { this.normalsComputed = true; }
       addGroup(start, count, materialIndex) {
         this.groups.push({ start, count, materialIndex });
       }
@@ -55,7 +56,7 @@ function mockThree() {
     BufferAttribute: class {
       constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
     },
-    MeshBasicMaterial: class {
+    MeshLambertMaterial: class {
       constructor(o) {
         this.color = o.color;
         this.vertexColors = !!o.vertexColors;
@@ -223,7 +224,7 @@ describe('createCourseRibbon', () => {
     }
   });
 
-  it('各 group の material が単色 MeshBasicMaterial (頂点色 OFF) + DoubleSide で、 色が区間 bin 色と一致 (= 混色 / 裏面抜け / 色取り違えを検出)', () => {
+  it('各 group の material が単色 MeshLambertMaterial (頂点色 OFF) + DoubleSide で、 色が区間 bin 色と一致 (= 混色 / 裏面抜け / 色取り違えを検出)', () => {
     const r = createCourseRibbon(mockThree(), course, geo);
     const expectGroups = ribbonColorGroups(ribbonSegmentBins(course));
     for (let k = 0; k < r.mesh.geometry.groups.length; k++) {

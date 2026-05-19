@@ -199,17 +199,21 @@ export function createCourseRibbon(THREE, course, geo, opts = {}) {
   // 詰めない。
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(ribbon.positions, 3));
   geometry.setIndex(new THREE.BufferAttribute(ribbon.indices, 1));
+  // MeshLambertMaterial の拡散光に頂点法線が要る (= 旧 MeshBasicMaterial は法線不要
+  // だったので詰めていなかった)。 これが無いとリボンが真っ黒に潰れる。
+  geometry.computeVertexNormals();
 
   // 出現する勾配色ごとに単色 material を 1 つ作る (= 同色 group は material を共有)。
   // vertexColors を使わない単色 material は group 内の三角形を一様に塗るので、
   // 隣接区間と頂点を共有していても色が補間されない。
-  // 走行カメラがリボンの下へ回り込むため DoubleSide で裏面も描く。 陰影なし
-  // (= MeshBasicMaterial) ── リボンは勾配色そのものを見せるのが目的。
+  // 走行カメラがリボンの下へ回り込むため DoubleSide で裏面も描く。 MeshLambertMaterial
+  // を使い自機の影 (shadow map) を受ける ── リボンはほぼ水平なので拡散光は一様に効き、
+  // 区間ごとの勾配色の段差・非混色は単色 material のまま保たれる。
   const palette = [];
   for (const g of groups) {
     if (palette.indexOf(g.color) === -1) palette.push(g.color);
   }
-  const materials = palette.map((hex) => new THREE.MeshBasicMaterial({
+  const materials = palette.map((hex) => new THREE.MeshLambertMaterial({
     color: hex,
     side: THREE.DoubleSide,
   }));
