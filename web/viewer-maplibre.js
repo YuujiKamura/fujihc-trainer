@@ -2016,13 +2016,6 @@ function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
   _tickCount++;  // 描画ループ生存カウンタ (= TEST_MODE で window.__goalTest.frames から観測)。
   if (!rider || !rideState) { requestAnimationFrame(tick); return; }
-  // TEST_MODE 限定 ?seekgoal: ride が active になった最初のフレームで rider を
-  // コース終端へ 1 度だけ飛ばす。 placeAtDistance は clampDist 経由なので、 大きな
-  // 有限値はコース終端 (totalDistance) ちょうどに丸められ atGoal が成立する。
-  if (_seekGoalPending && rider.active) {
-    _seekGoalPending = false;
-    rider.placeAtDistance(1e9);
-  }
 
   // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
   // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
@@ -2206,14 +2199,15 @@ function tick(t) {
 }
 let _autoEnded = false;
 let _tickCount = 0;  // tick 呼び出し回数。 描画ループが生きているかの観測点。
-// TEST_MODE 限定 ?seekgoal: ride が active になった最初のフレームで rider をコース
-// 終端へ 1 度だけ飛ばす (= e2e / desk_capture が実時間 24km 走らずゴール到達を作る)。
-let _seekGoalPending = TEST_MODE && new URLSearchParams(location.search).has('seekgoal');
 
-// TEST_MODE 限定: e2e ジャーニーテストが描画ループの生存・ride 状態を観測するための
-// フック。 本番経路 (TEST_MODE=false) では定義されない。
+// TEST_MODE 限定: e2e ジャーニーテストがゴール手前へ rider を置く / 描画ループの
+// 生存・ride 状態を観測するためのフック。 本番経路 (TEST_MODE=false) では定義されない。
 if (TEST_MODE) {
   window.__goalTest = {
+    // rider をゴール手前 15m へ置く ── そこから最後の区間を実際に走らせて
+    // ゴール到達させる (= ゴール直前から走った走行ログを残すための仕込み)。
+    // placeAtDistance は clampDist 経由でコース範囲にクランプされる。
+    seekToNearGoal() { if (rider && totalDist > 0) rider.placeAtDistance(totalDist - 15); },
     // tick が回るたび増える ── ゴール後も増え続ければ「固まっていない」。
     get frames() { return _tickCount; },
     get info() {
@@ -2223,7 +2217,10 @@ if (TEST_MODE) {
         dist: rider.distanceTraveled,
         viewerTotalDist: totalDist,
         active: rider.active,
-        trkpts: rider.getTrkpts().length,
+        // viewer の tick は rideState.appendTrkpt 経由で trkpt を貯める (shim が
+        // Rider とは別の独自 trkpts buffer を持つ ── ride_state.js 参照)。 観測も
+        // そちらを読む。
+        trkpts: rideState ? rideState.getTrkpts().length : 0,
       };
     },
   };

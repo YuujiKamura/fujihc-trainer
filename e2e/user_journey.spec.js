@@ -133,18 +133,21 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
   expect(saved.durS, '保存された走行時間(秒)').toBeGreaterThan(0);
 });
 
-test('ゴール到達: viewer が固まらず、ライドが履歴に保存され閲覧できる', async ({ page }) => {
-  // ?test=1 でライド自動開始 + ?seekgoal で viewer が rider をコース終端へ自動で
-  // 飛ばす (= 実時間 24km 走らずゴール到達を作る、 TEST_MODE 限定)。
-  await page.goto(`${VIEWER_URL}?test=1&consent=dev&seekgoal=1`);
+test('ゴール到達: viewer が固まらず、走行データが履歴に保存され閲覧できる', async ({ page }) => {
+  // ?test=1 でライドが自動開始する (= トレーナー不要のテストモード)。
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev`);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
-  // 自動シークでゴール (rider.atGoal) に到達するまで待つ。
-  await page.waitForFunction(() => window.__goalTest?.info?.atGoal === true, { timeout: 20_000 });
+  await page.waitForFunction(() => window.__goalTest?.info?.active === true, { timeout: 20_000 });
+
+  // 実際に 10 秒走らせて走行ログ (trkpt) を貯める。
+  await page.waitForTimeout(10_000);
+  // rider をゴール手前 15m へ置き、 そこから最後の区間を実際に走らせてゴール到達
+  // させる (= ゴール直前から走った走行データを残す、 TEST_MODE 限定フック)。
+  await page.evaluate(() => window.__goalTest.seekToNearGoal());
+  await page.waitForFunction(() => window.__goalTest?.info?.atGoal === true, { timeout: 30_000 });
 
   // ゴール到達後も描画ループ (tick の requestAnimationFrame) が回り続けている =
-  // viewer が固まっていない。 これがこのテストの主眼。
-  // 旧バグ: tick がゴールで requestAnimationFrame を再予約せず、ループがそこで死んでいた。
-  await page.waitForTimeout(400);
+  // viewer が固まっていない。 旧バグ: tick がゴールで rAF を再予約せずループが死んだ。
   const f1 = await page.evaluate(() => window.__goalTest.frames);
   await page.waitForTimeout(800);
   const f2 = await page.evaluate(() => window.__goalTest.frames);
@@ -156,6 +159,7 @@ test('ゴール到達: viewer が固まらず、ライドが履歴に保存さ�
   await page.waitForTimeout(1500);
   const trk2 = await page.evaluate(() => window.__goalTest.info.trkpts);
   expect(trk2, 'ゴール後は trkpt 蓄積が止まる (= 完走後に履歴データが増え続けない)').toBe(trk1);
+  expect(trk1, 'ゴールまでに実走行ログ (trkpt) が貯まっている').toBeGreaterThan(0);
 
   // 完走 → 既存の自動終了経路で postride オーバーレイが出る。
   await expect(page.locator('#postride-overlay')).toHaveClass(/visible/, { timeout: 10_000 });
@@ -168,4 +172,29 @@ test('ゴール到達: viewer が固まらず、ライドが履歴に保存さ�
   await page.locator('#btnViewHistory').click();
   await expect(page.locator('body')).toHaveClass(/state-history/, { timeout: 5_000 });
   await expect(page.locator('#history-list li')).toHaveCount(1, { timeout: 5_000 });
+
+  // 保存されたライドが実走行データ (走行時間・走行ログ点数) を持つ
+  // (= ゴール直前から走った記録が、 0 件ではなく実データとして履歴に残っている)。
+  const saved = await page.evaluate(async ({ dbName, dbVersion, store }) => {
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open(dbName, dbVersion);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const rides = await new Promise((res, rej) => {
+      const rq = db.transaction(store, 'readonly').objectStore(store).getAll();
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+    db.close();
+    if (!rides.length) return null;
+    const r = rides[0];
+    return {
+      durS: r.summary ? r.summary.duration_s : null,
+      trkptN: Array.isArray(r.trkpts) ? r.trkpts.length : null,
+    };
+  }, { dbName: RIDE_DB_NAME, dbVersion: RIDE_DB_VERSION, store: RIDE_STORE });
+  expect(saved, '保存されたライドがある').not.toBeNull();
+  expect(saved.trkptN, '保存された走行ログ (trkpt) の点数').toBeGreaterThan(0);
+  expect(saved.durS, '保存された走行時間 (秒)').toBeGreaterThan(0);
 });
