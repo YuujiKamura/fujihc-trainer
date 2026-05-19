@@ -13,7 +13,7 @@
 //     (= 2 回目以降 fetch ゼロ、 オフライン起動可)。
 // version bump (CACHE_NAME) は cache 全消しの強制リセット手段として残す。
 
-const CACHE_NAME = 'fujihill-v12';
+const CACHE_NAME = 'fujihill-v13';
 
 // install 時に一括取得する static 資産。 dynamic な tile / pmtiles は事前リスト不可、
 // fetch handler 側で cache-on-demand する (= 走った tile から順に永続化)。
@@ -64,10 +64,13 @@ self.addEventListener('fetch', (event) => {
     // 古い版が出続ける」 cache-first の罠が起きない。
     // terrain3d.html / lib/terrain3d.js も .html/.js なのでここに入り network-first =
     // 活発に変更中の Path B 実験ページも online の限り常に最新版が出る。
+    // cache: 'reload' 必須 ── 素の fetch() はブラウザの HTTP キャッシュを参照するため、
+    // サーバが Cache-Control を付けない .js を「最新のつもりで」 旧版のまま返してしまう。
+    // 'reload' で HTTP キャッシュを迂回し本当に network から取り直す (= network-first を名実一致させる)。
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         try {
-          const resp = await fetch(req);
+          const resp = await fetch(req, { cache: 'reload' });
           if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
           return resp;
         } catch (err) {
