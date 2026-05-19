@@ -14,8 +14,14 @@
 
 import * as THREE from 'three';
 
-// 背景色 (= terrain3d.html と同じ暗いネイビー、 富士の地形が映える)。
-const BG_COLOR = 0x0d1117;
+// グラデーション青空の色 (= MapLibre 版 map_renderer.js の COMMON_SKY を Three.js に移植).
+// b12 Phase 4 の Three.js 化で MapLibre の sky レイヤが失われ、 背景が単色の暗色になっていた。
+const SKY_ZENITH = 0x3a7cc4;    // 天頂の青 (= COMMON_SKY の sky-color)
+const SKY_HORIZON = 0xe8f0f8;   // 地平線の青白 (= COMMON_SKY の horizon-color)
+// 遠景フォグの色 (= COMMON_SKY の fog-color)。 遠くの地形をこの色へ溶かして地平線の霞にする。
+const FOG_COLOR = 0xd8d0c8;
+// 空ドームの半径 = 地形 span の倍率。 カメラの near(1)〜far(span*6) の内側に必ず収まる値。
+const SKY_DOME_SPAN_FACTOR = 1.5;
 // 太陽の既定方位。 MapLibre の hillshade-illumination-direction 既定 135 に合わせる
 // (= 同じ deg を viewer から受け取るので MapLibre 実装と見えの起点を揃える)。
 const DEFAULT_SUN_AZIMUTH_DEG = 135;
@@ -47,6 +53,49 @@ function sunPosition(azimuthDeg, elevationDeg, dist) {
 }
 
 /**
+ * MapLibre 版の sky-color → horizon-color のグラデーション青空ドームを生成する.
+ *
+ * 大きな球の内側 (BackSide) に頂点カラーで縦グラデーションを乗せたメッシュ。 天頂が青 /
+ * 地平線が青白。 scene.background のテクスチャ方式と違い「ただのメッシュ」 なので確実に
+ * 描画される。 カメラに追従させ (= render() で position 更新)、 fog 無効・renderOrder -1・
+ * depthWrite 無効で純粋な背景として振る舞う (= 地形は常にこのドームの手前に描かれる)。
+ *
+ * @returns {THREE.Mesh} 青空ドームメッシュ (単位球、 呼び出し側が span に応じて scale する)
+ */
+function buildSkyDome() {
+  // 単位球。 高さ方向の分割を多めにしてグラデーションのバンディングを抑える。
+  const geo = new THREE.SphereGeometry(1, 32, 64);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const zenith = new THREE.Color(SKY_ZENITH);
+  const horizon = new THREE.Color(SKY_HORIZON);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i += 1) {
+    // 単位球なので頂点 y は -1..1 = そのまま仰角の sin。 地平線 (y<=0) は horizon 色、
+    // 天頂 (y=1) に向かって zenith 色へ補間する。 ** 0.4 のカーブで青を低空まで効かせる
+    // ── 線形だと地平線の白っぽい色が低空を支配し、 やや見下ろし視点のこの viewer では
+    // 空がほぼ白く見えてしまう。 MapLibre の sky も地平線の細い光帯以外はほぼ青。
+    const t = Math.max(0, Math.min(1, pos.getY(i))) ** 0.4;
+    c.copy(horizon).lerp(zenith, t);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.BackSide,  // 球の内側を見る
+    fog: false,            // 空自体は fog で霞ませない
+    depthWrite: false,     // 深度を書かない = 地形が常にドームの手前に描かれる
+  });
+  const dome = new THREE.Mesh(geo, mat);
+  dome.renderOrder = -1;       // 最初に描く純粋な背景
+  dome.frustumCulled = false;  // 常にカメラを包むのでカリング対象外
+  dome.scale.setScalar(DEFAULT_SPAN_M * SKY_DOME_SPAN_FACTOR);  // configureScale で実 span に更新
+  return dome;
+}
+
+/**
  * Three.js のシーン一式 (Scene / Renderer / Fog / 太陽光) を生成する.
  *
  * @param {{container: HTMLElement}} args - container は canvas を載せる DOM 要素。
@@ -54,7 +103,12 @@ function sunPosition(azimuthDeg, elevationDeg, dist) {
  */
 export function createScene({ container }) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(BG_COLOR);
+  // 背景はグラデーション青空ドーム (= MapLibre 版 sky の移植)。 単色 Color やテクスチャ背景
+  // ではなく BackSide 球メッシュなので確実に描画され、 カメラを回しても天頂/地平線が正しい。
+  // scene.background は万一ドームに隙間が出た時の保険として地平線色の単色を置く。
+  scene.background = new THREE.Color(SKY_HORIZON);
+  const skyDome = buildSkyDome();
+  scene.add(skyDome);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   container.appendChild(renderer.domElement);
@@ -91,6 +145,9 @@ export function createScene({ container }) {
     // 1 フレーム描画する。 camera は別部品が作るので引数で受け取る。
     // viewer 本体の tick がこれを毎フレーム呼ぶ (= 差し替え口の render())。
     render(camera) {
+      // 空ドームをカメラへ追従させる ── カメラを常に球の中心に置くことで、 ドーム面が
+      // 必ず near〜far の内側に収まり (= 半径は span 比例)、 視点移動でも空が破綻しない。
+      skyDome.position.copy(camera.position);
       renderer.render(scene, camera);
     },
 
@@ -109,10 +166,13 @@ export function createScene({ container }) {
     },
 
     // 地形メッシュ生成後に呼ぶ。 span (= 地形の最大辺、 m) から fog 距離と太陽距離を
-    // 決める。 fog は terrain3d.html と同じく span 比例で遠景を背景色へ溶かす。
+    // 決める。 fog は span 比例で遠景を地平線フォグ色 (FOG_COLOR) へ溶かす ──
+    // 青空の地平線と遠くの地形が霞でなじむ (= 旧来は背景の暗色へ溶かしていた)。
     configureScale(terrainSpan) {
       if (Number.isFinite(terrainSpan) && terrainSpan > 0) span = terrainSpan;
-      scene.fog = new THREE.Fog(BG_COLOR, span * 0.9, span * 2.6);
+      scene.fog = new THREE.Fog(FOG_COLOR, span * 0.9, span * 2.6);
+      // 空ドーム半径を地形 span に合わせる (= near 1 〜 far span*6 の内側、 span*1.5)。
+      skyDome.scale.setScalar(span * SKY_DOME_SPAN_FACTOR);
       applySun();
     },
 
