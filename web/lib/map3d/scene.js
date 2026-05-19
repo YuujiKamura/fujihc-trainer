@@ -13,7 +13,9 @@
 // render(camera) の引数で受け取る (= カメラ部品は別ワーカーが作る)。
 
 import * as THREE from 'three';
-import { sunElevationFromAzimuth } from './sun_model.js';
+import {
+  sunElevationFromAzimuth, shadowCameraConfig, SHADOW_CAM_BASE, SHADOW_LIGHT_DIST,
+} from './sun_model.js';
 
 // グラデーション青空の色 (= MapLibre 版 map_renderer.js の COMMON_SKY を Three.js に移植).
 // b12 Phase 4 の Three.js 化で MapLibre の sky レイヤが失われ、 背景が単色の暗色になっていた。
@@ -27,17 +29,10 @@ const SKY_DOME_SPAN_FACTOR = 1.5;
 // (= 同じ deg を viewer から受け取るので MapLibre 実装と見えの起点を揃える)。
 // 仰角は固定せず sun_model.js が方位 (= 時間帯) から計算する。
 const DEFAULT_SUN_AZIMUTH_DEG = 135;
-// 影の長さ計算に使う自機の高さ (m、 riderScale 3.6 の bike 全高ぶん)。
-const RIDER_HEIGHT_M = 2.6;
 // configureScale() 前に render されても破綻しないための span 既定値 (m)。
 const DEFAULT_SPAN_M = 10000;
-// 影用の太陽光と自機の距離 (m)。 影は shadow map で落とす ── 太陽本体は hillshade 用に
-// span 距離へ置くが、 影オルソカメラは自機を狭い範囲で覆うため別にこの距離へ置く。
-const SHADOW_LIGHT_DIST = 60;
-// 影オルソカメラの半幅 ── 基本 (自機本体ぶん) と上限。 太陽が低い (朝夕) ほど影が
-// 長いので、 focusShadowOn が仰角から半幅を SHADOW_CAM_MAX まで可変に広げる。
-const SHADOW_CAM_BASE = 3;
-const SHADOW_CAM_MAX = 18;
+// 影オルソカメラの半幅・光源距離の定数と算出 (shadowCameraConfig) は sun_model.js に
+// 集約済 (= THREE 非依存の純ロジック、 node test 可能)。 ここでは import して使う。
 
 /**
  * 方位 (deg) と仰角 (deg) と距離から太陽光源のワールド座標を返す.
@@ -179,21 +174,22 @@ export function createScene({ container }) {
     // light の position と target を pos 基準に平行移動するだけ ── 影カメラだけが自機を
     // 覆う狭い範囲に収まり、 shadow map の解像度を自機へ集中できる。 facade が render
     // の直前に毎フレーム呼ぶ。
-    focusShadowOn(pos) {
+    focusShadowOn(pos, riderScale) {
       if (!pos) return;
-      // 仰角は方位 (= 時間帯) から計算。 太陽が低い (朝夕) ほど影が長いので、 影オルソ
-      // カメラの半幅も影長 (≒ 自機高さ / tan(仰角)) に合わせて広げる ── 影が途中で
-      // 切れない。 上限は SHADOW_CAM_MAX。
+      // 影オルソカメラの半幅と光源距離は自機倍率に比例させる (= shadowCameraConfig)。
+      // riderScale 3.6 基準で測った錐台・光源距離を k=riderScale/3.6 倍する ── 巨大
+      // ライダーでも影が錐台に収まって四角く切れず、 光源が自機の全高より高く保たれる。
       const elevation = sunElevationFromAzimuth(sunAzimuthDeg);
       const elevForCalc = Math.max(elevation, 2);
-      const reach = Math.min(
-        SHADOW_CAM_BASE + RIDER_HEIGHT_M / Math.tan((elevForCalc * Math.PI) / 180),
-        SHADOW_CAM_MAX);
+      const { reach, lightDist } = shadowCameraConfig(riderScale, elevation);
       const cam = sun.shadow.camera;
       cam.left = -reach; cam.right = reach;
       cam.top = reach; cam.bottom = -reach;
+      // far も光源距離に追従させる ── 巨大ライダーで光源が遠ざかっても影が near/far の
+      // 外に出て消えない。 near は 1 固定 (= オルソは深度が線形、 far を伸ばしても精度安定)。
+      cam.far = lightDist * 2.2;
       cam.updateProjectionMatrix();
-      const d = sunPosition(sunAzimuthDeg, elevForCalc, SHADOW_LIGHT_DIST);
+      const d = sunPosition(sunAzimuthDeg, elevForCalc, lightDist);
       sun.position.set(pos.x + d.x, pos.y + d.y, pos.z + d.z);
       sun.target.position.set(pos.x, pos.y, pos.z);
       sun.target.updateMatrixWorld();

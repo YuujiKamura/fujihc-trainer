@@ -259,7 +259,10 @@ export function createMapRenderer() {
           const built = buildTerrainMesh({ stitched: dem.stitched, range: dem.range, photoCanvas });
           terrainMesh = built.mesh;
           geoMeta = built.geo;
-          // 地形は影を受けない (= 自機の影はコースリボンにだけ落とす)。
+          // 地形メッシュも自機の影を受ける ── 巨大ライダー (倍率最大 50) の影はコース
+          // リボン幅をはみ出すので、 はみ出たぶんを地形メッシュの山肌へ落として自然に
+          // 投影する (= リボンだけを受け手にすると影がリボンの外で消える)。
+          terrainMesh.receiveShadow = true;
           scene.add(terrainMesh);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
@@ -373,8 +376,9 @@ export function createMapRenderer() {
     // 地形が組まれた後の最初の描画で idle を発火する。
     render() {
       if (!scene || !camera3d) return;
-      // 影オルソカメラを自機へ追従させてから描く (= 自機の影を地形に投影する)。
-      if (rider3d) scene.focusShadowOn(rider3d.group.position);
+      // 影オルソカメラを自機へ追従させてから描く。 自機倍率を渡し、 巨大ライダーでは
+      // 錐台と光源距離を倍率比例で広げる (= 影が四角く切れず地形へ自然に落ちる)。
+      if (rider3d) scene.focusShadowOn(rider3d.group.position, rider3d.group.scale.x);
       scene.render(camera3d.camera);
       if (terrainReady && !idleFired) fireIdle();
     },
