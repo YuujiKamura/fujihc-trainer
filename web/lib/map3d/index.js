@@ -257,7 +257,7 @@ export function createMapRenderer() {
           const built = buildTerrainMesh({ stitched: dem.stitched, range: dem.range, photoCanvas });
           terrainMesh = built.mesh;
           geoMeta = built.geo;
-          terrainMesh.receiveShadow = true;  // 自機の影 (shadow map) を地形に受ける
+          // 地形は影を受けない (= 自機の影はコースリボンにだけ落とす)。
           scene.add(terrainMesh);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
