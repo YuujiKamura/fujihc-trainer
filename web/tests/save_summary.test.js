@@ -55,6 +55,17 @@ describe('buildSaveSummary', () => {
     expect(s.distance_km).toBe(5);
   });
 
+  it('durationS 引数があれば rideStartedAt に依らず直接値を使う (= ride 終了後 rideStartedAt=null でも走行時間が残る)', () => {
+    const trkpts = mkTrkpts(20);
+    // rideStartedAt なし (= ride 終了で null になった状態) でも durationS で時間が入る
+    const s = buildSaveSummary({ trkpts, course, durationS: 1234 });
+    expect(s.duration_s).toBe(1234);
+    expect(s.duration_hms).toBe('0:20:34');
+    // durationS は rideStartedAt 由来の計算より優先される
+    const s2 = buildSaveSummary({ trkpts, course, rideStartedAt: 1000, nowMs: 6000, durationS: 99 });
+    expect(s2.duration_s).toBe(99);
+  });
+
   it('null sensor を含む trkpt でも統計が落ちない', () => {
     const trkpts = mkTrkpts(50).map((p, i) => ({ ...p, power: i % 2 === 0 ? null : p.power }));
     const s = buildSaveSummary({ trkpts, course });

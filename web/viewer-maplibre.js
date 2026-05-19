@@ -628,6 +628,7 @@ function showPostride(gpxPath, points) {
       trkpts,
       course,
       rideStartedAt,
+      durationS: lastRideDurationS,  // ride 終了で rideStartedAt は null、 確定値を渡す
       distanceM: snap.distance,
       courseName: 'fujihill',
     });

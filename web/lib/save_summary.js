@@ -8,6 +8,8 @@
  *   trkpts: Array<{t:string, lat:number, lon:number, ele:number, power:number|null, cad:number|null, hr:number|null}>,
  *   course: Array<{lat:number, lon:number, distance_m:number}>,
  *   rideStartedAt?: number,
+ *   durationS?: number,
+ *   distanceM?: number,
  *   nowMs?: number,
  * }} input
  * @returns {object}
@@ -25,7 +27,12 @@ export function buildSaveSummary(input) {
   // 別経路で持っているので入力 distanceM が渡された場合はそちらを優先).
   const distanceM = Number.isFinite(i.distanceM) ? i.distanceM : haversineSumMeters(trkpts);
 
-  const durationS = startMs !== null ? Math.max(0, Math.round((nowMs - startMs) / 1000)) : 0;
+  // duration: 呼び出し側が確定値 durationS を渡せばそれを優先する。 ride 終了後は viewer 側の
+  // rideStartedAt が null になっているため、 終了時に確定した走行時間を durationS で渡す。
+  // 未指定なら rideStartedAt から計算 (= ride 中の表示用 / 旧 caller 後方互換)。
+  const durationS = Number.isFinite(i.durationS)
+    ? Math.max(0, Math.round(i.durationS))
+    : (startMs !== null ? Math.max(0, Math.round((nowMs - startMs) / 1000)) : 0);
 
   // power / cad / hr 統計 (null を除外)
   const powerStats = numStats(trkpts.map((p) => p.power));

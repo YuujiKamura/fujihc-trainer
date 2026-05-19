@@ -85,6 +85,11 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
   await page.locator('#btnRideEnd').click();
   await expect(page.locator('#postride-overlay')).toHaveClass(/visible/, { timeout: 10_000 });
 
+  // 走行後画面「保存予定の内容」の先頭行 = 時間。 0:00:00 でないこと
+  // (= 表示パネルの走行時間 0 バグの pin。 保存値とは別経路なので別途確認する)
+  const panelTime = (await page.locator('#save-summary-list dd').first().innerText()).trim();
+  expect(panelTime, '走行後画面パネルの時間').not.toBe('0:00:00');
+
   // 「履歴に保存」を押す → 保存完了の status が出るまで待つ
   await page.locator('#btnSaveHistory').click();
   await expect(page.locator('#postride-upload-status')).toContainText('履歴に保存', { timeout: 5_000 });
