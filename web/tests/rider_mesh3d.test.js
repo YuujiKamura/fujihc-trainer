@@ -87,10 +87,10 @@ function eastwardCourse() {
 }
 
 describe('createRiderMesh3d: 自転車 mesh の組立', () => {
-  it('group を公開し、 車輪 2 + フレーム 9 + サドル/ハンドル 2 = 13 部品を持つ', () => {
+  it('group を公開し、 車輪 2 + フレーム 12 + サドル/ハンドル 2 = 16 部品を持つ', () => {
     const r = createRiderMesh3d(makeThreeStub());
     expect(r.group).toBeTruthy();
-    expect(r.group.children.length).toBe(13);
+    expect(r.group.children.length).toBe(16);
   });
 });
 
@@ -174,10 +174,10 @@ describe('resolveBikeShape: 形状パラメータの既定値補完 + クラン�
 });
 
 describe('createRiderMesh3d.setShape: 部品ごと形状の差し替え', () => {
-  it('setShape 後も車輪 2 + フレーム 9 + サドル/ハンドル 2 = 13 部品を保つ', () => {
+  it('setShape 後も車輪 2 + フレーム 12 + サドル/ハンドル 2 = 16 部品を保つ', () => {
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 0.3 });
-    expect(r.group.children.length).toBe(13);
+    expect(r.group.children.length).toBe(16);
   });
 
   it('車輪半径を変えるとトーラスの geometry 引数に反映される', () => {

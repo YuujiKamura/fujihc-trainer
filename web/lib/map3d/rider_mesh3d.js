@@ -99,7 +99,7 @@ function addBikeTube(THREE, group, material, from, to, radius) {
   group.add(mesh);
 }
 
-// 自転車の 13 部品 (車輪 2 + フレーム 9 + サドル/ハンドル 2) を group に組み付ける。
+// 自転車の 16 部品 (車輪 2 + フレーム 12 + サドル/ハンドル 2) を group に組み付ける。
 // terrain3d.html buildBikeMesh (L331-379) の移植を、 形状パラメータ shape 駆動 + 既存
 // group へ追加する形に変えたもの。 shape は resolveBikeShape 済 (全フィールド揃い範囲内)。
 function buildBikeParts(THREE, group, shape) {
@@ -128,31 +128,38 @@ function buildBikeParts(THREE, group, shape) {
   }
 
   // フレーム結節点 ── 実ロードバイクの三面図 (the-blueprints.com road bike) のレイアウトに
-  // 合わせた正規化座標。 実車のフレームは「BB - シートチューブ上端 - head tube」 の前三角 +
-  // 「BB - シートチューブ上端 - 後ハブ」 の後三角の二重三角形で、 head tube / シートポスト /
-  // ステムが独立要素 (旧来はフォークがハンドルへ直行し head tube が無かった = 誤り)。
+  // 合わせた正規化座標。 二重三角形 + head tube / シートポスト / ステムが独立要素。
+  // フォーク・チェーンステー・シートステーは実車どおり左右二股 (= 車輪を ±X で挟む)、
+  // メインの三角 (トップ/ダウン/シート/head tube) は中央 1 本。 旧来は全チューブを中心線
+  // (X=0) に置いていたため奥行きゼロの板状だった ── 二股化で実車の幅を持たせる。
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const ft = frameThick;
-  const frontHub = V(0, hubY, frontZ);
-  const rearHub = V(0, hubY, rearZ);
+  // ハブ端の X 半幅 (= 二股のフォーク/ステーが車輪を挟む量)。 実車のドロップアウト間隔相当。
+  const hubHalf = 0.045;
   const bb = V(0, hubY - 0.042, 0.05);                   // BB (車軸線より BB ドロップ下)
   const seatTubeTop = V(0, bb.y + 0.29, bb.z + 0.085);   // シートチューブ上端 (シート角 73.5°)
   const headTop = V(0, bb.y + 0.34, bb.z - 0.238);       // head tube 上端 (実スタック/リーチ)
   const headBottom = V(0, headTop.y - 0.086, headTop.z - 0.026); // head tube 下端 (ヘッド角 73.5°)
   const saddle = V(0, saddleY, seatTubeTop.z + 0.04);    // サドル (高さは編集可、 シートポスト上)
   const bar = V(0, barY, headTop.z - 0.06);              // ハンドル (高さは編集可、 ステム先)
+  // 前後ハブの左右端 (= 車軸の両端)。 二股のフォーク/ステーがここに刺さる。
+  const frontHubL = V(-hubHalf, hubY, frontZ), frontHubR = V(hubHalf, hubY, frontZ);
+  const rearHubL = V(-hubHalf, hubY, rearZ), rearHubR = V(hubHalf, hubY, rearZ);
 
-  // フレーム 9 本: 後三角 (チェーンステー/シートステー/シートチューブ) + 前三角
-  // (ダウンチューブ/トップチューブ) + head tube + フォーク + シートポスト + ステム。
-  addBikeTube(THREE, group, frameMat, rearHub, bb, ft);              // チェーンステー
-  addBikeTube(THREE, group, frameMat, rearHub, seatTubeTop, ft);     // シートステー
+  // 中央 1 本のフレーム 6 本 (前三角 + head tube + シートチューブ + シートポスト + ステム)。
   addBikeTube(THREE, group, frameMat, bb, seatTubeTop, ft);          // シートチューブ
   addBikeTube(THREE, group, frameMat, bb, headBottom, ft);           // ダウンチューブ
   addBikeTube(THREE, group, frameMat, seatTubeTop, headTop, ft);     // トップチューブ
   addBikeTube(THREE, group, frameMat, headTop, headBottom, ft * 1.4); // head tube
-  addBikeTube(THREE, group, frameMat, headBottom, frontHub, ft);     // フォーク
   addBikeTube(THREE, group, frameMat, seatTubeTop, saddle, ft);      // シートポスト
   addBikeTube(THREE, group, frameMat, headTop, bar, ft);             // ステム
+  // 左右二股のフレーム 6 本: フォーク 2 + チェーンステー 2 + シートステー 2 (車輪を挟む)。
+  addBikeTube(THREE, group, frameMat, headBottom, frontHubL, ft);    // フォーク (左)
+  addBikeTube(THREE, group, frameMat, headBottom, frontHubR, ft);    // フォーク (右)
+  addBikeTube(THREE, group, frameMat, bb, rearHubL, ft);             // チェーンステー (左)
+  addBikeTube(THREE, group, frameMat, bb, rearHubR, ft);             // チェーンステー (右)
+  addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubL, ft);    // シートステー (左)
+  addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubR, ft);    // シートステー (右)
 
   // サドル / ハンドルバー (= 自転車と読めるための小さな箱)。 ハンドル幅は編集可。
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 0.18), partMat);
