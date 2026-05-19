@@ -227,6 +227,15 @@
   #section-list-panel h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
   #section-list-panel .panel-hint { color: #aaa; font-size: 11px; margin: 0 0 0.5rem; line-height: 1.4; }
   #section-list-panel .sec-active { background: #2a4418 !important; border-color: #7fff00 !important; }
+  /* 観るモードから抜ける導線 (= イントロ overlay を再表示してモードを選び直す). */
+  #section-list-panel #btnViewModeExit {
+    display: block; width: 100%; margin-top: 0.6rem;
+    padding: 0.5rem; min-height: 36px;
+    background: #1a3322; color: #7fff00; border: 1px solid #7fff00; border-radius: 4px;
+    font: inherit; cursor: pointer;
+  }
+  /* 走行中は「最初の画面に戻る」を隠す ── ride 中の出口は「区間リストに戻る」一つに絞る. */
+  body.state-riding #section-list-panel #btnViewModeExit { display: none; }
 
   /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
      intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
@@ -680,6 +689,7 @@
   <h3>区間を選んで観る</h3>
   <p class="panel-hint">行をクリックするとその区間の始点から走り直します。 ログ保存なし。</p>
   <ul id="section-list" aria-label="コース 10 区間"></ul>
+  <button id="btnViewModeExit" type="button">最初の画面に戻る</button>
 </aside>
 
 <!-- brief 34 ε-3: 公開ガードレール consent-overlay (= ride 開始前の opt-in、 default 全 OFF). -->

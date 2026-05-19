@@ -971,6 +971,15 @@ if (typeof document !== 'undefined') {
     if (!terrainReady) return;
     // brief 34 ε-8: 'ride' mode を明示保存 (= default だが view 切替時に区別するため).
     setIntroConsent({ mode: 'ride' });
+    // 2026-05-19: 観るモードから「最初の画面に戻る」経由で走るを選んだ場合の後始末。
+    // (a) body.mode-view を外す ── 外さないと走行後画面が観るモード扱いで隠れたまま。
+    // (b) updatePostrideButtonVisibility を呼び直す ── consent が view→ride に変わったので
+    //     「履歴に保存」ボタンの hidden 判定を更新する。 これを怠ると走行後に保存ボタンが
+    //     隠れたままで履歴が残らない。 初回 ride 選択時は mode-view が無く実害なし。
+    document.body.classList.remove('mode-view');
+    if (typeof updatePostrideButtonVisibility === 'function') {
+      updatePostrideButtonVisibility();
+    }
     hideIntroOverlay();
     dispatchAfterIntro();
   });
@@ -1013,6 +1022,15 @@ if (typeof document !== 'undefined') {
     setAppState('pairing');  // ride 状態を抜ける (= state-riding を外す)
     document.body.classList.add('mode-view');  // mode-view class は維持
     showSectionOverlay();
+  });
+
+  // 2026-05-19: 観るモードの区間リストパネルから「最初の画面に戻る」── イントロ overlay を
+  // 再表示して走る/観るを選び直せるようにする。 観るモードに入ると右上パネルしか出ず、
+  // 走行モードへ戻る導線が無い trap を解消する。 走行中は CSS で hide (= ride 中の出口は
+  // 「区間リストに戻る」一つに絞る)。
+  const btnViewModeExit = document.getElementById('btnViewModeExit');
+  if (btnViewModeExit) btnViewModeExit.addEventListener('click', () => {
+    showIntroOverlay();
   });
 
   // brief 34 ε-3: consent-overlay の bind. accept で flag を保存 + ride 再発火、

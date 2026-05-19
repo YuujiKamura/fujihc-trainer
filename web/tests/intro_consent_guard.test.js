@@ -215,12 +215,21 @@ describe('brief 34 ε-2: viewer source 上の guard 構造を pin (= grep + beha
     expect(body).toMatch(/getIntroConsent\(\)/);
   });
 
-  it('btnIntroStart click は setIntroConsent + hideIntroOverlay + dispatchAfterIntro の 3 連動 (= brief 34 ε-1 で btnIntroDemo から rename)', () => {
-    // brief 34 ε-1 (= 2026-05-15 user 方向修正): 旧 btnIntroDemo (= 試走デモを見る) を撤去、
-    // btnIntroStart (= 自分の trainer で走る) に rename。 デモ走行 button は提供しない。
-    // brief 34 ε-8: setIntroConsent に optional {mode:'ride'|'view'} 引数を渡せるように拡張。
-    // btnIntroStart は明示 mode='ride' を渡す (= view と区別するため).
-    expect(viewer).toMatch(/btnIntroStart[\s\S]{0,300}setIntroConsent\(\{[^}]*mode:\s*['"]ride['"][^}]*\}\)[\s\S]{0,300}hideIntroOverlay\(\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+  it('btnIntroStart click は setIntroConsent(ride) + mode-view 解除 + 保存ボタン再判定 + hideIntroOverlay + dispatchAfterIntro', () => {
+    // brief 34 ε-1: 旧 btnIntroDemo (= 試走デモ) を撤去、 btnIntroStart (= 自分の trainer で走る) に rename。
+    // brief 34 ε-8: setIntroConsent に明示 mode='ride' を渡す (= view と区別)。
+    // 2026-05-19: 観るモードから「最初の画面に戻る」経由で走るを選んだ時の後始末を追加 ──
+    //   body.mode-view 解除 + updatePostrideButtonVisibility 呼び直し (= 観るモード trap で
+    //   走行後の履歴保存が拒否される問題の解消)。
+    // btnIntroStart の click handler body を抽出し、 各動作の存在を確認する。
+    const m = viewer.match(/btnIntroStart\.addEventListener\(['"]click['"][\s\S]*?dispatchAfterIntro\(\);\s*\}\);/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    expect(body).toMatch(/setIntroConsent\(\{[^}]*mode:\s*['"]ride['"][^}]*\}\)/);
+    expect(body).toMatch(/classList\.remove\(['"]mode-view['"]\)/);
+    expect(body).toMatch(/updatePostrideButtonVisibility\(\)/);
+    expect(body).toMatch(/hideIntroOverlay\(\)/);
+    expect(body).toMatch(/dispatchAfterIntro\(\)/);
     expect(viewer).not.toMatch(/btnIntroDemo/);
   });
 
