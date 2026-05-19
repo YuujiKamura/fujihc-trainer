@@ -213,10 +213,10 @@ function disposeTree(obj) {
 //  - ハンドル: ブルホーンバー。 中央の水平トップ + 左右端から前方かつ上向きに伸びる角。
 //  - 駆動系: BB から左右へクランクアーム 2 本 (180° 位相) + ペダル + チェーンリング。
 //  - リムブレーキ: 前後輪のリム上に跨がるキャリパー 2 セット (本体 + 左右アーム)。
-//  - 影: 全 Mesh に castShadow を立て、 scene の shadow map が地形に自機の影を投影する
-//    (= scene 側で太陽光を castShadow、 地形を receiveShadow に設定)。
+//  - 影: 全 Mesh に castShadow。 さらに bike 足元に影専用の透明ボード (ShadowMaterial)
+//    を bike にくっつけて置き、 自機の影をそこで受ける ── 影が常に bike に追従する。
 // group 直下 = 前輪/後輪/駆動系の 3 グループ + フレーム 14 + サドル 1 + ハンドル 3 +
-//   リムブレーキ 6 = 計 27。 shape は resolveBikeShape 済。
+//   リムブレーキ 6 + 影ボード 1 = 計 28。 shape は resolveBikeShape 済。
 function buildBikeParts(THREE, group, shape) {
   // 陰影で 3D の形が読めるよう StandardMaterial (= シーンの太陽光 + 環境光を受ける)。
   const frameMat = new THREE.MeshStandardMaterial({
@@ -307,14 +307,28 @@ function buildBikeParts(THREE, group, shape) {
   addRimBrake(THREE, group, partMat, (headBottom.z + frontZ) / 2, frontZ, hubY + wheelR);
   addRimBrake(THREE, group, partMat, rearZ - 0.04, rearZ, hubY + wheelR);
 
+  // 影ボード: bike 足元の影専用の透明な板。 ShadowMaterial は影が落ちた所だけ
+  // 半透明で描き、 板自体は透明。 bike group の子なので影が常に bike にくっつき、
+  // 傾き (コース勾配) にも沿う。 bike 中心は updatePose で必ずコース面に乗るので、
+  // この板もコース面 ── 浮かない・刺さらない。 crankSet より前に足し children 末尾は
+  // crankSet に保つ。
+  const shadowBoard = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.6, 2.6),
+    new THREE.ShadowMaterial({ opacity: 0.38 }));
+  shadowBoard.rotation.x = -Math.PI / 2;   // 水平に寝かせる
+  shadowBoard.position.set(0, 0.012, 0);   // bike 足元、 コース面のわずか上
+  shadowBoard.receiveShadow = true;
+  group.add(shadowBoard);
+
   // 駆動系: クランク 2 本 + ペダル + チェーンリングを回転グループに入れ、 BB 位置へ運ぶ。
   const crankSet = new THREE.Group();
   const pedals = buildCrankset(THREE, crankSet, partMat, wheelR);
   crankSet.position.set(0, bb.y, bb.z);
   group.add(crankSet);
 
-  // 全 Mesh に castShadow を立てる ── scene の shadow map が地形に自機の影を投影する。
+  // 全 Mesh に castShadow を立てる。 影ボードだけは影を受ける側なので除外する。
   group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  shadowBoard.castShadow = false;
 
   return { frontWheel, rearWheel, crankSet, pedals };
 }

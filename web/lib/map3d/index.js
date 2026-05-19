@@ -406,7 +406,7 @@ export function createMapRenderer() {
       // 勾配色の道路リボン。 rider 配置に使う頂点配列は mesh の position 属性から取る
       // (= buildCourseRibbon を二重に呼ばない)。
       ribbon3d = createCourseRibbon(THREE, course, geoOpts, { widthM: savedCourseWidth, drapeOffset: currentRoadOffset });
-      ribbon3d.mesh.receiveShadow = true;  // コースリボンも自機の影を受ける
+      // 影は自機足元の影ボード (rider_mesh3d) が受けるので、 リボンは受けない。
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 

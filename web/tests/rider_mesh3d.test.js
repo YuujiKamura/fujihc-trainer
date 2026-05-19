@@ -71,10 +71,13 @@ function makeThreeStub() {
   class CylinderGeometry { constructor(...a) { this.args = a; } }
   class TorusGeometry { constructor(...a) { this.args = a; } }
   class BoxGeometry { constructor(...a) { this.args = a; } }
+  class PlaneGeometry { constructor(...a) { this.args = a; } }
   class MeshStandardMaterial { constructor(o) { Object.assign(this, o); } }
+  class ShadowMaterial { constructor(o) { Object.assign(this, o || {}); } }
   return {
     Vector3: Vec3, Group, Mesh,
-    CylinderGeometry, TorusGeometry, BoxGeometry, MeshStandardMaterial,
+    CylinderGeometry, TorusGeometry, BoxGeometry, PlaneGeometry,
+    MeshStandardMaterial, ShadowMaterial,
   };
 }
 
@@ -93,10 +96,10 @@ function eastwardCourse() {
 }
 
 describe('createRiderMesh3d: 自転車 mesh の組立', () => {
-  it('group 直下は 27 部品 (3 グループ + フレーム 14 + サドル 1 + ハンドル 3 + リムブレーキ 6)', () => {
+  it('group 直下は 28 部品 (3 グループ + フレーム 14 + サドル 1 + ハンドル 3 + リムブレーキ 6 + 影ボード 1)', () => {
     const r = createRiderMesh3d(makeThreeStub());
     expect(r.group).toBeTruthy();
-    expect(r.group.children.length).toBe(27);
+    expect(r.group.children.length).toBe(28);
   });
 
   it('前輪グループ (= children[0]) は 18 部品 (タイヤ 1 + ハブ 1 + スポーク 16)', () => {
@@ -232,10 +235,10 @@ describe('resolveBikeShape: 形状パラメータの既定値補完 + クラン�
 });
 
 describe('createRiderMesh3d.setShape: 部品ごと形状の差し替え', () => {
-  it('setShape 後も group 直下 27 部品を保つ', () => {
+  it('setShape 後も group 直下 28 部品を保つ', () => {
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 0.3 });
-    expect(r.group.children.length).toBe(27);
+    expect(r.group.children.length).toBe(28);
   });
 
   it('車輪半径を変えると前輪トーラスの geometry 引数に反映される', () => {
