@@ -132,7 +132,11 @@ export function createScene({ container }) {
   // 覆う狭い範囲に絞って解像度を確保し、 focusShadowOn が毎フレーム自機へ追従させる。
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.bias = -0.0008;
+  // shadow acne (影の縞ノイズ) 対策。 bias を強くすると影が物体から離れ
+  // (peter panning)、 接地点で影が欠けるので、 bias は小さめにして法線方向へ
+  // ずらす normalBias を主に使う ── normalBias は peter panning を起こしにくい。
+  sun.shadow.bias = -0.0002;
+  sun.shadow.normalBias = 0.04;
   sun.shadow.camera.left = -SHADOW_CAM_BASE;
   sun.shadow.camera.right = SHADOW_CAM_BASE;
   sun.shadow.camera.top = SHADOW_CAM_BASE;
