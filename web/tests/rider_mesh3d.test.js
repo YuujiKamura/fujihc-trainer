@@ -45,6 +45,7 @@ function makeThreeStub() {
   class Group {
     constructor() {
       this.children = []; this.position = new Vec3(); this.quaternion = new Quat();
+      this.rotation = { x: 0, y: 0, z: 0 };
       this.lookAtCalls = [];
     }
     add(o) { this.children.push(o); return this; }
@@ -60,6 +61,7 @@ function makeThreeStub() {
       this.geometry = geometry; this.material = material;
       this.position = new Vec3(); this.quaternion = new Quat();
       this.rotation = { x: 0, y: 0, z: 0 };
+      this.scale = new Vec3(1, 1, 1);
     }
   }
   class CylinderGeometry { constructor(...a) { this.args = a; } }
@@ -87,10 +89,21 @@ function eastwardCourse() {
 }
 
 describe('createRiderMesh3d: 自転車 mesh の組立', () => {
-  it('group を公開し、 車輪 2 + フレーム 13 + サドル/ハンドル 2 = 17 部品を持つ', () => {
+  it('group 直下は 28 部品 (3 グループ + フレーム 14 + サドル 1 + ハンドル 3 + リムブレーキ 6 + 影 1)', () => {
     const r = createRiderMesh3d(makeThreeStub());
     expect(r.group).toBeTruthy();
-    expect(r.group.children.length).toBe(17);
+    expect(r.group.children.length).toBe(28);
+  });
+
+  it('前輪グループ (= children[0]) は 18 部品 (タイヤ 1 + ハブ 1 + スポーク 16)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    expect(r.group.children[0].children.length).toBe(18);
+  });
+
+  it('駆動系グループ (= children 末尾) は 5 部品 (クランク 2 + ペダル 2 + チェーンリング 1)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    const crankSet = r.group.children[r.group.children.length - 1];
+    expect(crankSet.children.length).toBe(5);
   });
 });
 
@@ -145,6 +158,32 @@ describe('updatePose: 走行距離 → mesh の置き場所', () => {
     const under = r.updatePose(positions, course, -50);
     expect(under.position[0]).toBeCloseTo(0, 6);    // 起点でクランプ
   });
+
+  it('走行距離に応じて車輪と駆動系を回す (= rotation.x が距離で変わる)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    const { course, positions } = eastwardCourse();
+    const front = r.group.children[0], rear = r.group.children[1];
+    const crank = r.group.children[r.group.children.length - 1];
+    r.updatePose(positions, course, 0);
+    expect(front.rotation.x).toBeCloseTo(0, 10);   // 距離 0 では回っていない
+    r.updatePose(positions, course, 100);
+    expect(front.rotation.x).not.toBe(0);          // 車輪が回った
+    expect(rear.rotation.x).toBe(front.rotation.x); // 前後輪は同じ角速度
+    expect(crank.rotation.x).not.toBe(0);          // 駆動系も回った
+    // クランクはギア比ぶん車輪より遅い (= 回転角が小さい)。
+    expect(Math.abs(crank.rotation.x)).toBeLessThan(Math.abs(front.rotation.x));
+  });
+
+  it('ペダルは crankSet の回転を打ち消す逆回転を持つ (= 踏み面が常にコースと水平)', () => {
+    const r = createRiderMesh3d(makeThreeStub());
+    const { course, positions } = eastwardCourse();
+    r.updatePose(positions, course, 100);
+    const crankSet = r.group.children[r.group.children.length - 1];
+    // crankSet.children = クランク 2 + ペダルグループ 2 + チェーンリング 1。
+    const pedalR = crankSet.children[2], pedalL = crankSet.children[3];
+    expect(pedalR.rotation.x).toBeCloseTo(-crankSet.rotation.x, 9);
+    expect(pedalL.rotation.x).toBeCloseTo(-crankSet.rotation.x, 9);
+  });
 });
 
 describe('resolveBikeShape: 形状パラメータの既定値補完 + クランプ', () => {
@@ -174,31 +213,32 @@ describe('resolveBikeShape: 形状パラメータの既定値補完 + クラン�
 });
 
 describe('createRiderMesh3d.setShape: 部品ごと形状の差し替え', () => {
-  it('setShape 後も車輪 2 + フレーム 13 + サドル/ハンドル 2 = 17 部品を保つ', () => {
+  it('setShape 後も group 直下 28 部品を保つ', () => {
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 0.3 });
-    expect(r.group.children.length).toBe(17);
+    expect(r.group.children.length).toBe(28);
   });
 
-  it('車輪半径を変えるとトーラスの geometry 引数に反映される', () => {
-    // buildBikeParts は車輪を最初に 2 枚足す → children[0] が前輪トーラス。
+  it('車輪半径を変えると前輪トーラスの geometry 引数に反映される', () => {
+    // children[0] が前輪の回転グループ、 その children[0] が前輪タイヤトーラス。
     // TorusGeometry(wheelR, tubeR, ...) の第 1 引数が車輪半径。
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 0.3 });
-    expect(r.group.children[0].geometry.args[0]).toBe(0.3);
+    expect(r.group.children[0].children[0].geometry.args[0]).toBe(0.3);
   });
 
   it('範囲外の指定は resolveBikeShape でクランプされてから組まれる', () => {
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 99 });
-    expect(r.group.children[0].geometry.args[0]).toBe(BIKE_SHAPE_RANGE.wheelR[1]);
+    expect(r.group.children[0].children[0].geometry.args[0]).toBe(BIKE_SHAPE_RANGE.wheelR[1]);
   });
 
   it('部分指定を重ねても直前の形状が保たれる (= スライダー 1 個ずつ動かす運用)', () => {
     const r = createRiderMesh3d(makeThreeStub());
     r.setShape({ wheelR: 0.3 });
     r.setShape({ tubeR: 0.03 });
-    expect(r.group.children[0].geometry.args[0]).toBe(0.3);   // 1 回目の wheelR が残る
-    expect(r.group.children[0].geometry.args[1]).toBe(0.03);  // 2 回目の tubeR が反映
+    const tyre = r.group.children[0].children[0];  // 前輪グループの先頭 = タイヤトーラス
+    expect(tyre.geometry.args[0]).toBe(0.3);   // 1 回目の wheelR が残る
+    expect(tyre.geometry.args[1]).toBe(0.03);  // 2 回目の tubeR が反映
   });
 });

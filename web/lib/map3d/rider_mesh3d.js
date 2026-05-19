@@ -99,17 +99,133 @@ function addBikeTube(THREE, group, material, from, to, radius) {
   group.add(mesh);
 }
 
-// 自転車の 17 部品 (車輪 2 + フレーム 13 + サドル/ハンドル 2) を group に組み付ける。
-// terrain3d.html buildBikeMesh (L331-379) の移植を、 形状パラメータ shape 駆動 + 既存
-// group へ追加する形に変えたもの。 shape は resolveBikeShape 済 (全フィールド揃い範囲内)。
+// 1 輪 (タイヤ + ハブ + スポーク) を target グループの原点中心に組む。 target は
+// updatePose が rotation.x で回す = 走行中に車輪が転がる。 スポークの組み方は実車
+// どおり前後で変える (= 外部検索で確認):
+//  - 前輪 = ラジアル組: ハブから真っ直ぐリムへ放射状 (駆動トルクが無く軽さ優先)。
+//  - 後輪 = クロス組: ハブ側を接線方向へずらし隣のスポークと交差 (駆動トルクを伝える)。
+function buildWheel(THREE, target, wheelMat, spokeMat, wheelR, tubeR, isFront) {
+  const hubR = wheelR * 0.12;       // ハブ (フランジ) 半径
+  const flangeHalf = 0.024;         // 左右フランジの X 半幅 (= スポークを左右へ振り分ける)
+  const rimR = wheelR - tubeR;      // スポークが届くリム面 (= タイヤ内縁)
+  const SPOKE_N = 16;               // スポーク本数 (実車 20-28、 描画は間引き)
+  const tyre = new THREE.Mesh(
+    new THREE.TorusGeometry(wheelR, tubeR, 12, 28), wheelMat);
+  tyre.rotation.y = Math.PI / 2;    // トーラスの軸を X (車軸) 方向へ
+  target.add(tyre);
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(hubR, hubR, flangeHalf * 2, 12), spokeMat);
+  hub.rotation.z = Math.PI / 2;     // 円筒の軸を X (車軸) 方向へ
+  target.add(hub);
+  // クロス組はハブ側の角度を接線方向へ 3 本分ずらす (= 3 クロス相当)、 ラジアルは 0。
+  const cross = isFront ? 0 : (Math.PI * 2 / SPOKE_N) * 3;
+  for (let i = 0; i < SPOKE_N; i++) {
+    const rim = (i / SPOKE_N) * Math.PI * 2;               // リム側の円周角
+    const side = (i % 2 === 0) ? flangeHalf : -flangeHalf;  // 左右フランジ交互
+    const from = new THREE.Vector3(
+      side, hubR * Math.sin(rim + cross), hubR * Math.cos(rim + cross));
+    const to = new THREE.Vector3(
+      0, rimR * Math.sin(rim), rimR * Math.cos(rim));
+    addBikeTube(THREE, target, spokeMat, from, to, 0.0035);  // 細いスポーク
+  }
+}
+
+// ペダル 1 つ (= スピンドル + 踏み面) をグループにして返す。 グループ原点 = クランク
+// 先端。 side = +1 (右、 スピンドルが +X 外側へ) / -1 (左)。 SPD-SL は片面クリップレス
+// ── スピンドルがクランクにねじ込まれ、 その外側に前後へ長い平たい踏み面が付く。
+function buildPedal(THREE, mat, side) {
+  const g = new THREE.Group();
+  const axleLen = 0.035;  // スピンドル長 (クランク先端から車軸と平行に外側へ)
+  addBikeTube(THREE, g, mat,
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(side * axleLen, 0, 0), 0.007);
+  // 踏み面: SPD-SL の前後に長い平たいプラットフォーム。
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.014, 0.085), mat);
+  body.position.set(side * (axleLen + 0.026), 0, 0);
+  g.add(body);
+  return g;
+}
+
+// クランク 2 本 + ペダル + チェーンリングを target グループの原点 (= BB) 中心に組む。
+// target は updatePose が rotation.x で回す = 走行中に駆動系が回る。 クランクは 180°
+// 位相差。 X はチェーンステー端より外に置き、 後三角と干渉させない。 戻り値はペダル
+// グループ 2 つ ── updatePose が crankSet 回転を打ち消す逆回転を与え、 踏み面を常に
+// コースと水平に保つ (= 実車のペダルがスピンドルで自由回転し踏み面を保つのと同じ)。
+function buildCrankset(THREE, target, mat, wheelR) {
+  const crankHalf = 0.052;          // BB からクランクが出る X 半幅 (= チェーンステー端より外)
+  const crankLen = 0.10;            // クランクアーム長 (= 実 165-175mm を正規化)
+  const ringR = wheelR * 0.34;      // チェーンリング半径 (= 50t 相当、 車輪の約 1/3 径)
+  // 右クランク = 真下、 左クランク = 真上 (180° 位相)。 グループ回転で両方が回る。
+  const endR = new THREE.Vector3(crankHalf, -crankLen, 0);
+  const endL = new THREE.Vector3(-crankHalf, crankLen, 0);
+  addBikeTube(THREE, target, mat, new THREE.Vector3(crankHalf, 0, 0), endR, 0.013);
+  addBikeTube(THREE, target, mat, new THREE.Vector3(-crankHalf, 0, 0), endL, 0.013);
+  // ペダル: クランク先端にスピンドルで付くペダルグループ。 向きは updatePose が水平に保つ。
+  const pedalR = buildPedal(THREE, mat, 1);
+  pedalR.position.copy(endR);
+  target.add(pedalR);
+  const pedalL = buildPedal(THREE, mat, -1);
+  pedalL.position.copy(endL);
+  target.add(pedalL);
+  // チェーンリング: 車軸 X 向きの薄い円盤。 チェーンステー端より外の X に置く。
+  const chainring = new THREE.Mesh(
+    new THREE.CylinderGeometry(ringR, ringR, 0.006, 24), mat);
+  chainring.rotation.z = Math.PI / 2;
+  chainring.position.set(crankHalf, 0, 0);
+  target.add(chainring);
+  return [pedalR, pedalL];
+}
+
+// リムブレーキ (サイドプルキャリパー) を 1 つ group に足す。 実車では前ブレーキは
+// フォーククラウン、 後ブレーキはシートステーに本体が留まり、 中央ピボットから左右の
+// アームが車輪リムを挟む (= 外部検索で確認)。 mountZ = フレーム取り付け側の Z、
+// wheelCenterZ = 車輪中心の Z、 rimTopY = 車輪リム最上部の Y。 車輪とは回らない。
+function addRimBrake(THREE, group, mat, mountZ, wheelCenterZ, rimTopY) {
+  const bodyY = rimTopY + 0.024;
+  // 本体 (中央ピボット) はフレーム取り付け点 (クラウン / シートステー) 側に寄せる。
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.042, 0.02), mat);
+  body.position.set(0, bodyY, mountZ);
+  group.add(body);
+  const armX = 0.027;  // アーム下端がリムを左右から挟む幅
+  // 左右アーム: 本体から車輪リム最上部 (車輪中心の真上) の左右へ斜めに伸ばす。
+  addBikeTube(THREE, group, mat,
+    new THREE.Vector3(0, bodyY, mountZ),
+    new THREE.Vector3(-armX, rimTopY, wheelCenterZ), 0.007);
+  addBikeTube(THREE, group, mat,
+    new THREE.Vector3(0, bodyY, mountZ),
+    new THREE.Vector3(armX, rimTopY, wheelCenterZ), 0.007);
+}
+
+// グループ木を再帰的に辿り geometry / material の GPU リソースを解放する。
+function disposeTree(obj) {
+  for (const child of obj.children || []) {
+    disposeTree(child);
+    if (child.geometry && child.geometry.dispose) child.geometry.dispose();
+    if (child.material && child.material.dispose) child.material.dispose();
+  }
+}
+
+// 自転車を group に組み付ける。 車輪 2 組と駆動系は回転サブグループにまとめて返し、
+// updatePose が走行距離に応じて回す。 各部位の構造は実ロードバイクを外部検索で確認:
+//  - フォーク: ステアラー → クラウン (幅のある接合部) → 左右平行なブレード 2 本 → 前ハブ。
+//  - 後三角: シートステーはシートクラスタ (シートチューブ上端) で左右に枝分かれし、
+//    後輪上部を ±X で挟んで後ハブへ。 チェーンステーも BB シェル幅から末広がりで挟む。
+//  - サドル: 後ろが太く前が細いテーパー形状 (= 上下異径の円柱を倒し平たく潰す)。
+//  - ハンドル: ブルホーンバー。 中央の水平トップ + 左右端から前方かつ上向きに伸びる角。
+//  - 駆動系: BB から左右へクランクアーム 2 本 (180° 位相) + ペダル + チェーンリング。
+//  - リムブレーキ: 前後輪のリム上に跨がるキャリパー 2 セット (本体 + 左右アーム)。
+//  - ドロップシャドウ: 足元の地面に落とす暗い半透明の楕円。
+// group 直下 = 前輪/後輪/駆動系の 3 グループ + フレーム 14 + サドル 1 + ハンドル 3 +
+//   リムブレーキ 6 + 影 1 = 計 28。 shape は resolveBikeShape 済。
 function buildBikeParts(THREE, group, shape) {
   // 陰影で 3D の形が読めるよう StandardMaterial (= シーンの太陽光 + 環境光を受ける)。
   const frameMat = new THREE.MeshStandardMaterial({
-    color: 0x18c8ff, roughness: 0.4, metalness: 0.3 });   // 明るいシアン
+    color: 0x18c8ff, roughness: 0.4, metalness: 0.3 });   // 明るいシアン (フレーム)
   const wheelMat = new THREE.MeshStandardMaterial({
     color: 0x14181f, roughness: 0.75, metalness: 0.1 });  // ほぼ黒のタイヤ
   const partMat = new THREE.MeshStandardMaterial({
-    color: 0x2a2f3a, roughness: 0.6, metalness: 0.2 });    // サドル / ハンドル
+    color: 0x2a2f3a, roughness: 0.6, metalness: 0.2 });    // サドル / ハンドル / 駆動系
+  const spokeMat = new THREE.MeshStandardMaterial({
+    color: 0xaeb6c0, roughness: 0.35, metalness: 0.7 });   // 銀色 (ハブ / スポーク)
 
   const { wheelR, tubeR, wheelbase, frameThick, saddleY, barY, barW } = shape;
   // 前後ハブ Z は unit モデルの値にホイールベース倍率を掛けて前後対称に伸縮する。
@@ -117,89 +233,126 @@ function buildBikeParts(THREE, group, shape) {
   const rearZ = BIKE_DIMENSIONS.rearZ * wheelbase;
   const hubY = wheelR + tubeR;  // トーラス最下点 (= hubY - (wheelR+tubeR) = 0) が group y=0 になる高さ
 
-  // 車輪 2 枚 (トーラス)。 既定で XY 平面のリングなので rotation.y=π/2 で
-  // 車軸を X 方向にし、 車輪の円盤が進行方向 (Z) を含む面に立つ。
-  for (const z of [frontZ, rearZ]) {
-    const wheel = new THREE.Mesh(
-      new THREE.TorusGeometry(wheelR, tubeR, 12, 28), wheelMat);
-    wheel.rotation.y = Math.PI / 2;
-    wheel.position.set(0, hubY, z);
-    group.add(wheel);
-  }
+  // 車輪 2 組。 各組は回転グループに入れ、 グループ position でハブ位置へ運ぶ。
+  const frontWheel = new THREE.Group();
+  buildWheel(THREE, frontWheel, wheelMat, spokeMat, wheelR, tubeR, true);
+  frontWheel.position.set(0, hubY, frontZ);
+  group.add(frontWheel);
+  const rearWheel = new THREE.Group();
+  buildWheel(THREE, rearWheel, wheelMat, spokeMat, wheelR, tubeR, false);
+  rearWheel.position.set(0, hubY, rearZ);
+  group.add(rearWheel);
 
-  // フレーム結節点 ── 実ロードバイクの三面図 (the-blueprints.com road bike) のレイアウトに
-  // 合わせた正規化座標。 フォークは実車構造どおり: ステアラー (= head tube) → クラウン
-  // (幅のある接合部) → 左右ほぼ平行なブレード 2 本 → 前ハブ。 旧来はブレードを head tube
-  // 下端の 1 点から V 字に出していた (= 誤り、 クラウンが無くブレードが平行でない)。
-  // チェーンステーは BB シェルの幅から、 シートステーはシートクラスタ (≒シートチューブ
-  // 上端) から、 それぞれ後輪を ±X で挟む。 メインの三角は中央 1 本。
+  // フレーム結節点 ── 実ロードバイクの三面図のレイアウトに合わせた正規化座標。
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const ft = frameThick;
-  const hubHalf = 0.045;   // 車軸端の X 半幅 (= フォークブレード/ステーが車輪を挟む量)
-  const bbHalf = 0.025;    // BB シェルの X 半幅 (= チェーンステーの起点)
+  const hubHalf = 0.045;      // 車軸端の X 半幅 (= ブレード/ステーが車輪を挟む量)
+  const bbHalf = 0.025;       // BB シェルの X 半幅 (= チェーンステーの起点)
+  const clusterHalf = 0.020;  // シートクラスタの X 半幅 (= シートステーの枝分かれ元)
   const bb = V(0, hubY - 0.042, 0.05);                   // BB (車軸線より BB ドロップ下)
   const seatTubeTop = V(0, bb.y + 0.29, bb.z + 0.085);   // シートチューブ上端 (シート角 73.5°)
   const headTop = V(0, bb.y + 0.34, bb.z - 0.238);       // head tube 上端 (実スタック/リーチ)
   const headBottom = V(0, headTop.y - 0.086, headTop.z - 0.026); // head tube 下端 = クラウン位置
-  const saddle = V(0, saddleY, seatTubeTop.z + 0.04);    // サドル (高さは編集可、 シートポスト上)
-  const bar = V(0, barY, headTop.z - 0.06);              // ハンドル (高さは編集可、 ステム先)
-  // 前後ハブ・BB シェル・フォーククラウンの左右端。 二股のブレード/ステーはこの ±X を結ぶ。
+  const saddle = V(0, saddleY, seatTubeTop.z + 0.04);    // サドル中心 (高さは編集可)
+  const bar = V(0, barY, headTop.z - 0.06);              // ハンドル中心 (高さは編集可、 ステム先)
+  // 前後ハブ・BB シェル・フォーククラウン・シートクラスタの左右端。
   const frontHubL = V(-hubHalf, hubY, frontZ), frontHubR = V(hubHalf, hubY, frontZ);
   const rearHubL = V(-hubHalf, hubY, rearZ), rearHubR = V(hubHalf, hubY, rearZ);
   const bbL = V(-bbHalf, bb.y, bb.z), bbR = V(bbHalf, bb.y, bb.z);
   const crownL = V(-hubHalf, headBottom.y, headBottom.z), crownR = V(hubHalf, headBottom.y, headBottom.z);
+  const clstrL = V(-clusterHalf, seatTubeTop.y, seatTubeTop.z);
+  const clstrR = V(clusterHalf, seatTubeTop.y, seatTubeTop.z);
 
-  // 中央 1 本のフレーム 6 本 (前三角 + head tube + シートチューブ + シートポスト + ステム)。
+  // 中央 1 本のフレーム 6 本 (前三角 + head tube + シートポスト + ステム)。
   addBikeTube(THREE, group, frameMat, bb, seatTubeTop, ft);          // シートチューブ
   addBikeTube(THREE, group, frameMat, bb, headBottom, ft);           // ダウンチューブ
   addBikeTube(THREE, group, frameMat, seatTubeTop, headTop, ft);     // トップチューブ
   addBikeTube(THREE, group, frameMat, headTop, headBottom, ft * 1.4); // head tube (ステアラー)
   addBikeTube(THREE, group, frameMat, seatTubeTop, saddle, ft);      // シートポスト
   addBikeTube(THREE, group, frameMat, headTop, bar, ft);             // ステム
-  // フォーク: クラウン (幅のある接合部) + 左右ほぼ平行なブレード 2 本。
+  // フォーク 3 本: クラウン (幅のある接合部) + 左右平行なブレード 2 本。
   addBikeTube(THREE, group, frameMat, crownL, crownR, ft * 1.4);     // フォーククラウン
   addBikeTube(THREE, group, frameMat, crownL, frontHubL, ft);        // フォークブレード (左)
   addBikeTube(THREE, group, frameMat, crownR, frontHubR, ft);        // フォークブレード (右)
-  // 後三角の左右ペア: チェーンステー 2 (BB シェル幅から) + シートステー 2 (後輪を挟む)。
+  // 後三角 5 本: シートクラスタブリッジ + チェーンステー 2 + シートステー 2。
+  // シートステーはクラスタの ±X 端から出る = 後輪上部を挟む「枝分かれ」、 1 点 V 字ではない。
+  addBikeTube(THREE, group, frameMat, clstrL, clstrR, ft * 1.4);     // シートクラスタブリッジ
   addBikeTube(THREE, group, frameMat, bbL, rearHubL, ft);            // チェーンステー (左)
   addBikeTube(THREE, group, frameMat, bbR, rearHubR, ft);            // チェーンステー (右)
-  addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubL, ft);    // シートステー (左)
-  addBikeTube(THREE, group, frameMat, seatTubeTop, rearHubR, ft);    // シートステー (右)
+  addBikeTube(THREE, group, frameMat, clstrL, rearHubL, ft);         // シートステー (左)
+  addBikeTube(THREE, group, frameMat, clstrR, rearHubR, ft);         // シートステー (右)
 
-  // サドル / ハンドルバー (= 自転車と読めるための小さな箱)。 ハンドル幅は編集可。
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 0.18), partMat);
-  seat.position.copy(saddle);
-  group.add(seat);
-  const handlebar = new THREE.Mesh(new THREE.BoxGeometry(barW, 0.04, 0.05), partMat);
-  handlebar.position.copy(bar);
-  group.add(handlebar);
+  // サドル: 後ろが太く前 (-Z) が細いテーパー。 上下異径の円柱を前後 (Z) に倒し、
+  // scale で上下に潰して平たくする。 CylinderGeometry(後径, 前径, 長さ)。
+  const saddleMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.052, 0.018, 0.22, 16), partMat);
+  saddleMesh.rotation.x = Math.PI / 2;     // 円柱の軸 (+Y) を Z (前後) 方向へ倒す
+  saddleMesh.scale.set(1, 1, 0.42);        // 上下に潰して平たいサドルに
+  saddleMesh.position.copy(saddle);
+  group.add(saddleMesh);
+
+  // ハンドル 3 本: ブルホーンバー。 中央の水平トップ + 左右端から前方かつ上向きに
+  // 伸びる角 2 本 (= 牛の角、 ブルホーンは端が前上方を向く)。
+  const barHalf = barW / 2;
+  const barL = V(bar.x - barHalf, bar.y, bar.z), barR = V(bar.x + barHalf, bar.y, bar.z);
+  const hornL = V(barL.x, bar.y + 0.05, bar.z - 0.11);   // 前 (-Z) かつ 上 (+Y)
+  const hornR = V(barR.x, bar.y + 0.05, bar.z - 0.11);
+  addBikeTube(THREE, group, partMat, barL, barR, 0.012);   // 中央トップバー
+  addBikeTube(THREE, group, partMat, barL, hornL, 0.012);  // 角 (左)
+  addBikeTube(THREE, group, partMat, barR, hornR, 0.012);  // 角 (右)
+
+  // リムブレーキ 2 セット: 前=フォーククラウン側 / 後=シートステー側に本体を留め、
+  // 左右アームが車輪リムを挟む。 車輪とは回らないので回転グループの外 (group 直下)。
+  addRimBrake(THREE, group, partMat, (headBottom.z + frontZ) / 2, frontZ, hubY + wheelR);
+  addRimBrake(THREE, group, partMat, rearZ - 0.04, rearZ, hubY + wheelR);
+
+  // ドロップシャドウ: bike の足元、 地面 (y≈0) に落とす暗い半透明の楕円。 超扁平な
+  // 円柱を地面のわずか上に置き、 X を縮めて前後に長い楕円にする。
+  const shadowMat = new THREE.MeshStandardMaterial({
+    color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
+  const shadow = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.5, 0.002, 24), shadowMat);
+  shadow.scale.set(0.55, 1, 1);
+  shadow.position.set(0, 0.006, (frontZ + rearZ) / 2);
+  group.add(shadow);
+
+  // 駆動系: クランク 2 本 + ペダル + チェーンリングを回転グループに入れ、 BB 位置へ運ぶ。
+  const crankSet = new THREE.Group();
+  const pedals = buildCrankset(THREE, crankSet, partMat, wheelR);
+  crankSet.position.set(0, bb.y, bb.z);
+  group.add(crankSet);
+
+  return { frontWheel, rearWheel, crankSet, pedals };
 }
+
+// 走行距離 → 車輪回転角の換算半径 (m)。 700×28c の転がり半径 ≒ 0.34m、 回転角 = 距離 / 半径。
+const WHEEL_ROLL_RADIUS_M = 0.34;
+// 車輪 1 回転あたりクランクは 1/CRANK_GEAR_RATIO 回転 (= チェーンリング/スプロケのギア比)。
+const CRANK_GEAR_RATIO = 2.0;
 
 // rider_mesh3d を生成する。 戻り値 group を facade が scene に add する。
 export function createRiderMesh3d(THREE) {
   const group = new THREE.Group();
   let currentShape = resolveBikeShape();
-  buildBikeParts(THREE, group, currentShape);
+  // 車輪 2 組 + 駆動系の回転グループ。 updatePose が走行距離に応じて回す。
+  let spinners = buildBikeParts(THREE, group, currentShape);
 
   return {
     // facade が scene に追加する自転車 mesh (= THREE.Group)。
     group,
 
     // 部品ごとの形状を差し替えて自転車を組み直す。 group 自体 (位置 / 向き / scale) は
-    // 据え置き、 子の 10 部品だけ作り直す ── facade の scene 管理 / updatePose は無改造。
+    // 据え置き、 子の部品だけ作り直す ── facade の scene 管理 / updatePose は無改造。
     // shape は部分指定可 (= スライダー 1 個分)、 既定値マージ + クランプは resolveBikeShape。
     setShape(shape) {
       currentShape = resolveBikeShape({ ...currentShape, ...shape });
-      // 旧部品の GPU リソースを解放してから作り直す (= 形状変更を繰り返してもリークしない)。
-      for (const child of group.children) {
-        if (child.geometry && child.geometry.dispose) child.geometry.dispose();
-        if (child.material && child.material.dispose) child.material.dispose();
-      }
+      // 旧部品の GPU リソースを (グループ木を辿って) 解放してから作り直す。
+      disposeTree(group);
       group.clear();
-      buildBikeParts(THREE, group, currentShape);
+      spinners = buildBikeParts(THREE, group, currentShape);
     },
 
-    // 毎フレーム、 走行距離からライダーを course 上の現在位置へ置く。
+    // 毎フレーム、 走行距離からライダーを course 上の現在位置へ置き、 車輪と駆動系を回す。
     // ribbonPositions / course はコース描画部品が用意する (= 部品3 の出力)。
     // 純ロジック (距離→位置/向き) は riderPlacementAtDistance、 ここは mesh への適用だけ。
     updatePose(ribbonPositions, course, distanceM) {
@@ -212,6 +365,16 @@ export function createRiderMesh3d(THREE) {
         group.position.x - pl.forward3d[0],
         group.position.y - pl.forward3d[1],
         group.position.z - pl.forward3d[2]);
+      // 走行距離 → 車輪と駆動系の回転。 bike は -Z 前方なので前進で車輪上部は前へ
+      // 転がる = 車軸 (ローカル X) まわりの回転。 クランクはギア比ぶん車輪より遅い。
+      const roll = -distanceM / WHEEL_ROLL_RADIUS_M;
+      spinners.frontWheel.rotation.x = roll;
+      spinners.rearWheel.rotation.x = roll;
+      const crankRot = roll / CRANK_GEAR_RATIO;
+      spinners.crankSet.rotation.x = crankRot;
+      // ペダルの踏み面は常にコースと水平 ── crankSet の回転を逆回転で打ち消す
+      // (= 実車のペダルがスピンドルで自由回転し踏み面を保つのと同じ)。
+      for (const pedal of spinners.pedals) pedal.rotation.x = -crankRot;
       return pl;
     },
   };
