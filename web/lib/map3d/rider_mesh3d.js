@@ -347,18 +347,29 @@ export function createRiderMesh3d(THREE) {
     },
 
     // 毎フレーム、 走行距離からライダーを course 上の現在位置へ置き、 車輪と駆動系を回す。
-    // ribbonPositions / course はコース描画部品が用意する (= 部品3 の出力)。
-    // 純ロジック (距離→位置/向き) は riderPlacementAtDistance、 ここは mesh への適用だけ。
+    // bike は前後に長い剛体なので、 中心 1 点ではなく前輪・後輪をそれぞれコース面の点に
+    // 置き (= 前後の車軸距離だけ離した 2 点を riderPlacementAtDistance で取る)、 bike を
+    // その 2 点を結ぶ線に合わせる ── 1 点配置だとコースの勾配変化で前後輪が浮く/めり込む。
     updatePose(ribbonPositions, course, distanceM) {
-      const pl = riderPlacementAtDistance(ribbonPositions, course, distanceM);
-      group.position.set(pl.position[0], pl.position[1], pl.position[2]);
-      // bike は −Z 前方。通常オブジェクトの lookAt は +Z を対象へ向けるため、
-      // 後方の点 (position − forward3d) を lookAt することで −Z が進行方向を向く。
-      // up=+Y でロール 0 に固定。カメラ追従は水平の pl.forward を引き続き使う。
-      group.lookAt(
-        group.position.x - pl.forward3d[0],
-        group.position.y - pl.forward3d[1],
-        group.position.z - pl.forward3d[2]);
+      // 前後の車軸間隔 (m) = unit モデルの前後ハブ間隔 × wheelbase × group scale。
+      const wheelbaseM = (BIKE_DIMENSIONS.rearZ - BIKE_DIMENSIONS.frontZ)
+        * currentShape.wheelbase * (group.scale.x || 1);
+      const half = wheelbaseM / 2;
+      const front = riderPlacementAtDistance(ribbonPositions, course, distanceM + half);
+      const rear = riderPlacementAtDistance(ribbonPositions, course, distanceM - half);
+      // bike 中心 = 前後輪接地点の中点。
+      const cx = (front.position[0] + rear.position[0]) / 2;
+      const cy = (front.position[1] + rear.position[1]) / 2;
+      const cz = (front.position[2] + rear.position[2]) / 2;
+      group.position.set(cx, cy, cz);
+      // bike の向き = 後輪→前輪。 bike は −Z 前方、 lookAt は +Z を対象へ向けるので
+      // 後方の点 (中心 − 前方ベクトル) を lookAt する。 up=+Y でロール 0 に固定。
+      let fx = front.position[0] - rear.position[0];
+      let fy = front.position[1] - rear.position[1];
+      let fz = front.position[2] - rear.position[2];
+      const flen = Math.hypot(fx, fy, fz) || 1;
+      fx /= flen; fy /= flen; fz /= flen;
+      group.lookAt(cx - fx, cy - fy, cz - fz);
       // 走行距離 → 車輪と駆動系の回転。 bike は -Z 前方なので前進で車輪上部は前へ
       // 転がる = 車軸 (ローカル X) まわりの回転。 クランクはギア比ぶん車輪より遅い。
       const roll = -distanceM / WHEEL_ROLL_RADIUS_M;
@@ -369,7 +380,13 @@ export function createRiderMesh3d(THREE) {
       // ペダルの踏み面は常にコースと水平 ── crankSet の回転を逆回転で打ち消す
       // (= 実車のペダルがスピンドルで自由回転し踏み面を保つのと同じ)。
       for (const pedal of spinners.pedals) pedal.rotation.x = -crankRot;
-      return pl;
+      // カメラ追従用 placement。 position = 中心、 forward = 水平の進行方向。
+      const hlen = Math.hypot(fx, fz) || 1;
+      return {
+        position: [cx, cy, cz],
+        forward: [fx / hlen, 0, fz / hlen],
+        forward3d: [fx, fy, fz],
+      };
     },
   };
 }

@@ -46,6 +46,7 @@ function makeThreeStub() {
     constructor() {
       this.children = []; this.position = new Vec3(); this.quaternion = new Quat();
       this.rotation = { x: 0, y: 0, z: 0 };
+      this.scale = new Vec3(1, 1, 1);
       this.lookAtCalls = [];
     }
     add(o) { this.children.push(o); return this; }
