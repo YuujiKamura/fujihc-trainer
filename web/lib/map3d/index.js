@@ -28,6 +28,7 @@ import { loadDemStitched, loadPhotoCanvas } from './tile_loader3d.js';
 import { sampleHeightBilinear } from '../terrain3d.js';
 import { buildGradeColoredRoadPolygons } from '../road_polygon.js';
 import { computeTravelHeading } from '../heading.js';
+import { resampleCourse } from '../rider_placement.js';
 import { openTileCache } from '../tile_cache.js';
 
 // 緯度 1 度あたりのメートル (= terrain3d.js と同値)。
@@ -389,6 +390,9 @@ export function createMapRenderer() {
         console.warn('[map3d] renderCourse: 地形未準備のため skip');
         return;
       }
+      // bike の接地精度のため course 点を細かく再サンプリングする ── 粗い折れ線だと
+      // 剛体 bike が折れ目で前後輪を浮かせる。 8m 超の区間を 8m 以下へ分割。
+      course = resampleCourse(course, 8);
       // 投影パラメータ ── 部品3/6/7 が地形と同じ座標系でコースを drape するために共有する。
       const geoOpts = {
         range,

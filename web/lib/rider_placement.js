@@ -95,3 +95,41 @@ export function riderPlacementAtDistance(positions, course, distanceM) {
 
   return { position, forward, forward3d };
 }
+
+/**
+ * course を再サンプリングして点を細かくする純関数.
+ *
+ * 隣接点の距離が maxSegM を超える区間に、 全数値フィールドを線形補間した中間点を
+ * 挿入する。 bike は前後に長い剛体なので、 course (折れ線) が粗いと折れ目で前後輪が
+ * コース面からずれる ── 点を細かくすると折れ線が曲線に近づき、 接地のずれが構造的に
+ * 減る。 元の点は必ず残し、 粗い区間だけ分割する (既に細かい区間は変えない)。
+ *
+ * @param {Array<{distance_m:number}>} course - course 点列 (distance_m 必須)
+ * @param {number} maxSegM - この距離 (m) を超える区間を分割する
+ * @returns {Array<object>} 再サンプリング済 course (元の length 以上)
+ */
+export function resampleCourse(course, maxSegM) {
+  if (!Array.isArray(course) || course.length < 2 || !(maxSegM > 0)) {
+    return course;
+  }
+  const out = [course[0]];
+  for (let i = 1; i < course.length; i += 1) {
+    const a = course[i - 1], b = course[i];
+    const segM = (b.distance_m || 0) - (a.distance_m || 0);
+    const splits = segM > maxSegM ? Math.ceil(segM / maxSegM) : 1;
+    // 区間を splits 等分し、 中間点 (s=1..splits-1) を補間で挿入。 終点 b は必ず push。
+    for (let s = 1; s < splits; s += 1) {
+      const t = s / splits;
+      const mid = {};
+      for (const key of Object.keys(b)) {
+        const av = a[key], bv = b[key];
+        mid[key] = (typeof av === 'number' && typeof bv === 'number')
+          ? av + (bv - av) * t
+          : bv;
+      }
+      out.push(mid);
+    }
+    out.push(b);
+  }
+  return out;
+}

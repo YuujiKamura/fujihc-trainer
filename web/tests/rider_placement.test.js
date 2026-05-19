@@ -5,7 +5,7 @@
 // 委ね、 ここでは純粋なデータ変換 (リボン頂点 + course 距離 → 配置) だけを検証する。
 
 import { describe, it, expect } from 'vitest';
-import { ribbonCenterAt, riderPlacementAtDistance } from '../lib/rider_placement.js';
+import { ribbonCenterAt, riderPlacementAtDistance, resampleCourse } from '../lib/rider_placement.js';
 
 // course 点 i ごとに 左端(2i) / 右端(2i+1)、 各 3 float。
 // 点0: 左(0,10,0) 右(4,10,0) → 中心 (2,10,0)
@@ -141,5 +141,51 @@ describe('riderPlacementAtDistance', () => {
   it('forward3d が単位ベクトル (= 3D 正規化漏れを検出)', () => {
     const p = riderPlacementAtDistance(ribbon, course, 12);  // 登り区間
     expect(Math.hypot(p.forward3d[0], p.forward3d[1], p.forward3d[2])).toBeCloseTo(1, 9);
+  });
+});
+
+// === resampleCourse ===
+
+describe('resampleCourse', () => {
+  it('maxSegM 超の区間に中間点を挿入する (= 粗い折れ線を細かくする)', () => {
+    const c = [{ distance_m: 0 }, { distance_m: 40 }];  // 1 区間 40m
+    const out = resampleCourse(c, 10);
+    // 40m を 10m 以下へ → 4 分割 → 始点 + 中間 3 + 終点 = 5 点
+    expect(out.length).toBe(5);
+    expect(out[0].distance_m).toBe(0);
+    expect(out[out.length - 1].distance_m).toBe(40);
+  });
+
+  it('挿入点は数値フィールドを線形補間する (= lat/lon/勾配がワープしないのを検出)', () => {
+    const c = [
+      { distance_m: 0, lat: 35.0, slope_pct: 4 },
+      { distance_m: 20, lat: 35.2, slope_pct: 8 },
+    ];
+    const out = resampleCourse(c, 10);  // 20m → 2 分割 → 中間 1 点 (t=0.5)
+    expect(out.length).toBe(3);
+    expect(out[1].distance_m).toBeCloseTo(10, 9);
+    expect(out[1].lat).toBeCloseTo(35.1, 9);
+    expect(out[1].slope_pct).toBeCloseTo(6, 9);
+  });
+
+  it('既に細かい区間は分割しない (= 元が密なら no-op)', () => {
+    const c = [{ distance_m: 0 }, { distance_m: 5 }, { distance_m: 10 }];
+    const out = resampleCourse(c, 8);  // 各区間 5m < 8m → 分割なし
+    expect(out.length).toBe(3);
+  });
+
+  it('元の点はすべて残る (= 再サンプリングで course 点を失わない)', () => {
+    const c = [{ distance_m: 0 }, { distance_m: 30 }, { distance_m: 50 }];
+    const out = resampleCourse(c, 10);
+    for (const orig of c) {
+      expect(out.some((p) => p.distance_m === orig.distance_m)).toBe(true);
+    }
+  });
+
+  it('course 2 点未満 / maxSegM 不正 はそのまま返す (= 防御)', () => {
+    const one = [{ distance_m: 0 }];
+    expect(resampleCourse(one, 10)).toBe(one);
+    const c = [{ distance_m: 0 }, { distance_m: 10 }];
+    expect(resampleCourse(c, 0)).toBe(c);
   });
 });
