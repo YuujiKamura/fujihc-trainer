@@ -49,7 +49,7 @@ describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', ()
 
   it('viewer-maplibre.js: tick の atGoal 分岐で sendRideEnd + rideState.end を呼ぶ', () => {
     const viewer = readFileSync(VIEWER_PATH, 'utf8');
-    // tick 末尾の atGoal else 分岐で sendRideEnd と rideState.end が呼ばれる
+    // tick 末尾の atGoal 分岐で sendRideEnd と rideState.end が呼ばれる
     expect(viewer).toMatch(/rider\.atGoal[\s\S]{0,400}sendRideEnd/);
     expect(viewer).toMatch(/rider\.atGoal[\s\S]{0,400}rideState\.end/);
   });
@@ -59,7 +59,9 @@ describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', ()
     // _autoEnded で gate して 1 回限り発火、 ride 開始時に reset
     expect(viewer).toMatch(/_autoEnded\s*=\s*true/);  // 完走時 set
     expect(viewer).toMatch(/_autoEnded\s*=\s*false/); // ride 開始時 reset
-    expect(viewer).toMatch(/if\s*\(\s*!_autoEnded\s*\)/);  // gate 条件
+    // gate 条件 ── !_autoEnded を含む if 条件 (= 完走自動終了を 1 回限りに絞る)。
+    // 条件式が `!_autoEnded` 単独でも `rider.atGoal && !_autoEnded` でも一致する。
+    expect(viewer).toMatch(/if\s*\([^)]*!_autoEnded[^)]*\)/);
   });
 
   it('viewer-maplibre.js: startRideConfirmed で _autoEnded をリセット (= 2 回目 ride も自動完走)', () => {

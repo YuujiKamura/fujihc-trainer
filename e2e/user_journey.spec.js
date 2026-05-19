@@ -132,3 +132,40 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
   expect(saved.trkptN, '保存された走行ログの点数').toBeGreaterThan(0);
   expect(saved.durS, '保存された走行時間(秒)').toBeGreaterThan(0);
 });
+
+test('ゴール到達: viewer が固まらず、ライドが履歴に保存され閲覧できる', async ({ page }) => {
+  // ?test=1 でライド自動開始 + ?seekgoal で viewer が rider をコース終端へ自動で
+  // 飛ばす (= 実時間 24km 走らずゴール到達を作る、 TEST_MODE 限定)。
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev&seekgoal=1`);
+  await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+  // 自動シークでゴール (rider.atGoal) に到達するまで待つ。
+  await page.waitForFunction(() => window.__goalTest?.info?.atGoal === true, { timeout: 20_000 });
+
+  // ゴール到達後も描画ループ (tick の requestAnimationFrame) が回り続けている =
+  // viewer が固まっていない。 これがこのテストの主眼。
+  // 旧バグ: tick がゴールで requestAnimationFrame を再予約せず、ループがそこで死んでいた。
+  await page.waitForTimeout(400);
+  const f1 = await page.evaluate(() => window.__goalTest.frames);
+  await page.waitForTimeout(800);
+  const f2 = await page.evaluate(() => window.__goalTest.frames);
+  expect(f2 - f1, 'ゴール後も描画ループが回り続けている (= viewer が固まっていない)').toBeGreaterThan(10);
+
+  // ゴール後は ride が非アクティブなので trkpt 蓄積は止まる ── ループが回り続けても
+  // 完走後の履歴データ (lat/lon/power/hr) が IndexedDB へ増え続けないことを pin する。
+  const trk1 = await page.evaluate(() => window.__goalTest.info.trkpts);
+  await page.waitForTimeout(1500);
+  const trk2 = await page.evaluate(() => window.__goalTest.info.trkpts);
+  expect(trk2, 'ゴール後は trkpt 蓄積が止まる (= 完走後に履歴データが増え続けない)').toBe(trk1);
+
+  // 完走 → 既存の自動終了経路で postride オーバーレイが出る。
+  await expect(page.locator('#postride-overlay')).toHaveClass(/visible/, { timeout: 10_000 });
+
+  // 「履歴に保存」→ 保存完了の status が出る。
+  await page.locator('#btnSaveHistory').click();
+  await expect(page.locator('#postride-upload-status')).toContainText('履歴に保存', { timeout: 5_000 });
+
+  // 「履歴を見る」→ 履歴画面に遷移し、 保存したライドが 1 件出ている。
+  await page.locator('#btnViewHistory').click();
+  await expect(page.locator('body')).toHaveClass(/state-history/, { timeout: 5_000 });
+  await expect(page.locator('#history-list li')).toHaveCount(1, { timeout: 5_000 });
+});

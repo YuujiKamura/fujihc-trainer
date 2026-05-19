@@ -2014,7 +2014,15 @@ function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
 
 function tick(t) {
   const dt = (t - lastT) / 1000; lastT = t;
+  _tickCount++;  // 描画ループ生存カウンタ (= TEST_MODE で window.__goalTest.frames から観測)。
   if (!rider || !rideState) { requestAnimationFrame(tick); return; }
+  // TEST_MODE 限定 ?seekgoal: ride が active になった最初のフレームで rider を
+  // コース終端へ 1 度だけ飛ばす。 placeAtDistance は clampDist 経由なので、 大きな
+  // 有限値はコース終端 (totalDistance) ちょうどに丸められ atGoal が成立する。
+  if (_seekGoalPending && rider.active) {
+    _seekGoalPending = false;
+    rider.placeAtDistance(1e9);
+  }
 
   // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
   // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
@@ -2179,22 +2187,47 @@ function tick(t) {
   // b12 Phase 2.5: 1 フレーム描画を地図描画モジュールに頼む。 MapLibre は状態変化で
   // 自動再描画するため現状は no-op、 Three.js 実装ではここで scene を描く。
   mapRenderer.render();
-  if (!rider.atGoal) {
-    requestAnimationFrame(tick);
-  } else {
-    // 2026-05-15 fix: 完走時に手動で「ライド終了」 button を押さないと postride に
-    // 行けない bug を解消。 atGoal 到達で 1 度だけ自動的に rideState.end + sendRideEnd
-    // (= btnRideEnd の click と同経路) を発火、 ride_status('ended') → showPostride。
-    // _autoEnded flag で再発火を防止 (= ride 再開しない限り 2 回目は呼ばない).
+  // 2026-05-15 fix: 完走時に手動で「ライド終了」 button を押さないと postride に
+  // 行けない bug を解消。 atGoal 到達で 1 度だけ自動的に rideState.end + sendRideEnd
+  // (= btnRideEnd の click と同経路) を発火、 ride_status('ended') → showPostride。
+  // _autoEnded flag で再発火を防止 (= ride 再開しない限り 2 回目は呼ばない).
+  if (rider.atGoal && !_autoEnded) {
     status('完走');
-    if (!_autoEnded) {
-      _autoEnded = true;
-      if (rideState) rideState.end();
-      if (client && client.isOpen()) client.sendRideEnd();
-    }
+    _autoEnded = true;
+    if (rideState) rideState.end();
+    if (client && client.isOpen()) client.sendRideEnd();
   }
+  // ゴール到達後もループを止めない。 過去はここで atGoal の時 requestAnimationFrame を
+  // 呼ばず、 viewer 全体 (カメラ操作・HUD・描画) が固まりリロードしか復帰手段が
+  // 無かった。 ride は上で rideState.end() 済 (非アクティブ) なので、 trkpt 蓄積と
+  // autosave は tick 冒頭の snap.active ゲートで自然に止まり、 ゴール後にループが
+  // 回り続けても永続データへの書き込みは増えない。
+  requestAnimationFrame(tick);
 }
 let _autoEnded = false;
+let _tickCount = 0;  // tick 呼び出し回数。 描画ループが生きているかの観測点。
+// TEST_MODE 限定 ?seekgoal: ride が active になった最初のフレームで rider をコース
+// 終端へ 1 度だけ飛ばす (= e2e / desk_capture が実時間 24km 走らずゴール到達を作る)。
+let _seekGoalPending = TEST_MODE && new URLSearchParams(location.search).has('seekgoal');
+
+// TEST_MODE 限定: e2e ジャーニーテストが描画ループの生存・ride 状態を観測するための
+// フック。 本番経路 (TEST_MODE=false) では定義されない。
+if (TEST_MODE) {
+  window.__goalTest = {
+    // tick が回るたび増える ── ゴール後も増え続ければ「固まっていない」。
+    get frames() { return _tickCount; },
+    get info() {
+      if (!rider) return null;
+      return {
+        atGoal: rider.atGoal,
+        dist: rider.distanceTraveled,
+        viewerTotalDist: totalDist,
+        active: rider.active,
+        trkpts: rider.getTrkpts().length,
+      };
+    },
+  };
+}
 
 // ボタン bind
 document.getElementById('btnPause').addEventListener('click', () => { if (rideState) rideState.togglePause(); });
