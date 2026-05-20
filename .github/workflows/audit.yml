@@ -28,6 +28,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install python deps (= pytest + pyproject.toml [project] deps)
+        run: |
+          pip install -e .
+          pip install pytest
+
       - name: Run audit_history.sh (= hook regex 二重 gate)
         run: bash scripts/audit_history.sh
 
@@ -38,6 +43,4 @@ jobs:
         run: python -m pytest tests/test_pre_commit_hook.py tests/test_pre_push_hook.py -v
 
       - name: Run build_pages.py 単体テスト
-        run: |
-          pip install -e .
-          python -m pytest tests/test_build_pages.py -v
+        run: python -m pytest tests/test_build_pages.py -v
