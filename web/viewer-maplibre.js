@@ -70,7 +70,11 @@ import {
 // brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
-import { createTerrainLoader } from './lib/terrain_loader.js';
+// b31: GSI_DEM_DIRECT_BASE constant は terrain_loader.js 側で定義、 viewer 本体には
+// URL literal を書かない (= viewer_url_audit.test.js 単体 scan に対し GSI URL 出現ゼロ維持)。
+import { createTerrainLoader, GSI_DEM_DIRECT_BASE } from './lib/terrain_loader.js';
+// b31: TileCache (= IndexedDB) を startTerrainProbe に DI、 TTL 90 日内は GSI 取得ゼロ。
+import { openTileCache } from './lib/tile_cache.js';
 // b13-1: 機器設定パネルの共通スライダー機構
 import { mountControlPanel } from './lib/control_panel.js';
 
@@ -1384,6 +1388,11 @@ if (typeof document !== 'undefined') {
 // 物理 URL は static / bridge どちらでも構築できる (= location.origin + BASE_PATH 経由).
 // ここで bridge 判定を避けて static 側 URL で probe する (= bridge mode でも /tiles/gsi_dem は
 // 同じ位置に存在、 失敗したら failed 状態で UI 表示).
+//
+// b31: Pages 環境 (= bridge.py 不在 + 同梱 tile 不在) でも probe が PASS するように、
+// GSI dem direct base を渡して bridge fetch 失敗時に GSI direct fetch + TileCache 保存に
+// fall back する経路を追加。 TileCache (= IndexedDB) hit 時は GSI への通信ゼロ (= TTL 90 日)。
+// 既存 bridge mode (= localhost 開発) は gsiTileBaseUrl 経由が先に試行されるので無変更挙動。
 function startTerrainProbe() {
   if (typeof document === 'undefined') return null;
   // bridge / static は起動時点で判別困難 (= checkSetupStatus は async).
@@ -1393,7 +1402,17 @@ function startTerrainProbe() {
   const courseUrl = `${BASE_PATH}static/course.json`;
   const pmtilesUrl = `${BASE_PATH}static/map.pmtiles`;
   const gsiTileBaseUrl = `${BASE_PATH}static/tiles/gsi_dem`;
-  const loader = createTerrainLoader({ courseUrl, pmtilesUrl, gsiTileBaseUrl });
+  // b31: GSI direct base は terrain_loader.js が SoT (= GSI_DEM_DIRECT_BASE export)、
+  // viewer 本体に URL literal を書かない (= 既存 viewer_url_audit.test.js の GSI 直叩き禁止 audit
+  // を本体 source に対し継続 PASS させる、 PROJECT-README L116 の方針)。
+  // TileCache は async 取得、 失敗時は null fallback (= IndexedDB 使えない環境でも probe は動く)。
+  // Promise を直接 cfg.tileCache に渡す (= terrain_loader 内で await する設計、 起動を block しない)。
+  const tileCachePromise = openTileCache().catch(() => null);
+  const loader = createTerrainLoader({
+    courseUrl, pmtilesUrl, gsiTileBaseUrl,
+    gsiDirectBase: GSI_DEM_DIRECT_BASE,
+    tileCache: tileCachePromise,
+  });
   loader.subscribe((snap) => {
     setTerrainStatusUI(snap);
     updateTerrainStep(snap.phase);

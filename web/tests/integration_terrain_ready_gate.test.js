@@ -229,13 +229,16 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     expect(viewer).toMatch(/_terrainLoader\s*=\s*startTerrainProbe\(\)/);
   });
 
-  it('startTerrainProbe は static path (= ${BASE_PATH}static/*) を probe する (= 外部 fetch 追加なし)', () => {
+  it('startTerrainProbe は bridge prefix + GSI_DEM_DIRECT_BASE + TileCache を渡す (= b31 経路差し替え)', () => {
     const m = viewer.match(/function\s+startTerrainProbe\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
     expect(body).toMatch(/static\/course\.json/);
     expect(body).toMatch(/static\/map\.pmtiles/);
-    expect(body).toMatch(/static\/tiles\/gsi_dem/);
+    expect(body).toMatch(/static\/tiles\/gsi_dem/);   // bridge mode prefix 維持
+    // b31: GSI direct base const + TileCache DI が startTerrainProbe 内で組まれる
+    expect(body).toMatch(/GSI_DEM_DIRECT_BASE/);      // GSI direct base const 参照 (= literal は terrain_loader.js)
+    expect(body).toMatch(/openTileCache/);             // TileCache を Promise として cfg.tileCache へ渡す
   });
 
   it('updateTerrainStep 関数が phase で step-terrain の class を切替える (= done/active/failed)', () => {

@@ -321,6 +321,60 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
 // に集約。 旧 buildMinimapBase / loadOsmTile が viewer に存在し、 #minimap-top が canvas であり、
 // brief 28 の initMinimapMap / buildMapStyle が viewer に存在しないことを minimap_osm_direct で pin。
 
+// b31: terrain 経路の GSI dem 許可と物理 gate (= viewer-maplibre.js 単体 scan の scope 外、
+// lib 側 source を別途 grep)。 既存 describe (= brief 17b の viewer 単体 GSI 直叩き禁止) は
+// 無改変で継続 pin、 本 describe は lib 側で GSI dem direct 経路を許可することと、
+// CLAUDE.md §地図タイル配布元への配慮 の物理 gate (= FETCH_LIMIT / MAX_TILES / seamlessphoto 固定)
+// が tile_loader3d.js source に居続けることを pin する。
+describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
+  const viewer = readFileSync(VIEWER_PATH, 'utf8');
+  const terrainLoader = readFileSync(resolve(__dirname, '..', 'lib', 'terrain_loader.js'), 'utf8');
+  const tileLoader3d = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'tile_loader3d.js'), 'utf8');
+  const map3dIndex = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'index.js'), 'utf8');
+
+  it('terrain_loader.js が GSI_DEM_DIRECT_BASE を export (= cyberjapandata.gsi.go.jp/xyz/dem の SoT)', () => {
+    expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem['"]/);
+  });
+
+  it('viewer 本体 (viewer-maplibre.js) には GSI URL literal を書かず const import 経由 (= 既存 audit 互換)', () => {
+    // viewer-maplibre.js 本体には GSI URL literal が出現してはならない (= 既存 L46-48 で pin 済)
+    // 本 test は補助的に「viewer は GSI_DEM_DIRECT_BASE を import している」 を pin する
+    expect(viewer).toMatch(/import\s+\{[^}]*GSI_DEM_DIRECT_BASE[^}]*\}\s+from\s+['"]\.\/lib\/terrain_loader\.js['"]/);
+  });
+
+  it('map3d/index.js も GSI_DEM_DIRECT_BASE を const import 経由で受ける (= literal 散在ゼロ)', () => {
+    expect(map3dIndex).toMatch(/import\s+\{[^}]*GSI_DEM_DIRECT_BASE[^}]*\}\s+from\s+['"]\.\.\/terrain_loader\.js['"]/);
+    // map3d/index.js 内に GSI URL literal が直接出現しない (= SoT を 1 箇所に集約)
+    expect(map3dIndex).not.toMatch(/['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem['"]/);
+  });
+
+  it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=200 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在', () => {
+    expect(tileLoader3d).toMatch(/export\s+const\s+GSI_FETCH_LIMIT\s*=\s*6/);
+    expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*200/);
+    expect(tileLoader3d).toMatch(/GSI_SEAMLESSPHOTO_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/seamlessphoto['"]/);
+  });
+
+  it('terrain_loader.js は cfg.tileCache + cfg.gsiDirectBase を受け取れる shape (= b31 chain DI)', () => {
+    expect(terrainLoader).toMatch(/cfg\.tileCache/);
+    expect(terrainLoader).toMatch(/cfg\.gsiDirectBase/);
+  });
+
+  it('terrain_loader.js / tile_loader3d.js 内に #attrib / maplibregl-ctrl-attrib literal が存在しない (= 出典機構の責務分離維持)', () => {
+    // 出典機構は index.html の static #attrib + viewer-maplibre.js の verifyAttributionVisible()
+    // 本 lib 側に出典 DOM 識別子が出現すると責務分離が壊れる
+    expect(terrainLoader).not.toMatch(/['"]#attrib['"]/);
+    expect(terrainLoader).not.toMatch(/maplibregl-ctrl-attrib/);
+    expect(tileLoader3d).not.toMatch(/['"]#attrib['"]/);
+    expect(tileLoader3d).not.toMatch(/maplibregl-ctrl-attrib/);
+  });
+
+  it('loadDemStitched は tileCache + gsiDirectBase 引数を受ける (= seamlessphoto と同パターン)', () => {
+    // loadDemStitched({ bounds, tileCache, gsiDirectBase, onProgress }) signature を pin
+    expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*tileCache[^}]*\}/);
+    expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*gsiDirectBase[^}]*\}/);
+  });
+});
+
 // brief 31: GitHub Pages 静的サイト化に伴う外部 URL gate の拡張。
 // pmtiles の CDN 経由化は NG-R3-7 / NG-R1-15 と境界が曖昧になるため block。
 describe('brief 31: 外部 fetch ゼロ規律の拡張 (= pmtiles CDN 経由 block)', () => {

@@ -113,25 +113,64 @@ function imageToHeightGrid(img) {
 /**
  * コース外接 bbox から DEM タイル群を取得し、 範囲全体の連続標高グリッドを返す.
  *
- * 取得元は bridge のローカル DB 一本 (= GSI online への外部 fallback は持たない)。
+ * b31: seamlessphoto と同パターンに揃え、 bridge mode (= demBaseUrl) → GSI direct fallback
+ * → TileCache hit/miss/set の chain を経由するように拡張。 既存呼出 (= tileCache / gsiDirectBase
+ * 未指定) は bridge fetch 1 回の挙動を維持 (= backward compat)。
+ *
  * range.count が MAX_TILES を超えたら地形を組まずに RangeError を投げる (= 規約配慮の gate)。
  *
- * @param {{bounds:[number,number,number,number], onProgress?:(done:number,total:number)=>void}} args
- *   bounds = [west, south, east, north] (度)。 courseBounds() の戻り値を渡す。
+ * @param {object} args
+ * @param {[number,number,number,number]} args.bounds - [west, south, east, north] (度)。 courseBounds() の戻り値を渡す。
+ * @param {object|null} [args.tileCache] - b31: TileCache instance (= openTileCache() の戻り)。
+ *                                          null/undefined なら hit/set を skip (= 既存挙動)。
+ * @param {string} [args.gsiDirectBase] - b31: GSI direct base (= 'https://cyberjapandata.gsi.go.jp/xyz/dem')。
+ *                                         未指定なら bridge fetch のみ (= 既存挙動)。
+ * @param {(done:number,total:number)=>void} [args.onProgress]
  * @returns {Promise<{stitched:{grid:Float32Array,width:number,height:number},
  *                     range:object, missing:number}>}
  */
-export async function loadDemStitched({ bounds, onProgress }) {
+export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProgress }) {
   const range = tileRangeForBounds(bounds, DEM_ZOOM);
   if (range.count > MAX_TILES) {
     throw new RangeError(
       `DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
   }
   const coords = tileCoordsForRange(range);
-  const base = demBaseUrl();
+  const bridgeBase = demBaseUrl();
   const grids = await mapLimit(coords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    const img = await loadImage(`${base}/${DEM_ZOOM}/${tx}/${ty}.png`);
-    return { tx, ty, grid: img ? imageToHeightGrid(img) : null };
+    // 1. TileCache hit → Bitmap decode → grid (= GSI / bridge への通信ゼロ)
+    if (tileCache) {
+      try {
+        const bytes = await tileCache.get('dem_png', DEM_ZOOM, tx, ty);
+        if (bytes) {
+          const bitmap = await bytesToBitmap(bytes);
+          if (bitmap) {
+            const grid = bitmapToHeightGrid(bitmap);
+            bitmap.close();
+            return { tx, ty, grid };
+          }
+        }
+      } catch { /* cache 失敗は silent skip、 fetch chain にfall back */ }
+    }
+    // 2. bridge fetch (= demBaseUrl = `${origin}/tiles/gsi_dem`)
+    const bridgeResult = await tryFetchDemTile(`${bridgeBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
+    if (bridgeResult.grid) {
+      if (tileCache && bridgeResult.bytes) {
+        try { await tileCache.set('dem_png', DEM_ZOOM, tx, ty, bridgeResult.bytes); } catch {}
+      }
+      return { tx, ty, grid: bridgeResult.grid };
+    }
+    // 3. GSI direct fetch (= static mode、 Pages 環境)
+    if (gsiDirectBase) {
+      const directResult = await tryFetchDemTile(`${gsiDirectBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
+      if (directResult.grid) {
+        if (tileCache && directResult.bytes) {
+          try { await tileCache.set('dem_png', DEM_ZOOM, tx, ty, directResult.bytes); } catch {}
+        }
+        return { tx, ty, grid: directResult.grid };
+      }
+    }
+    return { tx, ty, grid: null };
   }, onProgress);
 
   const tileMap = new Map();
@@ -141,10 +180,41 @@ export async function loadDemStitched({ bounds, onProgress }) {
     else missing++;
   }
   if (tileMap.size === 0) {
-    throw new Error('DEM タイルが 1 枚も取得できませんでした (= bridge / ネットワークを確認)');
+    throw new Error('DEM タイルが 1 枚も取得できませんでした (= bridge / GSI / ネットワークを確認)');
   }
   const stitched = stitchHeightGrid(tileMap, range, TILE_PX);
   return { stitched, range, missing };
+}
+
+// b31: DEM tile 1 枚 fetch → bytes + grid を返す helper.
+// fetch / decode 失敗は { grid: null } を返す (= 欠損扱い、 stitchHeightGrid 側で 0m 補完)。
+// bytes も grid と一緒に返すので、 fetch 成功時は TileCache に persist できる。
+async function tryFetchDemTile(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return { grid: null, bytes: null };
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    const bitmap = await bytesToBitmap(bytes);
+    if (!bitmap) return { grid: null, bytes: null };
+    const grid = bitmapToHeightGrid(bitmap);
+    bitmap.close();
+    return { grid, bytes };
+  } catch {
+    return { grid: null, bytes: null };
+  }
+}
+
+// b31: ImageBitmap → Canvas → RGBA → decodeGsiHeightGrid の 1 経路。
+// 既存 imageToHeightGrid は HTMLImageElement 用、 createImageBitmap 由来の Bitmap も
+// drawImage 可能なので同じ canvas decode で grid に変換できる。
+function bitmapToHeightGrid(bitmap) {
+  const c = document.createElement('canvas');
+  c.width = TILE_PX;
+  c.height = TILE_PX;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0, TILE_PX, TILE_PX);
+  const rgba = ctx.getImageData(0, 0, TILE_PX, TILE_PX).data;
+  return decodeGsiHeightGrid(rgba, TILE_PX, TILE_PX);
 }
 
 // 取得済みの JPEG バイト列を ImageBitmap に decode する。

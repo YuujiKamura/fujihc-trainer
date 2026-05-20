@@ -30,6 +30,10 @@ import { buildGradeColoredRoadPolygons } from '../road_polygon.js';
 import { computeTravelHeading } from '../heading.js';
 import { resampleCourse } from '../rider_placement.js';
 import { openTileCache } from '../tile_cache.js';
+// b31: GSI dem direct base は terrain_loader.js 側で定義 (= literal を本体に書かない、
+// viewer_url_audit.test.js が viewer-maplibre.js 単体 scan する scope と整合させる用 ── 本 file は
+// scan 対象外だが、 source-of-truth を 1 箇所に集約しておくことで dead URL constant の散在を避ける)。
+import { GSI_DEM_DIRECT_BASE } from '../terrain_loader.js';
 
 // 緯度 1 度あたりのメートル (= terrain3d.js と同値)。
 const M_PER_DEG_LAT = 111320;
@@ -250,7 +254,12 @@ export function createMapRenderer() {
               + '(E>=W, N>=S) が必要。 受領: ' + JSON.stringify(opts.dbBounds));
           }
           const tileCache = await openTileCache().catch(() => null);
-          const dem = await loadDemStitched({ bounds: opts.dbBounds });
+          // b31: DEM 経路を seamlessphoto と同パターンに揃える ── bridge mode (= ${origin}/tiles/gsi_dem)
+          // → GSI direct fallback (= GSI_DEM_DIRECT_BASE) → TileCache hit/set。
+          // 既存呼出 (= tileCache / gsiDirectBase 引数なし) は bridge fetch のみで挙動不変。
+          const dem = await loadDemStitched({
+            bounds: opts.dbBounds, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
+          });
           stitched = dem.stitched;
           range = dem.range;
 
