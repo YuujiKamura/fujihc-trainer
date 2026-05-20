@@ -1,0 +1,242 @@
+// brief b31: 配布元負荷の実走テスト (= 2026-05-20 user 確定「配布元に迷惑をかけない
+// テストを相応に手厚く整備しないと公開できない水準になる恐れがある」 反映)。
+//
+// unit / integration の「定数存在 + chain 動作」だけでは、 訪問者の実際のアクセスで
+// 配布元 (= 国土地理院 GSI / OSM) への通信が規律内に収まっているかが verify できない。
+// playwright で訪問者シナリオを走らせ、 page.route で配布元通信を intercept して
+// 実測パターンを assert する。
+//
+// 「Pages 環境 simulate」: bridge 経由 (= `${origin}/tiles/gsi_dem/**`) と 同梱経由
+// (= `${origin}/static/tiles/gsi_dem/**`) を route で 404 にし、 GSI direct fetch
+// (= cyberjapandata.gsi.go.jp/xyz/dem) を強制発火させる。 bridge.py が立っていても
+// route intercept が優先されるので、 既存 playwright.config.js を維持したまま動く。
+//
+// ジャーニーテスト規律 (= 2026-05-19 user 確立): 個別 assertion ではなく訪問者導線を
+// 1 本通す + 真正性 (= IndexedDB 保存中身) で verify。 各 test 内で「観るモード state
+// 到達 + body.mode-view 確認」 を共通ジャーニーとし、 配布元通信の実測を真正性 verify
+// として読む。
+
+import { test, expect } from '@playwright/test';
+import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
+
+const VIEWER_URL = 'http://127.0.0.1:8000/';
+const GSI_ORIGIN = 'https://cyberjapandata.gsi.go.jp';
+const OSM_ORIGIN = 'https://tile.openstreetmap.org';
+
+// 1x1 transparent PNG (= base64 decode、 dem_png として decode 可能な最小 valid PNG)。
+// 中身は全 0 で標高情報を持たないが、 fetch 経路と TileCache 保存経路の verify が目的なので OK。
+const VALID_PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+// GSI への通信を intercept、 fetched URL と同時接続 peak を記録。
+// 全 URL に対して valid PNG を返す (= viewer が decode に成功して probe done に進める)。
+async function setupGsiIntercept(page) {
+  const fetchedUrls = [];
+  let currentConcurrent = 0;
+  let concurrentMax = 0;
+  await page.route(`${GSI_ORIGIN}/**`, async (route) => {
+    fetchedUrls.push(route.request().url());
+    currentConcurrent += 1;
+    concurrentMax = Math.max(concurrentMax, currentConcurrent);
+    // 同時接続を実測するため小さな delay を入れる (= 即時 fulfill だと並列 peak が観測しにくい)
+    await new Promise((r) => setTimeout(r, 20));
+    await route.fulfill({ status: 200, contentType: 'image/png', body: VALID_PNG_BYTES });
+    currentConcurrent -= 1;
+  });
+  return {
+    get fetchedUrls() { return fetchedUrls; },
+    get concurrentMax() { return concurrentMax; },
+  };
+}
+
+// bridge 経路と同梱経路を 404 にして Pages 環境 (= bridge.py 不在 + 同梱不在) を simulate する。
+// これで terrain_loader.js の chain が「bridge fail → GSI direct fetch」 経路に進む。
+async function simulatePagesNoBridge(page) {
+  // 同梱経路 (= `${BASE_PATH}static/tiles/gsi_dem/**`) を 404
+  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, async (route) => {
+    await route.fulfill({ status: 404 });
+  });
+  // bridge mode 経路 (= `${origin}/tiles/gsi_dem/**`) を 404
+  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, async (route) => {
+    await route.fulfill({ status: 404 });
+  });
+}
+
+// OSM への直接通信を intercept (= 期待値ゼロ)。 fetched URL が 1 件でも出れば ODbL 違反。
+async function setupOsmIntercept(page) {
+  const fetchedUrls = [];
+  await page.route(`${OSM_ORIGIN}/**`, async (route) => {
+    fetchedUrls.push(route.request().url());
+    await route.fulfill({ status: 200, contentType: 'image/png', body: VALID_PNG_BYTES });
+  });
+  return { get fetchedUrls() { return fetchedUrls; } };
+}
+
+// view モード consent を localStorage に seed (= 観るモードに直行、 BLE 系を経由しない)。
+async function seedViewMode(page) {
+  await page.addInitScript(({ key, hash }) => {
+    localStorage.setItem(key, JSON.stringify({
+      hash, accepted_at: '2026-01-01T00:00:00Z', mode: 'view',
+    }));
+  }, { key: INTRO_CONSENT_LS_KEY, hash: INTRO_CONSENT_HASH });
+}
+
+// IndexedDB の TileCache (= fujihc-tile-cache) を test 開始時に空にする。
+// page.context().clearCookies() は IndexedDB を消さない、 各 test 独立性のため明示削除する。
+// 注意: addInitScript で削除すると page.reload でも再発火し cache が消える ── 再訪 test では
+// addInitScript ではなく 1 回目 page.goto 前に context evaluate で 1 度だけ削除する。
+async function clearTileCacheOnce(page) {
+  // 空 page に goto して IndexedDB を削除 (= 同 origin 上で削除しないと効かない)
+  await page.goto(`${VIEWER_URL}index.html`, { waitUntil: 'commit' });
+  await page.evaluate(() => new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase('fujihc-tile-cache');
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();  // 存在しない場合も継続
+    req.onblocked = () => resolve();
+  }));
+}
+
+test.describe('b31: 配布元負荷の実走テスト', () => {
+  // 各 test 完全独立 (= 1 件目の TileCache 保存が 2 件目に漏れない)。
+  // Playwright は test 単位で fresh context を作るので addInitScript で
+  // indexedDB.deleteDatabase を最初に発火させる。
+
+  test('初回訪問: 観るモードで GSI dem 取得が MAX_TILES = 200 以下', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    // 観るモード state まで到達 = 地形 probe + viewer 起動が完了している証拠
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    // 地形メッシュ load 完了まで余裕を持って待つ (= loadDemStitched + loadPhotoCanvas の取得分)
+    await page.waitForTimeout(5000);
+    // dem への通信のみカウント (= seamlessphoto は別 layer で許容、 brief は dem に絞ってない
+    // が、 配布元規律の MAX_TILES=200 は同一 source に対する制約として広く取る)
+    const totalFetches = gsi.fetchedUrls.length;
+    console.log(`[b31-budget] GSI total fetch count = ${totalFetches}`);
+    expect(totalFetches).toBeLessThanOrEqual(200);
+    expect(totalFetches).toBeGreaterThan(0);  // 取得が走った証拠 (= chain 経路 verify)
+  });
+
+  test('初回訪問: GSI への同時接続が GSI_FETCH_LIMIT = 6 以下', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForTimeout(5000);
+    console.log(`[b31-budget] GSI concurrent max = ${gsi.concurrentMax}`);
+    expect(gsi.concurrentMax).toBeLessThanOrEqual(6);
+    expect(gsi.concurrentMax).toBeGreaterThan(0);  // 並列取得が実走した証拠
+  });
+
+  test('再訪: 1 回目で TileCache 保存後、 2 回目アクセスで GSI fetch ゼロ', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    // 1 回目 = TileCache 空、 GSI から取得して IndexedDB に保存
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForTimeout(5000);
+    const firstFetchCount = gsi.fetchedUrls.length;
+    expect(firstFetchCount).toBeGreaterThan(0);
+
+    // 2 回目 = page.reload (= 同 origin、 IndexedDB は永続)
+    // 再 fetch がゼロなら TTL 内 cache hit が効いている (= 配布元への再アクセスなし)
+    await page.reload();
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForTimeout(5000);
+    const totalAfterReload = gsi.fetchedUrls.length;
+    const deltaFetches = totalAfterReload - firstFetchCount;
+    console.log(`[b31-budget] 1st=${firstFetchCount}, after reload=${totalAfterReload}, delta=${deltaFetches}`);
+    expect(deltaFetches).toBe(0);  // 2 回目で GSI fetch ゼロ = TTL hit
+  });
+
+  test('seamlessphoto 以外の photo layer (= std / relief / hybrid) に fetch 発火ゼロ', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForTimeout(5000);
+    const banned = gsi.fetchedUrls.filter((u) =>
+      u.includes('/xyz/std/')
+      || u.includes('/xyz/relief/')
+      || u.includes('/xyz/hybrid/'),
+    );
+    console.log(`[b31-budget] banned-layer fetches = ${banned.length}`);
+    expect(banned).toEqual([]);
+  });
+
+  test('OSM tile.openstreetmap.org への直接アクセスがゼロ (= ODbL 経路維持)', async ({ page }) => {
+    await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    const osm = await setupOsmIntercept(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForTimeout(5000);
+    console.log(`[b31-budget] OSM direct fetches = ${osm.fetchedUrls.length}`);
+    expect(osm.fetchedUrls).toEqual([]);
+  });
+
+  test('出典標記 #attrib が訪問者の最初の viewer 画面で常時可視 (= 国土地理院 + OpenStreetMap)', async ({ page }) => {
+    await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    // task-g Round 2 で landed の `#attrib` 要素、 z-index 2001 で全 overlay より上、
+    // 全 state で常時可視。 view モード state でも visible を維持する。
+    const attrib = page.locator('#attrib');
+    await expect(attrib).toBeVisible();
+    await expect(attrib).toContainText('国土地理院');
+    await expect(attrib).toContainText('OpenStreetMap');
+  });
+
+  test('200 タイル超を要求する coursegeometry でも配布元 fetch が始まる前に止まる', async ({ page }) => {
+    // viewer の bbox SoT は courses/fujihill.js (= hard-code) で course.json から bbox は
+    // 読まれない設計、 e2e から course.json mock で oversized bbox を inject する経路は無い。
+    // ── 代わりに `page.evaluate` で `loadDemStitched({ bounds: [大きすぎる] })` を直接
+    // 実行し、 MAX_TILES gate (= `if (range.count > MAX_TILES) throw RangeError`) が
+    // 物理的に効くこと + GSI への通信ゼロを verify する。 これが「規律違反は配布元に
+    // 通信せずに止まる」 の実走 pin。
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await page.goto(VIEWER_URL);  // viewer page を load (= module 解決のため)
+    const fetchCountBefore = gsi.fetchedUrls.length;
+
+    // dynamic import で loadDemStitched を呼び、 oversized bbox で RangeError を発火させる。
+    const result = await page.evaluate(async () => {
+      const mod = await import('/lib/map3d/tile_loader3d.js');
+      try {
+        // 富士山周辺の数百 km 矩形 (= z=14 で数千 tile 相当、 MAX_TILES=200 を超える)
+        await mod.loadDemStitched({
+          bounds: [136.0, 33.0, 141.0, 37.0],
+          gsiDirectBase: 'https://cyberjapandata.gsi.go.jp/xyz/dem',
+        });
+        return { caught: false };
+      } catch (e) {
+        return { caught: true, name: e.name, message: e.message };
+      }
+    });
+    expect(result.caught).toBe(true);
+    expect(result.name).toBe('RangeError');
+    expect(result.message).toMatch(/MAX_TILES|上限/);
+
+    // gate が走る前に GSI への通信ゼロ (= viewer 起動 flow 由来の probe 等は cap として
+    // 50 件未満を許容するが、 oversized bbox の取得は始まっていない)
+    const deltaFetches = gsi.fetchedUrls.length - fetchCountBefore;
+    console.log(`[b31-budget] MAX_TILES gate 後の追加 GSI fetch = ${deltaFetches}`);
+    expect(deltaFetches).toBe(0);  // RangeError は fetch 開始前に投げられる
+  });
+});
