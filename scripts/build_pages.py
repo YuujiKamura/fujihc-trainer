@@ -20,8 +20,14 @@ DEFAULT_SRC = REPO_ROOT / "web"
 DEFAULT_DST = REPO_ROOT / "_site"
 
 STRAVA_FILES = (
-    Path("lib") / "strava_oauth.js",
-    Path("lib") / "strava_upload.js",
+    # viewer-maplibre.js が L48 で `import { ensureAccessToken, revokeLocalToken,
+    # STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js'` してるため、 source 自体を
+    # _site/ から削除すると module evaluation が失敗して viewer boot がゼロになる
+    # (= 2026-05-20 公開後発覚)。 strava_oauth.js / strava_upload.js は source 残置で、
+    # Strava endpoint への通信は CSP rewrite で connect-src と img-src から外す物理 gate
+    # (= rewrite_csp 関数で実装済) に任せる、 これで「endpoint 到達ゼロ」 を担保。
+    # entry point として独立してる oauth-callback.html は削除維持 (= /oauth-callback が
+    # 訪問者から触れない state を作る)。
     Path("oauth-callback.html"),
 )
 
