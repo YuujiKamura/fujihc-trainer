@@ -441,6 +441,44 @@
     font: bold 24px ui-monospace, monospace;
     pointer-events: none;
   }
+  /* brief 35: ロード overlay 拡張 (= 既存 #loading-indicator を進捗 UI に拡張)。
+     visible 時のみ flex column、 子要素 (= title / progress / bar / note / warning / button) を縦並び。
+     pointer-events: auto に変えるのは「地形なしで進む」 button を click 可能にするため。 */
+  #loading-indicator.visible {
+    display: flex !important;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 280px;
+    max-width: 480px;
+    pointer-events: auto;
+    transition: opacity 0.3s ease-out;
+  }
+  #loading-indicator.fade-out { opacity: 0; }
+  #loading-indicator .loading-title { font-size: 18px; }
+  #loading-indicator .loading-progress { font-size: 22px; text-align: center; }
+  #loading-indicator .loading-bar {
+    height: 10px; background: rgba(255, 255, 255, 0.12);
+    border-radius: 5px; overflow: hidden;
+  }
+  #loading-indicator #loading-bar-fill {
+    height: 100%; width: 0%; background: #7fff00;
+    transition: width 0.2s ease-out;
+  }
+  #loading-indicator .loading-note {
+    font: 12px ui-monospace, monospace; color: #aaa; font-weight: normal;
+  }
+  #loading-indicator .loading-warning {
+    font: 13px ui-monospace, monospace; color: #ff9966; font-weight: normal;
+    padding: 0.4rem 0.6rem; background: rgba(255, 153, 102, 0.12);
+    border-radius: 4px;
+  }
+  #loading-indicator #btnLoadingGiveUp {
+    align-self: center; padding: 0.5rem 1rem;
+    background: rgba(255, 153, 102, 0.18); color: #ff9966;
+    border: 1px solid #ff9966; border-radius: 4px;
+    font: bold 14px ui-monospace, monospace; cursor: pointer;
+  }
+  #loading-indicator #btnLoadingGiveUp:hover { background: rgba(255, 153, 102, 0.3); }
   /* brief b-segment-labels: 道路セグメントの距離+勾配ラベルは MapLibre の symbol
      レイヤー (icon-image / canvas 画像) で地面平面に描く。 DOM 要素ではないため
      ここに CSS は無い (= viewer-maplibre.js の makeSegLabelImage が canvas に描画)。 */
@@ -602,9 +640,23 @@
 <body class="state-checking">
 <div id="map"></div>
 
-<!-- ローディングインジケータ: MAP_MODE 起動時に表示、 map.idle (= 全 tile load + render flush)
-     + rideState 準備済の両方揃ったタイミングで hide + ride 開始。 -->
-<div id="loading-indicator">描画準備中...</div>
+<!-- brief 35: ロード overlay。 イントロ overlay 抜けた直後 (= view モード / ride モード起動時) の
+     地形タイル取得の進捗を見せる。 「描画準備中...」 だけだと訪問者が「死んでる」 と判断する沈黙
+     期間 (= 10-30 秒) を、 進捗数値 + バー + 注記で「動いてる」 状態に変える。
+     `#loading-progress-den` は course bounds + DEM_ZOOM から動的算出する (= ハードコードしない、
+     コース変更で fail しない設計、 b35 軸 4 HIGH 反映)。
+     状態 (= 通常 / timeout / IndexedDB 不在 / 無音) は `data-loading-state` 属性で expose、
+     e2e は属性遷移を pin する (= 文言 grep だけの misleading test 回避)。 -->
+<div id="loading-indicator" data-loading-state="idle">
+  <div class="loading-title">地形タイルを取得中</div>
+  <div class="loading-progress">
+    <span id="loading-progress-num">0</span> / <span id="loading-progress-den">0</span>
+  </div>
+  <div class="loading-bar"><div id="loading-bar-fill"></div></div>
+  <div class="loading-note">国土地理院のサーバから初回のみ取得します。 2 回目以降はブラウザ内キャッシュから即時表示されます。</div>
+  <div id="loading-warning" class="loading-warning" hidden></div>
+  <button id="btnLoadingGiveUp" type="button" hidden>地形なしで進む</button>
+</div>
 
 <div id="hud">
   <b>time</b>  <span id="elapsed">00:00:00</span><br>

@@ -88,7 +88,9 @@ async function seedViewMode(page) {
 // 注意: addInitScript で削除すると page.reload でも再発火し cache が消える ── 再訪 test では
 // addInitScript ではなく 1 回目 page.goto 前に context evaluate で 1 度だけ削除する。
 async function clearTileCacheOnce(page) {
-  // 空 page に goto して IndexedDB を削除 (= 同 origin 上で削除しないと効かない)
+  // 空 page に goto して IndexedDB + Service Worker cache を削除 (= 同 origin 上で削除しないと
+  // 効かない)。 brief 35 で SW cache 経路でタイルが返って GSI direct intercept をすり抜ける
+  // ケースを塞ぐため、 SW unregister + Cache API clear も合わせて実施する。
   await page.goto(`${VIEWER_URL}index.html`, { waitUntil: 'commit' });
   await page.evaluate(() => new Promise((resolve) => {
     const req = indexedDB.deleteDatabase('fujihc-tile-cache');
@@ -96,6 +98,16 @@ async function clearTileCacheOnce(page) {
     req.onerror = () => resolve();  // 存在しない場合も継続
     req.onblocked = () => resolve();
   }));
+  await page.evaluate(async () => {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { await r.unregister(); } catch {} }
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) { try { await caches.delete(k); } catch {} }
+    }
+  });
 }
 
 test.describe('b31: 配布元負荷の実走テスト', () => {
@@ -238,5 +250,61 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const deltaFetches = gsi.fetchedUrls.length - fetchCountBefore;
     console.log(`[b31-budget] MAX_TILES gate 後の追加 GSI fetch = ${deltaFetches}`);
     expect(deltaFetches).toBe(0);  // RangeError は fetch 開始前に投げられる
+  });
+
+  // ====== brief 35: ロード overlay 真正性 ======
+  // ロード overlay の `#loading-progress-num` が実 GSI fetch 数と同期 + cache hit で
+  // 完全 skip という 2 経路を pin する。 「画面に出た」 だけでなく保存中身・通信中身が
+  // overlay の表示と一致するか (= 2026-05-19 真正性規律) を実走 verify。
+
+  test('brief 35 真正性: 初回訪問 (cache 空) でロード overlay の num 最終値が GSI DEM fetch 数と同期', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    // overlay が done state に到達 (= 全タイル取得完了 + map.idle or 8s fallback)
+    await page.waitForFunction(() => {
+      const el = document.getElementById('loading-indicator');
+      return el && el.dataset.loadingState === 'done';
+    }, { timeout: 60_000 });
+    const num = Number(await page.locator('#loading-progress-num').textContent());
+    const den = Number(await page.locator('#loading-progress-den').textContent());
+    expect(num, 'overlay の num 最終値 が den (= 全タイル数) と一致').toBe(den);
+    // GSI DEM 経路の fetch のみ counter (= seamlessphoto / photo 等は別 layer)
+    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/'));
+    console.log(`[brief 35 真正性] num=${num} den=${den} GSI DEM fetch=${demFetches.length}`);
+    // num と DEM fetch 数は ±1 で同期 (= onProgress が fetch 直後に発火、 たまに ±1 ずれる
+    // race を許容)。 「進捗が動いた」 が実通信に裏打ちされていることを pin。
+    expect(demFetches.length, 'GSI DEM fetch 数 と overlay num が ±1 で同期').toBeGreaterThanOrEqual(num - 1);
+    expect(demFetches.length).toBeLessThanOrEqual(num + 1);
+  });
+
+  test('brief 35 真正性: 再訪 (cache hit) で 2 回目は GSI DEM fetch ゼロ + overlay 即時 done', async ({ page }) => {
+    const gsi = await setupGsiIntercept(page);
+    await simulatePagesNoBridge(page);
+    await clearTileCacheOnce(page);
+    await seedViewMode(page);
+    // 1 回目: cache 充填
+    await page.goto(VIEWER_URL);
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForFunction(() => {
+      const el = document.getElementById('loading-indicator');
+      return el && el.dataset.loadingState === 'done';
+    }, { timeout: 60_000 });
+    const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/')).length;
+    expect(firstDemFetches, '1 回目は cache 空、 GSI DEM fetch が走る').toBeGreaterThan(0);
+    // 2 回目: reload で cache hit
+    await page.reload();
+    await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
+    await page.waitForFunction(() => {
+      const el = document.getElementById('loading-indicator');
+      return el && el.dataset.loadingState === 'done';
+    }, { timeout: 15_000 });
+    const totalDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/')).length;
+    const secondDemFetches = totalDemFetches - firstDemFetches;
+    console.log(`[brief 35 真正性] 1 回目 DEM fetch=${firstDemFetches} / 2 回目 DEM fetch=${secondDemFetches}`);
+    expect(secondDemFetches, '2 回目は cache hit で GSI DEM fetch ゼロ (= 配布元への再アクセス回避)').toBe(0);
   });
 });

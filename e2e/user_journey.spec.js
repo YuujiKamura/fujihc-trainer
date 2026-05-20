@@ -393,3 +393,121 @@ test('一定の力で漕ぐと記録速度はなめらか — 1 秒おきに跳�
   // 旧バグ (心拍 message で物理 power=0) では 1 秒おきに振動 → spike が多発する。
   expect(spikeCount, '巡航中に速度が跳ねた秒数 (= スパイク、 0 が正常)').toBe(0);
 });
+
+// ====== brief 35: ロード overlay ジャーニーテスト (happy 3 + edge 3) ======
+// 公開後実画面で「タイルのロード画面自体がない」 と発見された UX 問題への対策を
+// pin する。 案内パネル抜け直後の view モード起動で、 訪問者がタイル取得進捗を
+// 進捗数値 + 進捗バー + 注記で確認できる導線を 1 本通す。 真正性 (= 保存中身) は
+// tile_load_budget.spec.js 側で別途 pin する。
+
+// 進捗が永遠に来ない時の挙動を mock するための GSI fetch delay。
+// 30s で fulfill するが、 viewer 側の 10s 無音 detector がそれ以前に発火する。
+const GSI_DELAY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+test('brief 35 happy: view モード起動でロード overlay が表示される', async ({ page }) => {
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 5_000 });
+  // 初期 state は idle / loading / no-cache (= IndexedDB 環境依存) のいずれか。
+  await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', /(idle|loading|no-cache)/);
+  // 「地形タイルを取得中」 lead が出ている (= 「描画準備中...」 の旧文言を上書き)。
+  await expect(page.locator('#loading-indicator')).toContainText('地形タイルを取得中');
+});
+
+test('brief 35 happy: ロード overlay の進捗数値が 0 から増えて den は course 動的算出値', async ({ page }) => {
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 5_000 });
+  // num が 1 以上に上がる (= onProgress 発火、 fetch が走ったか cache hit か)
+  await page.waitForFunction(() => {
+    const el = document.getElementById('loading-progress-num');
+    return el && Number(el.textContent) >= 1;
+  }, { timeout: 60_000 });
+  // den は tileRangeForBounds で動的算出、 1 <= den <= MAX_TILES (200)
+  const den = Number(await page.locator('#loading-progress-den').textContent());
+  expect(den, '`#loading-progress-den` は tileRangeForBounds(course bounds, DEM_ZOOM).count').toBeGreaterThanOrEqual(1);
+  expect(den, '`#loading-progress-den` は MAX_TILES = 200 を超えない').toBeLessThanOrEqual(200);
+});
+
+test('brief 35 happy: タイル取得完了でロード overlay が fade out して viewer に到達', async ({ page }) => {
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  // done state に遷移 (= 全タイル取得 + map.idle or 8s fallback)。 60s 寛大 timeout。
+  await page.waitForFunction(() => {
+    const el = document.getElementById('loading-indicator');
+    return el && el.dataset.loadingState === 'done';
+  }, { timeout: 60_000 });
+  // fade out 完了で visible class が外れる。
+  await expect(page.locator('#loading-indicator')).not.toHaveClass(/visible/, { timeout: 5_000 });
+  // view モードに完走 (= body.mode-view + 区間リスト visible)。
+  await expect(page.locator('body')).toHaveClass(/mode-view/);
+  await expect(page.locator('#section-list-panel')).toBeVisible();
+});
+
+test('brief 35 edge: GSI 通信無音 10s でロード overlay が silent state + 諦め button visible', async ({ page }) => {
+  // GSI / bridge の全タイル fetch を 30s delay (= 進捗が 10s 以内に来ない状況を mock)
+  const delayFulfill = async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+    await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
+  };
+  // bridge と同梱経路は 404、 GSI direct のみ delay。 bridge fail → GSI direct fallback → 30s wait
+  // 経路で「onProgress 発火しない」 = 無音状態を mock する。 既存 simulatePagesNoBridge と同じ
+  // 設計だが、 GSI direct を 404 ではなく 30s delay にしている (= 「fetch 中、 応答が返らない」 を再現)。
+  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 5_000 });
+  // 10s 無音 → silent state 遷移 + 警告文言 + 諦め button visible
+  await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', 'silent', { timeout: 15_000 });
+  await expect(page.locator('#loading-warning')).toBeVisible();
+  await expect(page.locator('#btnLoadingGiveUp')).toBeVisible();
+});
+
+test('brief 35 edge: IndexedDB 不在環境でロード overlay に「キャッシュが使えない」 警告 + 続行', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'indexedDB', { get: () => undefined });
+  });
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 5_000 });
+  await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', 'no-cache');
+  await expect(page.locator('#loading-warning')).toBeVisible();
+  await expect(page.locator('#loading-warning')).toContainText('キャッシュが使えない');
+});
+
+test('brief 35 edge: 諦め button click でロード overlay が即時消えて viewer 続行', async ({ page }) => {
+  const delayFulfill = async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+    await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
+  };
+  // bridge と同梱経路は 404、 GSI direct のみ delay。 bridge fail → GSI direct fallback → 30s wait
+  // 経路で「onProgress 発火しない」 = 無音状態を mock する。 既存 simulatePagesNoBridge と同じ
+  // 設計だが、 GSI direct を 404 ではなく 30s delay にしている (= 「fetch 中、 応答が返らない」 を再現)。
+  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
+  await page.locator('#btnIntroView').click();
+  // 10s 無音で諦め button visible
+  await expect(page.locator('#btnLoadingGiveUp')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#btnLoadingGiveUp').click();
+  // overlay が fade out して visible class が外れる
+  await expect(page.locator('#loading-indicator')).not.toHaveClass(/visible/, { timeout: 3_000 });
+});

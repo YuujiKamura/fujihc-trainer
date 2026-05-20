@@ -257,8 +257,11 @@ export function createMapRenderer() {
           // b31: DEM 経路を seamlessphoto と同パターンに揃える ── bridge mode (= ${origin}/tiles/gsi_dem)
           // → GSI direct fallback (= GSI_DEM_DIRECT_BASE) → TileCache hit/set。
           // 既存呼出 (= tileCache / gsiDirectBase 引数なし) は bridge fetch のみで挙動不変。
+          // brief 35: onProgress (= (done, total) => void) を viewer から bind して
+          // ロード overlay の進捗数値 / バーを更新する。 未指定なら従来挙動 (= silent fetch)。
           const dem = await loadDemStitched({
             bounds: opts.dbBounds, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
+            onProgress: opts.onProgress,
           });
           stitched = dem.stitched;
           range = dem.range;
