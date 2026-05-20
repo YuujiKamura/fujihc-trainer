@@ -49,10 +49,10 @@ test('初回訪問: イントロが出て走る/観るを選べる', async ({ pa
   await expect(page.locator('#intro-overlay')).toContainText('.github.io');
 });
 
-test('brief 32: BLE 未対応ブラウザでは btnIntroStart click 後に未対応 message が出て disable、 btnIntroView は active', async ({ page }) => {
-  // brief 32 軸 7: Firefox / Safari 等の navigator.bluetooth 不在ブラウザを Chromium で mock 再現。
-  // click 前は terrain gate で disable、 terrain ready 後 click すると BLE 未対応判定で再 disable
-  // + 未対応 message visible のフロー (= ride 経路を物理 block + view 経路へ誘導)。
+test('brief 32: BLE 未対応訪問者が ride を阻まれて view モードへ完走する (= ジャーニー 1 本通し + 真正性)', async ({ page }) => {
+  // brief 32 軸 7: Firefox / Safari 等の navigator.bluetooth 不在訪問者を Chromium で mock 再現。
+  // ジャーニー: URL を開く → イントロ表示 → 走る を押す → 未対応 message → 観る を押す → view モードに到達。
+  // 真正性: localStorage に mode='view' が永続保存されたことを最後に verify (= UI 表示だけでなく保存中身)。
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'bluetooth', { get: () => undefined });
   });
@@ -64,8 +64,17 @@ test('brief 32: BLE 未対応ブラウザでは btnIntroStart click 後に未対
   await page.locator('#btnIntroStart').click();
   await expect(page.locator('#intro-ble-unsupported')).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('#btnIntroStart')).toBeDisabled();
-  // btnIntroView は active 維持 (= user は view モードへ誘導される)。
+  // btnIntroView は active 維持、 ここから view モードへ実際に遷移する (= ジャーニー完走)。
   await expect(page.locator('#btnIntroView')).toBeEnabled();
+  await page.locator('#btnIntroView').click();
+  await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 10_000 });
+  await expect(page.locator('#section-list-panel')).toBeVisible();
+
+  // 真正性 verify: localStorage の intro consent に mode='view' が永続保存され、 ride モードに
+  // 戻る経路 (= 再訪 → view 起動) が成立する。 「画面が出た」 だけでなく保存中身を確認 (2026-05-19 規律)。
+  const consent = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), 'fujihill.consent.intro.v1');
+  expect(consent.mode).toBe('view');
+  expect(consent.hash).toBe('v2-fujihill-intro-2026-05-20');
 });
 
 test('観るモードの再訪ユーザーが走行モードへ抜けられる', async ({ page }) => {
