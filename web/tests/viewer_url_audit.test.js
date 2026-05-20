@@ -409,12 +409,17 @@ describe('_site/ 配信物の規律 (= brief 33)', () => {
     expect(html).not.toMatch(/https?:\/\/\*\.strava\.com/);
   });
 
-  it('_site/lib/strava_oauth.js が不在 (= class C1 除外)', () => {
-    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_oauth.js'))).toBe(false);
+  // 2026-05-20 fix: viewer-maplibre.js が L48 で strava_oauth.js から import してるため、
+  // source 自体を削除すると module evaluation が落ちて viewer boot がゼロになる
+  // (= 公開後の実画面確認で発覚)。 source は配信維持、 Strava endpoint への通信は
+  // CSP の connect-src / img-src 削除 (= 既存「Strava CDN URL が消えている」 test で pin)
+  // で物理 block する 2 段構え。
+  it('_site/lib/strava_oauth.js が source 配信される (= viewer import 経路維持、 endpoint 通信は CSP で block)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_oauth.js'))).toBe(true);
   });
 
-  it('_site/lib/strava_upload.js が不在 (= class C1 除外)', () => {
-    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_upload.js'))).toBe(false);
+  it('_site/lib/strava_upload.js が source 配信される (= 同上)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_upload.js'))).toBe(true);
   });
 
   it('_site/oauth-callback.html が不在 (= class C1 除外、 visitor から到達不能)', () => {
