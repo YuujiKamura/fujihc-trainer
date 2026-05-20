@@ -28,7 +28,11 @@ import { fujihill } from '../courses/fujihill.js';
 // Pages 環境で同梱 tile が無い時の fallback 取得元 (= 訪問者単位 fetch + TileCache 90 日 TTL)。
 // viewer-maplibre.js / map3d/index.js は本 constant を import して渡す (= literal を本体 source に
 // 書かない、 viewer_url_audit.test.js の単体 scan は本体に GSI URL 出現ゼロを引き続き保証)。
-export const GSI_DEM_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem';
+// 2026-05-20: `dem` (= GSI 公式の txt 形式 endpoint) ではなく `dem_png` (= PNG 形式 endpoint) を
+// 使う。 viewer は PNG bytes として decode する経路 (= tile_loader3d.js bytesToBitmap)、 `dem` に
+// `.png` 拡張子を付けても GSI は 404 を返す ── Pages 環境で「地形データが読み込まれない」 と
+// user 訂正があった root cause。 GSI 公式の「地理院タイル一覧」 で確認 (= dem_png z=1-14 PNG)。
+export const GSI_DEM_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png';
 
 // 経度・緯度 → z=14 タイル座標 (= 整数). EPSG:3857 Web Mercator.
 // tile_math.js と同等、 ただし z=14 固定でも汎用に z を受け取る.

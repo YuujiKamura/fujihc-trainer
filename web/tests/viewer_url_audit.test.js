@@ -334,8 +334,9 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
   const tileLoader3d = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'tile_loader3d.js'), 'utf8');
   const map3dIndex = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'index.js'), 'utf8');
 
-  it('terrain_loader.js が GSI_DEM_DIRECT_BASE を export (= cyberjapandata.gsi.go.jp/xyz/dem の SoT)', () => {
-    expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem['"]/);
+  it('terrain_loader.js が GSI_DEM_DIRECT_BASE を export (= cyberjapandata.gsi.go.jp/xyz/dem_png の SoT)', () => {
+    // 2026-05-20 fix: viewer の PNG decode 経路と整合する dem_png (= PNG 形式 endpoint) を使う。
+    expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem_png['"]/);
   });
 
   it('viewer 本体 (viewer-maplibre.js) には GSI URL literal を書かず const import 経由 (= 既存 audit 互換)', () => {

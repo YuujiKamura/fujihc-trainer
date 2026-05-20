@@ -367,8 +367,11 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     expect(urls[2]).toMatch(new RegExp(`/${coords[2].z}/${coords[2].x}/${coords[2].y}\\.png$`));
   });
 
-  it('GSI_DEM_DIRECT_BASE は GSI dem の公式 endpoint (= cyberjapandata.gsi.go.jp/xyz/dem)', () => {
-    expect(GSI_DEM_DIRECT_BASE).toBe('https://cyberjapandata.gsi.go.jp/xyz/dem');
+  it('GSI_DEM_DIRECT_BASE は GSI dem の公式 PNG endpoint (= cyberjapandata.gsi.go.jp/xyz/dem_png)', () => {
+    // 2026-05-20 fix: viewer は PNG bytes として decode する経路なので、 GSI 公式の PNG endpoint
+    // (= dem_png) を使う。 txt 形式の `dem` 経路に `.png` 拡張子を付けても GSI は 404 を返す
+    // ── Pages 環境で「地形データが読み込まれてないだろ」 と user 訂正された root cause。
+    expect(GSI_DEM_DIRECT_BASE).toBe('https://cyberjapandata.gsi.go.jp/xyz/dem_png');
   });
 
   it('tileCache hit 時に GSI fetch ゼロ (= TTL 内再取得ゼロ)', async () => {
