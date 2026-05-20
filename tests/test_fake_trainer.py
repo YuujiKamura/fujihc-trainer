@@ -1,6 +1,6 @@
 """--fake-trainer mode の self-driving smoke test。
 
-bridge subprocess を `python -m fujihill.bridge --fake-trainer --port 18765` で
+bridge subprocess を `python -m fujihc.bridge --fake-trainer --port 18765` で
 立て、WebSocket client から connect + set_slope を投げて、ack が返ること
 + Indoor Bike Data の speed が trainer 由来として流れることを verify。
 yuuji の手 / 実 BLE 一切なしで full loop を回す。
@@ -39,7 +39,7 @@ def fake_bridge():
     # stdout を file に redirect (pipe buffer 詰まり防止)
     logf = open("/tmp/fake_bridge.log", "w", encoding="utf-8")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "fujihill.bridge", "--fake-trainer",
+        [sys.executable, "-m", "fujihc.bridge", "--fake-trainer",
          "--port", str(BRIDGE_PORT), "--http-port", str(BRIDGE_HTTP_PORT)],
         env=env, cwd=str(ROOT),
         stdout=logf, stderr=subprocess.STDOUT,

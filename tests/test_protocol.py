@@ -12,7 +12,7 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
-from fujihill.bridge import (  # noqa: E402
+from fujihc.bridge import (  # noqa: E402
     _encode_set_indoor_bike_simulation,
     _parse_indoor_bike_data,
     _parse_control_response,

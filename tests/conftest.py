@@ -1,4 +1,4 @@
-"""pytest fixtures for fujihill-trainer."""
+"""pytest fixtures for fujihc-trainer."""
 import pytest
 
 

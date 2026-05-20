@@ -14,8 +14,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from fujihill.http_app import make_http_app
-from fujihill import tile_server
+from fujihc.http_app import make_http_app
+from fujihc import tile_server
 import init_tile_db
 
 
@@ -128,7 +128,7 @@ def test_bind_is_127_0_0_1_in_source():
     HTTP TCPSite と WebSocket serve の両方が 127.0.0.1 でなければ別端末から
     アクセスできてしまう (LAN 内 ODbL 再配布事故 vector). 物理層で pin する.
     """
-    src = Path(__file__).resolve().parent.parent / "src" / "fujihill" / "bridge.py"
+    src = Path(__file__).resolve().parent.parent / "src" / "fujihc" / "bridge.py"
     text = src.read_text(encoding="utf-8")
     # HTTP TCPSite
     assert 'TCPSite(http_runner, "127.0.0.1"' in text, (

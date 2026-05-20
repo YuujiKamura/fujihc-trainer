@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# src/ と scripts/ を path に追加 (= fujihill package と script 両方 import 可)
+# src/ と scripts/ を path に追加 (= fujihc package と script 両方 import 可)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))

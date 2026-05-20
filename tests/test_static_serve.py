@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from fujihill.http_app import make_http_app
+from fujihc.http_app import make_http_app
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ async def client(tmp_path):
     web_root = tmp_path / "web"
     web_root.mkdir()
     (web_root / "index.html").write_text(
-        "<!doctype html><html><body><h1>fujihill</h1></body></html>", encoding="utf-8"
+        "<!doctype html><html><body><h1>fujihc</h1></body></html>", encoding="utf-8"
     )
     (web_root / "viewer-maplibre.js").write_text("// dummy js", encoding="utf-8")
     (web_root / "course.json").write_text("[]", encoding="utf-8")
@@ -36,7 +36,7 @@ async def test_root_returns_index_html(client):
     assert resp.status == 200
     assert resp.headers["Content-Type"].startswith("text/html")
     body = await resp.text()
-    assert "fujihill" in body
+    assert "fujihc" in body
 
 
 @pytest.mark.asyncio

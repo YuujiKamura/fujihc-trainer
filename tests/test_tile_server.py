@@ -1,4 +1,4 @@
-"""brief 17a: src/fujihill/tile_server.py の unit test (全関数 mandate).
+"""brief 17a: src/fujihc/tile_server.py の unit test (全関数 mandate).
 
 HTTP framework は import しない、 pure Python + sqlite3 + 一時 DB ファイルで完結。
 """
@@ -13,8 +13,8 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import init_tile_db  # noqa: E402
-from fujihill import tile_server  # noqa: E402
-from fujihill.tile_constants import GSI_DEM_ZOOMS, OSM_VECTOR_ZOOMS  # noqa: E402
+from fujihc import tile_server  # noqa: E402
+from fujihc.tile_constants import GSI_DEM_ZOOMS, OSM_VECTOR_ZOOMS  # noqa: E402
 
 
 # ---------- fixtures ----------

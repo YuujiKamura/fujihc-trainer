@@ -75,7 +75,7 @@ def fake_web(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (web / "sw.js").write_text(
-        "const CACHE_NAME = 'fujihill-v13';\nconst PRECACHE_URLS = ['./'];\n",
+        "const CACHE_NAME = 'fujihc-v13';\nconst PRECACHE_URLS = ['./'];\n",
         encoding="utf-8",
     )
     (web / "course.json").write_text("[]", encoding="utf-8")
@@ -194,19 +194,19 @@ def test_bump_sw_cache_v13_to_v14(fake_web: Path, tmp_path: Path) -> None:
     site = tmp_path / "_site"
     build_pages.copy_tree(fake_web, site)
     before, after = build_pages.bump_sw_cache(site / "sw.js")
-    assert before == "fujihill-v13"
-    assert after == "fujihill-v14"
+    assert before == "fujihc-v13"
+    assert after == "fujihc-v14"
     text = (site / "sw.js").read_text(encoding="utf-8")
-    assert "fujihill-v14" in text
-    assert "fujihill-v13" not in text
+    assert "fujihc-v14" in text
+    assert "fujihc-v13" not in text
 
 
 def test_bump_sw_cache_idempotent_on_v14(tmp_path: Path) -> None:
     sw = tmp_path / "sw.js"
-    sw.write_text("const CACHE_NAME = 'fujihill-v14';\n", encoding="utf-8")
+    sw.write_text("const CACHE_NAME = 'fujihc-v14';\n", encoding="utf-8")
     before, after = build_pages.bump_sw_cache(sw)
-    assert before == "fujihill-v14"
-    assert after == "fujihill-v14"
+    assert before == "fujihc-v14"
+    assert after == "fujihc-v14"
 
 
 def test_bump_sw_cache_raises_when_pattern_missing(tmp_path: Path) -> None:
@@ -249,7 +249,7 @@ def test_main_orchestrator_runs_all_steps(fake_web: Path, tmp_path: Path) -> Non
     assert "strava.com" not in html
     for dom_id in build_pages.STRAVA_DOM_IDS:
         assert f'id="{dom_id}"' not in html
-    assert "fujihill-v14" in (site / "sw.js").read_text(encoding="utf-8")
+    assert "fujihc-v14" in (site / "sw.js").read_text(encoding="utf-8")
     assert "frame-ancestors 'none'" in html
 
 

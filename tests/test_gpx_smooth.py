@@ -16,7 +16,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from fujihill.gpx_smooth import moving_average, smooth_course  # noqa: E402
+from fujihc.gpx_smooth import moving_average, smooth_course  # noqa: E402
 
 COURSE_JSON = REPO_ROOT / "web" / "course.json"
 FIXTURE_DIR = REPO_ROOT / "web" / "tests" / "fixtures"

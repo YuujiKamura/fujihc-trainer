@@ -9,7 +9,7 @@ import sys
 SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
-from fujihill.gpx_export import csv_to_gpx   # noqa: E402
+from fujihc.gpx_export import csv_to_gpx   # noqa: E402
 
 GPX_NS = "{http://www.topografix.com/GPX/1/1}"
 TPX_NS = "{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}"

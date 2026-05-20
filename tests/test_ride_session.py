@@ -10,7 +10,7 @@ import pytest
 SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
-from fujihill.bridge import Bridge   # noqa: E402
+from fujihc.bridge import Bridge   # noqa: E402
 
 GPX_NS = "{http://www.topografix.com/GPX/1/1}"
 

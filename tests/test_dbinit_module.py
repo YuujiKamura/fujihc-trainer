@@ -1,4 +1,4 @@
-"""brief 26b: src/fujihill/dbinit.py の async 関数群 unit test.
+"""brief 26b: src/fujihc/dbinit.py の async 関数群 unit test.
 
 実 GSI server や実 PMTiles file には絶対叩かない. urlopen / Reader は mock 駆動.
 """
@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import init_tile_db  # noqa: E402
-from fujihill import dbinit  # noqa: E402
+from fujihc import dbinit  # noqa: E402
 
 
 COURSE = [
@@ -54,7 +54,7 @@ def test_fetch_gsi_async_progress_cb_called_n_zero_to_total(empty_db):
     def cb(payload):
         calls.append(dict(payload))
 
-    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1,
             rate_limit_sec=0.0, progress_cb=cb, bbox=None,
@@ -74,8 +74,8 @@ def test_fetch_gsi_async_progress_cb_called_n_zero_to_total(empty_db):
 def test_fetch_gsi_async_skips_existing_rows(empty_db):
     """既に DB にある (z,x,y) は skip され、 fetched に含まれない."""
     # 1 件先に入れておく
-    from fujihill.tile_constants import DEFAULT_CORRIDOR_TILES, GSI_DEM_ZOOMS
-    from fujihill.tile_coverage import enumerate_coverage_tiles
+    from fujihc.tile_constants import DEFAULT_CORRIDOR_TILES, GSI_DEM_ZOOMS
+    from fujihc.tile_coverage import enumerate_coverage_tiles
     tiles = sorted(enumerate_coverage_tiles(COURSE, GSI_DEM_ZOOMS, 1))
     z, x, y = tiles[0]
     with sqlite3.connect(empty_db) as db:
@@ -93,7 +93,7 @@ def test_fetch_gsi_async_skips_existing_rows(empty_db):
         def __exit__(self, *a):
             return False
 
-    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
             bbox=None,
@@ -107,7 +107,7 @@ def test_fetch_gsi_async_404_recorded_as_row(empty_db):
     err = urllib.error.HTTPError(
         url='http://x', code=404, msg='Not Found', hdrs=None, fp=None,
     )
-    with patch('fujihill.dbinit.urllib.request.urlopen', side_effect=err):
+    with patch('fujihc.dbinit.urllib.request.urlopen', side_effect=err):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
             bbox=None,
@@ -129,7 +129,7 @@ def test_fetch_gsi_async_writes_metadata(empty_db):
         def __exit__(self, *a):
             return False
 
-    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()):
         _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
             bbox=None,
@@ -155,7 +155,7 @@ def test_fetch_gsi_async_accepts_async_progress_cb(empty_db):
     async def acb(payload):
         calls.append(dict(payload))
 
-    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()):
         _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
             progress_cb=acb, bbox=None,
@@ -166,8 +166,8 @@ def test_fetch_gsi_async_accepts_async_progress_cb(empty_db):
 def test_fetch_gsi_async_default_bbox_covers_fuji_summit(empty_db):
     """default (bbox=FUJI_TERRAIN_BBOX) は course corridor を超え、
     富士山頂を含むタイルまで fetch する (= 地形メッシュに富士山本体が乗る)."""
-    from fujihill.tile_constants import FUJI_TERRAIN_BBOX
-    from fujihill.tile_coverage import (
+    from fujihc.tile_constants import FUJI_TERRAIN_BBOX
+    from fujihc.tile_coverage import (
         enumerate_bbox_tiles,
         enumerate_coverage_tiles,
     )
@@ -179,7 +179,7 @@ def test_fetch_gsi_async_default_bbox_covers_fuji_summit(empty_db):
         def __exit__(self, *a):
             return False
 
-    with patch('fujihill.dbinit.urllib.request.urlopen', return_value=_CM()):
+    with patch('fujihc.dbinit.urllib.request.urlopen', return_value=_CM()):
         result = _run(dbinit.fetch_gsi_async(
             empty_db, COURSE, zoom=14, corridor_tiles=1, rate_limit_sec=0.0,
         ))

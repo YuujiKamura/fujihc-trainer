@@ -15,13 +15,13 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import init_tile_db  # noqa: E402
-from fujihill import tile_server  # noqa: E402
-from fujihill.tile_constants import (  # noqa: E402
+from fujihc import tile_server  # noqa: E402
+from fujihc.tile_constants import (  # noqa: E402
     DEFAULT_CORRIDOR_TILES,
     GSI_DEM_ZOOMS,
     OSM_VECTOR_ZOOMS,
 )
-from fujihill.tile_coverage import enumerate_coverage_tiles  # noqa: E402
+from fujihc.tile_coverage import enumerate_coverage_tiles  # noqa: E402
 
 
 COURSE_FIXTURE = [
@@ -66,8 +66,8 @@ def test_empty_db_returns_empty_overall(empty_db, course_path):
     assert body['sources']['osm']['tiles_present'] == 0
     # expected は course / zoom / corridor 由来の決定値.
     # gsi_dem は地形メッシュ用に corridor ∪ FUJI_TERRAIN_BBOX で覆う.
-    from fujihill.tile_constants import FUJI_TERRAIN_BBOX
-    from fujihill.tile_coverage import enumerate_bbox_tiles
+    from fujihc.tile_constants import FUJI_TERRAIN_BBOX
+    from fujihc.tile_coverage import enumerate_bbox_tiles
     expected_gsi_set = enumerate_coverage_tiles(
         COURSE_FIXTURE, GSI_DEM_ZOOMS, DEFAULT_CORRIDOR_TILES)
     for z in GSI_DEM_ZOOMS:
@@ -105,10 +105,10 @@ def test_partial_gsi_only_returns_partial(empty_db, course_path):
 
 def test_all_ready_returns_ready_overall(empty_db, course_path):
     """3 source の expected 数だけ insert すると overall=ready (= brief 30 で osm_raster 追加)."""
-    from fujihill.tile_constants import (
+    from fujihc.tile_constants import (
         FUJI_TERRAIN_BBOX, MINIMAP_BBOX, MINIMAP_OSM_ZOOM,
     )
-    from fujihill.tile_coverage import enumerate_bbox_tiles
+    from fujihc.tile_coverage import enumerate_bbox_tiles
     # gsi_dem は corridor ∪ FUJI_TERRAIN_BBOX、 osm は corridor のみ.
     gsi_set = enumerate_coverage_tiles(
         COURSE_FIXTURE, GSI_DEM_ZOOMS, DEFAULT_CORRIDOR_TILES)
@@ -144,8 +144,8 @@ def test_fetch_status_404_rows_not_counted(empty_db, course_path):
 
 def test_osm_raster_source_present_in_empty_db(empty_db, course_path):
     """brief 30: osm_raster source が empty で存在し、 expected が bbox 由来."""
-    from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
-    from fujihill.tile_coverage import enumerate_bbox_tiles
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
     status, body = tile_server.get_setup_status(empty_db, course_path)
     assert status == 200
     assert 'osm_raster' in body['sources']
@@ -158,8 +158,8 @@ def test_osm_raster_source_present_in_empty_db(empty_db, course_path):
 
 def test_osm_raster_partial_then_ready(empty_db, course_path):
     """brief 30: osm_raster の expected 数だけ insert すると osm_raster=ready."""
-    from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
-    from fujihill.tile_coverage import enumerate_bbox_tiles
+    from fujihc.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
+    from fujihc.tile_coverage import enumerate_bbox_tiles
     tiles = sorted(enumerate_bbox_tiles(MINIMAP_BBOX, MINIMAP_OSM_ZOOM))
     # 1 件だけ insert → partial
     z, x, y = tiles[0]
