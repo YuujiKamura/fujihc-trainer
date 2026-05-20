@@ -1,5 +1,5 @@
 // brief 33 責務 4: Pages 配信物 (= _site/) に対する e2e。
-// 既存 playwright.config.js は bridge mode (= python -m fujihill.bridge で web/ を serve) で動く、
+// 既存 playwright.config.js は bridge mode (= python -m fujihc.bridge で web/ を serve) で動く、
 // 本 config は Pages 配信物に対する独立 e2e。
 import { defineConfig } from '@playwright/test';
 

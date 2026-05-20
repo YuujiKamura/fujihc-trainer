@@ -55,8 +55,8 @@ CSP_STRIPPED = (
     "form-action 'self'"
 )
 
-SW_CACHE_BEFORE = "fujihill-v13"
-SW_CACHE_AFTER = "fujihill-v14"
+SW_CACHE_BEFORE = "fujihc-v13"
+SW_CACHE_AFTER = "fujihc-v14"
 
 
 def clean(site_dir: Path) -> None:
@@ -178,9 +178,9 @@ SW_CACHE_RE = re.compile(r"const\s+CACHE_NAME\s*=\s*'([^']+)'")
 
 
 def bump_sw_cache(sw_path: Path) -> tuple[str, str]:
-    """sw.js の CACHE_NAME を bump (= fujihill-v13 → fujihill-v14)。
+    """sw.js の CACHE_NAME を bump (= fujihc-v13 → fujihc-v14)。
     Returns: (before, after) tuple。
-    冪等: 既に v14 なら ('fujihill-v14', 'fujihill-v14') を返す。"""
+    冪等: 既に v14 なら ('fujihc-v14', 'fujihc-v14') を返す。"""
     text = sw_path.read_text(encoding="utf-8")
     m = SW_CACHE_RE.search(text)
     if m is None:

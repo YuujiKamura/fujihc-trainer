@@ -1,6 +1,6 @@
 """brief 16 + 26b: Protomaps PMTiles から富士ヒル範囲を抽出して DB に格納.
 
-中核 logic は src/fujihill/dbinit.py の extract_osm_async に移動。 本 script は
+中核 logic は src/fujihc/dbinit.py の extract_osm_async に移動。 本 script は
 CLI wrapper (= 後方互換 + 直接呼び出し用).
 
 usage:
@@ -18,13 +18,13 @@ import json
 import sqlite3
 from pathlib import Path
 
-from fujihill import dbinit
-from fujihill.tile_constants import (
+from fujihc import dbinit
+from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     OSM_VECTOR_ZOOMS,
     TILE_FETCH_WARN_THRESHOLD,
 )
-from fujihill.tile_coverage import enumerate_coverage_tiles
+from fujihc.tile_coverage import enumerate_coverage_tiles
 
 
 def extract_tile(reader, z, x, y):

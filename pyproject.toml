@@ -1,5 +1,5 @@
 [project]
-name = "fujihill-trainer"
+name = "fujihc-trainer"
 version = "0.0.1"
 description = "Indoor trainer driver for the Mt.Fuji hill climb GPX. Phase 0: discover BLE trainers."
 requires-python = ">=3.10"
@@ -13,8 +13,8 @@ dependencies = [
 ]
 
 [project.scripts]
-fujihill-discover = "fujihill.discover:main"
-fujihill-bridge = "fujihill.bridge:main"
+fujihc-discover = "fujihc.discover:main"
+fujihc-bridge = "fujihc.bridge:main"
 
 [build-system]
 requires = ["setuptools>=68"]
