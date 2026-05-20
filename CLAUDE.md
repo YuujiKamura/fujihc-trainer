@@ -58,6 +58,31 @@ npm test                  # JS (vitest) — web/tests/
 調査メモ・レポート・brief は `~/.agents/scratch/fujihc-trainer-project/` に書け。
 リポ内 (`/c/Users/yuuji/fujihc-trainer/`) に置くのは commit する意図があるファイルだけ。
 
+## 変更前ワークフロー (= 「直接実装するな」、 user が毎回言わなくて済むようにする物理 gate)
+
+このリポでコードを変更する前に、 必ず下記の順を踏め。 user / main session が「ブリーフ書いて」「7軸レビューに掛けて」 と毎回言わなくて済むようにするための default workflow。
+
+1. **ブリーフを書く** (= `~/.agents/scratch/fujihc-trainer-project/bNN-<name>.md`)
+   - 「直すこと」「テストで pin すること」「完了条件」「取り下げ手順」「参照」 を最低限 encode
+   - 形式は既存 brief (= b30 / b32 / b35) を踏襲、 bookend (= 「はじめに」「まとめ」) を地の文で書く
+2. **`multi-axis-draft-audit` skill で 7 軸並列 audit** (= `~/.claude/skills/multi-axis-draft-audit`)
+   - 軸 1 register/構造、 軸 2 語彙の規律、 軸 3 抽象段差、 軸 4 テスト網羅性、 軸 5 設計境界、 軸 6 マイグレ可逆性、 軸 7 セキュリティ境界 の 7 並列 sub-agent dispatch
+   - drift catalog (= `~/.agents/state/fujihc-trainer/audit-drift-catalog.md`) を必読、 過去 NG pattern の再演は LOAD-BEARING 自動昇格
+   - LOAD-BEARING ≥ 1 なら brief 改訂 → 再 audit、 CONVERGED まで loop
+3. **実装** (= brief 改訂版に厳密に従う)
+4. **検証** (= vitest + e2e + 実画面批評)
+5. **commit** (= 明示パス指定)
+
+例外:
+- typo / コメント / docs のみの軽微修正で「コード挙動 不変」 が明白 → brief 不要、 ただし「コード挙動 不変」 を自分で 1 度問うこと
+- user が明示的に「brief 不要、 直接やれ」 と instruct した時のみ skip 可
+- 一切の例外として、 「次のアクションは X で良いですか」 と user に判断を投げる前に **まず brief を書け** ── user に判断を投げる時点で brief が無ければ user 価値がゼロ、 brief 経由なら user は brief を読んで判断できる
+
+過去 anti-example:
+
+- 2026-05-17: AI が「直接実装するな、 ブリーフを書いて 7軸レビュー→チームで実装」 と user に役割を再定義された
+- 2026-05-20 (= 本 commit 直前): b35 改修後の「実 endpoint test を cron 日次で回す」 提案 / 「`dem_png` fix」 / 「test を CI から外す」 を、 brief 経由せずに直接 commit に飛んだ。 user に「お前が毎回言わなくて良いように出来るか?」 と訂正された ── まさにそれを物理 stop するために本 section を書く
+
 ## ブリーフ管理 DB (= 2026-05-20 整備、 worker 起動時に必ず query)
 
 このリポの brief / task / 検討メモ (= scratch + docs/briefs/) は `~/.skill-miner/kanban.sqlite`

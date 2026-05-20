@@ -44,3 +44,15 @@ jobs:
 
       - name: Run build_pages.py 単体テスト
         run: python -m pytest tests/test_build_pages.py -v
+
+      # b36 (= 配布元境界規律) の CI 側二重走査 ── pre-commit hook が install されない経路
+      # (= fresh clone / CI runner / --no-verify) を catch する 2 重層 gate。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Node deps (= vitest)
+        run: npm install
+
+      - name: Run distributor courtesy gate (= b36 物理 gate test)
+        run: npx vitest run web/tests/distributor_courtesy_gate.test.js web/tests/terrain_loader_decode_fixture.test.js

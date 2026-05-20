@@ -1,13 +1,26 @@
+// 配布元境界規律 (= b36 配布元境界): 本 spec は実 GSI / OSM endpoint を叩く。
+// CI 自動経路 (= push / pull_request / schedule trigger) からは絶対に走らせない、
+// `workflow_dispatch` (= .github/workflows/pages-live-verify.yml) からの手動 trigger のみ。
+// extraHTTPHeaders の User-Agent には開発者本人の email を埋める (= 配布元が連絡できる form)。
+// 詳細: CLAUDE.md § 考え方 / b36-tile-distributor-courtesy.md
+//
 // brief 35 fix verify: Pages baseURL `https://yuujikamura.github.io/fujihc-trainer/` を
 // 直に開いて、 配信物の fetch 経路と b35 ロード overlay の visible 化を実走 verify する。
 // 既存 e2e は localhost (http://127.0.0.1:8000/) を相手に走るが、 本 spec は absolute URL で
 // Pages を相手にする。 webServer 経由ではないので「配布元の本物」 が動いてるか即判別できる。
-//
-// 2026-05-20 user 指示「簡単なフェッチテストを書いてPages上で実行してみろ」 反映。
 
 import { test, expect } from '@playwright/test';
 
 const PAGES_URL = 'https://yuujikamura.github.io/fujihc-trainer/';
+
+// b36 配布元境界規律: extraHTTPHeaders で email を User-Agent に埋め込み、 配布元が heavy user に
+// 連絡できる form を強制する。 `LIVE_VERIFY_EMAIL` 不在のローカル実行では `no-email-set-running-locally`
+// が出て開発者が気付く手がかりになる。 CI からは pages-live-verify.yml workflow が env を渡す。
+test.use({
+  extraHTTPHeaders: {
+    'User-Agent': `fujihc-trainer-live-verify/0.1 (${process.env.LIVE_VERIFY_EMAIL || 'no-email-set-running-locally'})`,
+  },
+});
 
 test('Pages live: Pages 配信物に DEM 同梱がない (= 同梱再配布禁止規律、 404 が正常)', async ({ page }) => {
   await page.goto(PAGES_URL);

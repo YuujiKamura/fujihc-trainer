@@ -1,0 +1,11 @@
+# CODEOWNERS ── b36 (= 配布元境界規律) の L5 fork 防衛、 物理化レイヤ。
+# GitHub の仕様で `@<handle>` literal が必須 (= `vars.AUTHOR_HANDLE` 経由不可)、 これは accepted exception。
+# branch protection rule (= GitHub UI > Settings > Branches) で「Require review from Code Owners」 を
+# enable しなければ advisory のみ、 物理 gate にならない ── b36 完了条件 11 で `gh api .../branches/main/protection`
+# の戻り値を verify する。
+
+# fixture 改竄を author + backup の 2 人レビュー必須に gate (= R3 reviewer 指摘 SPoF を 2-of-2 で緩和)。
+# backup reviewer の handle は user が landing 時に指名する required、 不在の間は author 1-of-1 で動く。
+# author 不在時の SPoF は b36 § Scope 外 で b37 委譲 (= 組織人事領域、 brief 内文書では物理化不可)。
+web/tests/fixtures/** @yuujikamura
+# web/tests/fixtures/** @yuujikamura @<backup-reviewer-handle>  ← user 指名後 uncomment

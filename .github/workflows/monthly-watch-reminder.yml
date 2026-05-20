@@ -1,0 +1,73 @@
+# b36 (= 配布元境界規律) の L6 物理 gate ── 月 1 配布元 announcement watch を「人間が忘れる」
+# 経路を物理代替する cron。 GitHub Issues API のみ叩く (= 配布元への fetch ゼロ)、
+# `docs/distributor-watch.md` を SoT に Issue body に転記、 30 日超過は ⚠ surface、 90 日超過は auto-close。
+#
+# fork 防衛: `if: github.repository_owner == vars.AUTHOR_HANDLE` で fork では発火しない。
+# Issue lifecycle 7 項目: actor / title / ⚠ prefix / body は docs/ SoT 一本化 / label / 90 日 auto-close / Issue close = docs commit 規律
+# 詳細: ~/.agents/scratch/fujihc-trainer-project/b36-tile-distributor-courtesy.md § 直すこと 6
+name: Monthly distributor watch reminder (= cron + 手動 trigger)
+
+on:
+  schedule:
+    # 毎月 1 日 00:00 UTC、 配布元への fetch ゼロ (= GitHub Issues API のみ)
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  open-watch-issue:
+    if: ${{ github.repository_owner == vars.AUTHOR_HANDLE && vars.AUTHOR_HANDLE != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Ensure distributor-watch label exists (idempotent)
+        run: |
+          gh label create distributor-watch --color FFA500 --description "配布元 announcement の月 1 watch" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Fetch docs/distributor-watch.md from main (= SoT)
+        id: fetch_docs
+        run: |
+          # ref=main 明示で default branch 依存 drift を回避、 SoT は upstream main の docs のみ
+          gh api /repos/${{ github.repository }}/contents/docs/distributor-watch.md?ref=main \
+            --jq '.content' | base64 -d > issue_body.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Determine ⚠ prefix (= next_review_at が 30 日超過か)
+        id: warn
+        run: |
+          NEXT_REVIEW=$(grep -E '^next_review_at:' issue_body.md | head -1 | sed 's/next_review_at: *//')
+          if [ -z "$NEXT_REVIEW" ]; then
+            echo "prefix=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NEXT_EPOCH=$(date -d "$NEXT_REVIEW" +%s 2>/dev/null || echo 0)
+          NOW_EPOCH=$(date +%s)
+          DAYS_OVER=$(( (NOW_EPOCH - NEXT_EPOCH) / 86400 ))
+          if [ "$DAYS_OVER" -gt 30 ]; then
+            echo "prefix=⚠ " >> "$GITHUB_OUTPUT"
+          else
+            echo "prefix=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open monthly watch Issue
+        run: |
+          MONTH=$(date +%Y-%m)
+          TITLE="[${{ steps.warn.outputs.prefix }}distributor-watch] ${MONTH} 配布元 announcement 確認"
+          gh issue create --label distributor-watch --title "$TITLE" --body-file issue_body.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Auto-close >= 90 days old distributor-watch issues (= 12 ヶ月で 12 件累積防止)
+        run: |
+          # 90 日以上 open のままの distributor-watch label Issue を close (= 「Issue close ≠ watch 実施」 を
+          # 区別するため、 watch 実施記録は docs/distributor-watch.md の last_reviewed_at で別 trace)
+          NINETY_DAYS_AGO=$(date -d '90 days ago' --iso-8601)
+          gh issue list --state open --label distributor-watch --json number,createdAt --jq \
+            ".[] | select(.createdAt < \"${NINETY_DAYS_AGO}\") | .number" | while read num; do
+              gh issue close "$num" --reason "not planned" --comment "90 日経過で auto-close (= watch 未実施)"
+            done
+        env:
+          GH_TOKEN: ${{ github.token }}

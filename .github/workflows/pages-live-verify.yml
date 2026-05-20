@@ -1,0 +1,60 @@
+# b36 (= 配布元境界規律) の L3 物理 gate ── 実 GSI / OSM endpoint を叩く Pages live test を
+# CI 自動経路 (= push / pull_request / schedule) から隔離、 手動 trigger only。
+#
+# 「規律を memory ではなく物理層に落とす」 (= CLAUDE.md Rule 9) を本 yaml で実装:
+#   L3 = trigger を `workflow_dispatch` only に固定 (= CI 自動経路から物理隔離)
+#   L4 = input parameter 2 required (= `user_agent_email` + `reason` 50 文字 + 配布元 URL anchored)
+#   L5 = `if: github.repository_owner == vars.AUTHOR_HANDLE` (= fork 防衛、 literal hardcode 禁止)
+#   PII redact = `::add-mask::` で email を log から消す (= public Actions log の漏洩防止、 UI raw 表示は b37 委譲)
+#
+# 詳細: ~/.agents/scratch/fujihc-trainer-project/b36-tile-distributor-courtesy.md
+name: Pages live distributor verify (= 手動 trigger only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_agent_email:
+        description: '配布元への連絡用 email (= GSI / OSM が heavy user に連絡したい時の宛先)'
+        required: true
+        type: string
+      reason:
+        description: '実 GSI / OSM endpoint を叩く理由 (50 文字以上 + 配布元 announcement URL を必須)、 例: "GSI announcement https://www.gsi.go.jp/announce/.... で dem_png endpoint 変更告知あり"'
+        required: true
+        type: string
+
+jobs:
+  live-verify:
+    if: ${{ github.repository_owner == vars.AUTHOR_HANDLE && vars.AUTHOR_HANDLE != '' && github.event.inputs.reason != '' && contains(github.event.inputs.user_agent_email, '@') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask email in log
+        run: echo "::add-mask::${{ github.event.inputs.user_agent_email }}"
+      - name: Validate reason (50+ chars + TLD-anchored 配布元 URL)
+        run: |
+          if [ "${#REASON}" -lt 50 ]; then
+            echo "reason must be at least 50 chars"
+            exit 1
+          fi
+          if ! echo "$REASON" | grep -qE 'https?://'; then
+            echo "reason must include a URL to the distributor announcement"
+            exit 1
+          fi
+          # TLD-anchored 正規表現で subdomain confusion (= gsi.go.jp.evil.com) を物理 block
+          if ! echo "$REASON" | grep -qE 'https?://([a-z0-9-]+\.)*((gsi\.go\.jp)|(openstreetmap\.org)|(protomaps\.com))(/|$|[?#])'; then
+            echo "reason URL host must be GSI / OSM / Protomaps (TLD-anchored)"
+            exit 1
+          fi
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Node deps
+        run: npm install
+      - name: Install playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Pages live test (= 実 GSI / OSM を叩く e2e)
+        run: npx playwright test e2e/pages_live_fetch.spec.js e2e/pages_live_terrain_render.spec.js
+        env:
+          LIVE_VERIFY_EMAIL: ${{ github.event.inputs.user_agent_email }}

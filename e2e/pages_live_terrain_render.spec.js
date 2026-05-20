@@ -1,7 +1,11 @@
+// 配布元境界規律 (= b36 配布元境界): 本 spec は実 GSI / OSM endpoint を叩く。
+// CI 自動経路 (= push / pull_request / schedule trigger) からは絶対に走らせない、
+// `workflow_dispatch` (= .github/workflows/pages-live-verify.yml) からの手動 trigger のみ。
+// extraHTTPHeaders の User-Agent には開発者本人の email を埋める (= 配布元が連絡できる form)。
+// 詳細: CLAUDE.md § 考え方 / b36-tile-distributor-courtesy.md
+//
 // brief 35 root cause 調査: 「プログレスバー 100% なのに地形が出ない」 を Pages live で再現。
 // 「コースを観る」 click 後に地形 mesh が描画されるか目視 + canvas pixel で機械 verify する。
-// 2026-05-20 user 訂正「画面見てみろ。 地図タイルの取得プログレスバーは最後まで完了してるのに
-// 画面には地形が出ないぞ」 への応答。
 
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'fs';
@@ -11,6 +15,14 @@ import { fileURLToPath } from 'url';
 const PAGES_URL = 'https://yuujikamura.github.io/fujihc-trainer/';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTDIR = resolve(__dirname, '..', 'test-results', 'pages-live-terrain');
+
+// b36 配布元境界規律: extraHTTPHeaders で email を User-Agent に埋め込み、 配布元が heavy user に
+// 連絡できる form を強制する。
+test.use({
+  extraHTTPHeaders: {
+    'User-Agent': `fujihc-trainer-live-verify/0.1 (${process.env.LIVE_VERIFY_EMAIL || 'no-email-set-running-locally'})`,
+  },
+});
 
 test.beforeAll(() => { try { mkdirSync(OUTDIR, { recursive: true }); } catch {} });
 

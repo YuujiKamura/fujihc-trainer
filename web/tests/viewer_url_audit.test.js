@@ -351,6 +351,15 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(map3dIndex).not.toMatch(/['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem['"]/);
   });
 
+  it('b36 配布元境界: viewer / map3d / tile_loader3d source に `/xyz/dem/[0-9]` パターン (= txt endpoint への .png 拡張子付与) が出現しない', () => {
+    // 2026-05-20 root cause: `dem` (= txt endpoint) を `.png` で叩いて 404、 Pages で地形が
+    // 読まれない事故。 source 内に `/xyz/dem/<zoom_digit>` パターンが直接出現したら、
+    // 過去事故の re-introduction として LOAD-BEARING で fail させる (= b36 § テストで pin L1 補強)。
+    expect(viewer).not.toMatch(/\/xyz\/dem\/[0-9]/);
+    expect(map3dIndex).not.toMatch(/\/xyz\/dem\/[0-9]/);
+    expect(tileLoader3d).not.toMatch(/\/xyz\/dem\/[0-9]/);
+  });
+
   it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=200 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在', () => {
     expect(tileLoader3d).toMatch(/export\s+const\s+GSI_FETCH_LIMIT\s*=\s*6/);
     expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*200/);
