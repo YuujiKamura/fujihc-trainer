@@ -224,6 +224,14 @@ export function createCourseRibbon(THREE, course, geo, opts = {}) {
   }
 
   const mesh = new THREE.Mesh(geometry, materials);
+  // リボンは地形から drapeOffset (既定 15m) 持ち上がっている ── 太陽斜め光で
+  // 「リボンの形をした影」 を地形に落とすため caster にする。 これでリボンに
+  // 重なる地形部分には影が出 (= リボン自身の遮蔽)、 リボン真下より外側の
+  // 地形に細長い影が伸びる (= 盛土道路が地面に投げる影の見え)。 receiveShadow は
+  // map3d/index.js が shadowBoardEnabled に応じて立てる ── 立て方が非対称な理由は、
+  // cast は「リボンは常に立体」 で条件無く有効、 receive は「rider 影をどこで受けるか
+  // (影ボード or リボン)」 の選択が外から要るため。
+  mesh.castShadow = true;
 
   return {
     mesh,
