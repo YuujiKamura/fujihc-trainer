@@ -15,7 +15,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, master, b11-phase5-tile-cache]
   workflow_dispatch:
 
 permissions:

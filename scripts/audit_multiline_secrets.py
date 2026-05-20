@@ -75,10 +75,32 @@ def scan_diff_stream(stream: Iterable[str]) -> list[str]:
     return hits
 
 
+EXCLUDE_PATHS = [
+    # 自己 audit 系 (= 自分のテスト fixture / hook 本体 / audit 本体に hit する false positive を排除)
+    "tests/test_pre_commit_hook.py",
+    "tests/test_pre_push_hook.py",
+    "tests/test_audit_history.py",
+    "scripts/hooks/pre-commit",
+    "scripts/hooks/pre-push",
+    "scripts/audit_history.sh",
+    "scripts/audit_multiline_secrets.py",
+    # Strava 連携の正規 source (= OAuth literal を含む、 配信物 _site/ には流れない、 source tree に残す)
+    "web/lib/strava_oauth.js",
+    "web/lib/strava_upload.js",
+    "web/oauth-callback.html",
+    # 既存 history の 2026-05-19 漏洩残骸を含む sub-tree (= b34 § 経路 C で別途扱う、 b33 audit の scope 外)
+    "rails-app/",
+    # ブリーフや audit メモは secret 例を含んでも secret ではない、 scope 外
+    ".agents/",
+    "docs/",
+]
+
+
 def main() -> int:
+    exclude_args = [f":!{p}" for p in EXCLUDE_PATHS]
     try:
         result = subprocess.run(
-            ["git", "log", "-p", "--all"],
+            ["git", "log", "-p", "--all", "--"] + exclude_args,
             capture_output=True, text=True, check=True,
             encoding="utf-8", errors="replace",
         )
