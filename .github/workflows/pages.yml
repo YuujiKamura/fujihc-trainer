@@ -56,11 +56,10 @@ jobs:
         working-directory: web
         run: npx playwright install --with-deps chromium
 
-      # 既存: web/static/ を local SQLite から構築 (= b33 と独立した role)
-      - name: Export static assets
-        run: python scripts/export_static.py
-
       # b33: _site/ を web/ から生成 + Strava 除外 + CSP rewrite + sw.js cache bump
+      # 旧 `Export static assets` (= export_static.py で web/static/ を local SQLite から構築) は
+      # 撤去 (= b31 で訪問者単位 runtime fetch + IndexedDB に移行済、 CI には local DB が無いので
+      # `no such table: tiles` で fail する、 役割終了)。
       - name: Build Pages payload (b33)
         run: python scripts/build_pages.py
 
