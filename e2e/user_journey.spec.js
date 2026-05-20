@@ -75,6 +75,13 @@ test('brief 32: BLE 未対応訪問者が ride を阻まれて view モードへ
   const consent = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), 'fujihill.consent.intro.v1');
   expect(consent.mode).toBe('view');
   expect(consent.hash).toBe('v2-fujihill-intro-2026-05-20');
+
+  // 案内パネル抜けた直後の viewer でも配布元出典が常時可視であることを pin (= 国土地理院 + OpenStreetMap
+  // 利用規約の出典クレジット義務、 view モード state でも全 state を train 通して可視を保つ規律)。
+  const attrib = page.locator('#attrib');
+  await expect(attrib).toBeVisible();
+  await expect(attrib).toContainText('国土地理院');
+  await expect(attrib).toContainText('OpenStreetMap');
 });
 
 test('観るモードの再訪ユーザーが走行モードへ抜けられる', async ({ page }) => {
