@@ -10,10 +10,10 @@ data/*.pmtiles
 node_modules/
 .omc/
 
-# brief 31: GitHub Pages 静的サイト export 成果物 (= Actions / export_static.py が再生成).
-# .gitkeep のみ track、 中身 (tiles/ / map.pmtiles / course.json) は build 成果物。
-web/static/*
-!web/static/.gitkeep
+# brief 31 で訪問者単位 runtime fetch に移行済 + b33 で export_static.py 役割終了。
+# course.json (= 自作データ 200K) と map.pmtiles (= OSM 自前 build 3.8M、 ODbL 出典明示) は
+# Pages 配信物に同梱が必要なので track 対象。 web/static/tiles/ は配布元同梱再配布禁止で ignore。
+web/static/tiles/
 
 # Rails の暗号化鍵 (秘密、 漏洩で credentials.yml.enc が全部解ける)
 rails-app/config/master.key
