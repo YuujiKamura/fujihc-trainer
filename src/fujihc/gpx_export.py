@@ -24,7 +24,7 @@ def _esc(s: str) -> str:
 def csv_to_gpx(
     csv_path: Path,
     gpx_path: Path,
-    name: str = "fujihill ride",
+    name: str = "fujihc ride",
     activity_type: str = "Virtual Ride",
 ) -> int:
     """CSV を読んで GPX を書く。 返り値は書き出した trackpoint 数。
@@ -39,7 +39,7 @@ def csv_to_gpx(
 
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
-        '<gpx version="1.1" creator="fujihill-trainer" '
+        '<gpx version="1.1" creator="fujihc-trainer" '
         'xmlns="http://www.topografix.com/GPX/1/1" '
         'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" '
         'xmlns:gpxpx="http://www.garmin.com/xmlschemas/PowerExtension/v1">',

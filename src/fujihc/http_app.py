@@ -8,7 +8,7 @@ brief 26b で追加:
   - POST /tiles/_fetch_gsi            GSI 標高 async fetch を spawn
   - POST /tiles/_extract_osm          OSM PMTiles 抽出を spawn (body に pmtiles_path)
 
-依存: aiohttp, fujihill.tile_server, fujihill.dbinit.
+依存: aiohttp, fujihc.tile_server, fujihc.dbinit.
 """
 from __future__ import annotations
 

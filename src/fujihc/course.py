@@ -5,7 +5,7 @@ Pure-Python, no BLE. Loads any GPX file and produces a sequence of
 bridge will replay during a ride.
 
 usage:
-    python -m fujihill.course ~/Downloads/fujihill/fujihill-course.gpx
+    python -m fujihc.course ~/Downloads/fujihc/fujihc-course.gpx
 """
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def export_json(course: list[CoursePoint], out: Path) -> None:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("usage: python -m fujihill.course <gpx-path> [--export-json <path>]")
+        print("usage: python -m fujihc.course <gpx-path> [--export-json <path>]")
         return 1
     path = Path(argv[1]).expanduser()
     if not path.exists():
