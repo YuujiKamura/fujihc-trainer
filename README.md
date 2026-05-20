@@ -75,6 +75,17 @@ python -m pytest
 - **OpenStreetMap (ODbL ライセンス)**: 表示時 `© OpenStreetMap contributors (ODbL)` の表記義務。 Protomaps が再配布する PMTiles ファイル経由のみで取得、 `tile.openstreetmap.org` (= OSMF 公式 tile server) は **絶対に直接叩くな** (Tile Usage Policy 違反、 brief 13/17b 参照)
 - **国土地理院標高タイル**: 表示時「国土地理院 標高タイル」の出典明示義務、 大量アクセス自粛 (= `scripts/fetch_gsi_dem.py` は 1 req/s で 36 タイルだけ取得する設計)
 
+### 考え方 (= 規約の文字より上位)
+
+国土地理院は国民の税金で運営される公的機関、 OSM は寄付ベースの市民プロジェクト。 どちらも「全員のため」 と引き受けて無償公開してくれている。 規約の文字を逐語的に守るだけでなく、 **配布元の立場で「やってほしくないこと」 を想像する** ことを設計の軸にする。 具体的には:
+
+- 一度取ったタイルは手元 `data/tiles.sqlite` に永久保存して、 配布元には二度と取りに行かない (= 「キャッシュは活かす、 再配布はしない」 の本意)
+- テスト自動化で実 endpoint を毎日 / push 毎に叩かない、 contract verify は手動 trigger だけにする
+- `--user-agent` には自分の連絡先 (= email) を必ず入れる、 default の URL のままにしない (= 他人を僭称する form を避ける)
+- bbox / zoom を増やす変更は配布元負荷を直に増やすので、 必要性を 1 度問うてから書く
+
+AI エージェント向けの詳細指針は `CLAUDE.md` § 考え方 を参照 (= 過去 AI が踏んだ anti-example も記録)。
+
 ### scripts/fetch_gsi_dem.py を走らせる前に
 
 `--user-agent` 引数で **自分の連絡先を含む文字列**に書き換えろ:
