@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from fujihill.tile_constants import (
+from fujihc.tile_constants import (
     DEFAULT_CORRIDOR_TILES,
     FUJI_TERRAIN_BBOX,
     GSI_DEM_ZOOMS,
@@ -30,7 +30,7 @@ from fujihill.tile_constants import (
     MINIMAP_OSM_ZOOM,
     OSM_VECTOR_ZOOMS,
 )
-from fujihill.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
+from fujihc.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
 GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'
 OSM_RASTER_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'

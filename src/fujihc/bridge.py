@@ -32,8 +32,8 @@ from websockets.exceptions import ConnectionClosed
 
 from aiohttp import web
 
-from fujihill.gpx_export import csv_to_gpx
-from fujihill.http_app import make_http_app
+from fujihc.gpx_export import csv_to_gpx
+from fujihc.http_app import make_http_app
 
 log = logging.getLogger("fujihill.bridge")
 

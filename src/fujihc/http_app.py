@@ -19,7 +19,7 @@ from typing import Awaitable, Callable, Optional
 
 from aiohttp import web
 
-from fujihill import dbinit, tile_server
+from fujihc import dbinit, tile_server
 
 log = logging.getLogger(__name__)
 
