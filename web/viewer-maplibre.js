@@ -1555,9 +1555,17 @@ function startTerrainProbe() {
   loader.subscribe((snap) => {
     setTerrainStatusUI(snap);
     updateTerrainStep(snap.phase);
+    // brief 35: terrain probe が click 前 (= module top の startTerrainProbe) から走る経路の
+    // 進捗をロード overlay に bind。 訪問者が「コースを観る」 を click する前から overlay は
+    // visible で、 「地形タイル取得中 N / M」 が動く ── intro overlay の文章を読んでる時間に
+    // 裏で確実に動いている signal を見せる (= 「死んでる」 と判断されない)。
+    if (snap.total > 0) {
+      updateLoadingProgress(snap.done, snap.total);
+    }
     if (snap.phase === 'done') {
       terrainReady = true;
       updateActionButtonsForTerrain();
+      fadeOutLoadingOverlay();
       // 2026-05-16 fix: 一部環境 (= GPU 制限 / tile fetch 部分失敗) で map.on('idle') が
       // 発火せず mapFullyLoaded が永遠 false になる事故 (= user 報告「閉じるしか押せない」).
       // terrain probe done (= course / pmtiles / GSI tile 全部確認済) + 5 秒待っても
@@ -1586,6 +1594,11 @@ function startTerrainProbe() {
 // 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
 let _terrainLoader = null;
 if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
+  // brief 35: terrain probe の起動と同時にロード overlay を visible 化、 intro overlay 表示中の
+  // 沈黙期間にも「動いている」 を訪問者に見せる。 Pages 環境では click 前から GSI direct fetch が
+  // 走るため、 click 後の bootMap に bind するだけでは進捗が見えなかった (= 2026-05-20 user 訂正
+  // 「地形データが読み込まれてないだろ」 を受けた fix)。
+  try { showLoadingOverlay('idle'); } catch (e) { /* document 不在等 silent */ }
   try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihill] terrain probe init failed:', e); }
 }
 
