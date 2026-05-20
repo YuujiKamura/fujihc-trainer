@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Auto-installed by scripts/install_b33_hooks.sh (= b33 brief 責務 2)
+# CLAUDE.md Rule 9 (= 物理層 gate): push 前に range 全体 (= 初回は HEAD 全 history) を scan。
+# --no-verify で skip された場合は CI 側 audit.yml で再走査される二重 gate 構造。
+set -uo pipefail
+
+fail() {
+  echo "" >&2
+  echo "❌ pre-push blocked: $1" >&2
+  echo "" >&2
+  echo "   This is a physical-layer block. To override, the user must explicitly" >&2
+  echo "   instruct '--no-verify' AFTER reading the block reason." >&2
+  echo "   AI must NOT auto-add --no-verify." >&2
+  echo "   Even with --no-verify, CI side audit.yml re-runs the same regex." >&2
+  echo "" >&2
+  exit 1
+}
+
+# upstream 解決: origin/HEAD → fallback で origin/main / origin/master を探す → 全 history
+upstream=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "")
+if [ -z "$upstream" ]; then
+  for candidate in main master; do
+    if git rev-parse --verify "origin/$candidate" >/dev/null 2>&1; then
+      upstream="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$upstream" ] || ! git rev-parse --verify "origin/$upstream" >/dev/null 2>&1; then
+  mode="all-history"
+  # diff body の `+` 行のみ scan (= commit SHA / file header `+++` を skip して false positive を排除)
+  DIFF=$(git log -p HEAD 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+  FILES=$(git log --all --name-only --pretty=format: HEAD 2>/dev/null | sort -u)
+else
+  mode="push-range"
+  DIFF=$(git diff "origin/$upstream..HEAD" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+  FILES=$(git diff "origin/$upstream..HEAD" --name-only 2>/dev/null | sort -u)
+fi
+
+# pre-commit と同一の regex 群を range 全体に走らせる
+echo "$DIFF" | grep -P 'strava\.com/oauth' > /dev/null && fail "Strava OAuth URL detected ($mode)"
+echo "$DIFF" | grep -P '\b[a-f0-9]{40}\b' > /dev/null && fail "40-hex token (Strava-shape) detected ($mode)"
+echo "$DIFF" | grep -P 'Bearer\s+[A-Za-z0-9._-]{20,}' > /dev/null && fail "Bearer token detected ($mode)"
+echo "$DIFF" | grep -P 'sk-[A-Za-z0-9]{40,}' > /dev/null && fail "OpenAI key shape detected ($mode)"
+echo "$DIFF" | grep -P 'gh[ps]_[A-Za-z0-9]{36,}' > /dev/null && fail "GitHub token detected ($mode)"
+echo "$DIFF" | grep -P "(client_secret|refresh_token|access_token|api_key|api_secret)[\"'\\s:=]+[A-Za-z0-9._-]{20,}" > /dev/null && fail "secret key=value detected ($mode)"
+
+echo "$FILES" | grep -P '(^|/)(\.env(\.local|\.production|\.development\.local|\.test)?$|master\.key$|credentials\.yml\.enc$|config/credentials/.+\.yml\.enc$)' > /dev/null && fail "secret file in range ($mode)"
+echo "$FILES" | grep -P '^web/static/tiles/' > /dev/null && fail "redistribution-restricted tile in range ($mode)"
+
+exit 0

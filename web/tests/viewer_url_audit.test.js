@@ -3,12 +3,14 @@
 // brief 13/17b の「外部第三者 endpoint への runtime fetch ゼロ」を維持するための
 // 唯一の機械化された防衛線。
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+// brief 33: _site/ 配信物の規律 describe block で参照する path (= scripts/build_pages.py が生成)
+const SITE_DIR = resolve(__dirname, '..', '..', '_site');
 
 describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
@@ -387,5 +389,96 @@ describe('brief 31: 外部 fetch ゼロ規律の拡張 (= pmtiles CDN 経由 blo
 
   it('STATIC_TILE_BASE_URL は ${BASE_PATH}static の path 構成 (= GitHub Pages prefix 追従)', () => {
     expect(viewer).toMatch(/STATIC_TILE_BASE_URL\s*=\s*`\$\{location\.origin\}\$\{BASE_PATH\}static`/);
+  });
+});
+
+// brief 33: _site/ 配信物の規律 (= build_pages.py で生成した artifact の URL pin)。
+// 既存 describe block (= b17b の viewer-maplibre.js source 単体 scan) には触らず、
+// 新規 describe で _site/ 配下を target にする (= b31 worker 編集との衝突回避)。
+//
+// 実行前提: `python scripts/build_pages.py` で _site/ を生成済。
+// _site/ が存在しないと最初の it 句で fail-fast (= silent skip 防止、 軸 7 fix)。
+describe('_site/ 配信物の規律 (= brief 33)', () => {
+  it('_site/ ディレクトリが存在する (= build_pages.py が走った前提、 不在なら CI step 順設定ミス)', () => {
+    expect(existsSync(SITE_DIR)).toBe(true);
+  });
+
+  it('_site/index.html から Strava CDN URL が消えている (= class C1 除外)', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    expect(html).not.toMatch(/https?:\/\/(www|api|cdn-\d+)\.strava\.com/);
+    expect(html).not.toMatch(/https?:\/\/\*\.strava\.com/);
+  });
+
+  it('_site/lib/strava_oauth.js が不在 (= class C1 除外)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_oauth.js'))).toBe(false);
+  });
+
+  it('_site/lib/strava_upload.js が不在 (= class C1 除外)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'lib', 'strava_upload.js'))).toBe(false);
+  });
+
+  it('_site/oauth-callback.html が不在 (= class C1 除外、 visitor から到達不能)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'oauth-callback.html'))).toBe(false);
+  });
+
+  it('_site/index.html から Strava 関連 DOM 13 個が消えている', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    const STRAVA_IDS = [
+      'strava-section', 'strava-fold', 'strava-status',
+      'btnStravaConnect', 'btnStravaDisconnect',
+      'strava-setup-overlay', 'stravaClientIdInput',
+      'btnStravaSetupSave', 'btnStravaSetupCancel',
+      'postride-strava-fold', 'btnStravaUpload',
+      'postride-upload-status', 'chkConsentStrava',
+    ];
+    for (const id of STRAVA_IDS) {
+      expect(html).not.toMatch(new RegExp(`id="${id}"`));
+    }
+  });
+
+  it('_site/static/tiles/gsi_dem/ が不在 (= 配布元 ToS 違反防止、 class C1 統合)', () => {
+    expect(existsSync(resolve(SITE_DIR, 'static', 'tiles', 'gsi_dem'))).toBe(false);
+  });
+
+  it('_site/index.html の CSP が stripped 版 (= connect-src に strava 含まず、 img-src も同様)', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    const csp = html.match(/<meta[^>]*http-equiv="Content-Security-Policy"[^>]*content="([^"]+)"|<meta[^>]*content="([^"]+)"[^>]*http-equiv="Content-Security-Policy"/);
+    expect(csp).not.toBeNull();
+    const policy = csp[1] || csp[2];
+    expect(policy).not.toMatch(/strava\.com/);
+    expect(policy).toMatch(/connect-src 'self' https:\/\/cyberjapandata\.gsi\.go\.jp/);
+    expect(policy).toMatch(/img-src 'self' data:/);
+    expect(policy).toMatch(/script-src 'self' 'sha256-/);  // importmap hash は維持
+    expect(policy).toMatch(/worker-src 'self' blob:/);     // maplibre worker bundle は維持
+    expect(policy).toMatch(/frame-ancestors 'none'/);      // 軸 7 (e) fix、 clickjack 防止 baseline
+    expect(policy).toMatch(/form-action 'self'/);          // 軸 7 (e) fix、 form 改竄防止 baseline
+    expect(policy).toMatch(/object-src 'none'/);           // 古い plugin 経路の物理排除
+    expect(policy).toMatch(/base-uri 'self'/);             // base tag 改竄防止
+  });
+
+  it('_site/sw.js の CACHE_NAME が bump 済 (= 軸 6 NG-R2-1 fix、 v13 → v14)', () => {
+    const sw = readFileSync(resolve(SITE_DIR, 'sw.js'), 'utf8');
+    expect(sw).toMatch(/CACHE_NAME = 'fujihill-v14'/);
+    expect(sw).not.toMatch(/CACHE_NAME = 'fujihill-v13'/);
+  });
+
+  it('残すもの = Web Bluetooth consent が _site/index.html に保持されている (= 過削除防止)', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    expect(html).toMatch(/id="consent-overlay"/);
+    expect(html).toMatch(/id="intro-overlay"/);
+  });
+
+  it('残すもの = HUD / minimap / section list が _site/index.html に保持されている', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    expect(html).toMatch(/id="hud"/);
+    expect(html).toMatch(/id="rider-hud"/);
+    expect(html).toMatch(/id="minimap-container"/);
+    expect(html).toMatch(/id="section-list-panel"/);
+  });
+
+  it('残すもの = 履歴 overlay が _site/index.html に保持されている (= IndexedDB ローカル history)', () => {
+    const html = readFileSync(resolve(SITE_DIR, 'index.html'), 'utf8');
+    expect(html).toMatch(/id="history-overlay"/);
+    expect(html).toMatch(/id="history-panel"/);
   });
 });

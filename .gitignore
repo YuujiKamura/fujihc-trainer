@@ -17,3 +17,6 @@ web/static/*
 
 # Rails の暗号化鍵 (秘密、 漏洩で credentials.yml.enc が全部解ける)
 rails-app/config/master.key
+
+# brief 33: Pages 配信物の build artifact (= scripts/build_pages.py が再生成、 _site/ は track 対象外)
+_site/

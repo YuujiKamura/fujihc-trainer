@@ -1,0 +1,43 @@
+# brief 33 責務 2 (= 軸 7 secondary-3 fix): CI 側 audit。
+# pre-commit / pre-push hook が --no-verify で skip された場合の二重 gate。
+# 全 branch に対して fire するため、 main 以外への push でも secret / Strava 関連 / 配布元 tile の
+# 履歴 landing を block する。
+#
+# scripts/audit_history.sh が hook と同じ regex 群を全 git history に走らせ、
+# scripts/audit_multiline_secrets.py が改行越え secret を 2-line window で scan する。
+name: secret / tile / Strava audit
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 全 history を scan するため fetch-depth=0 (= 完全 history clone)
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run audit_history.sh (= hook regex 二重 gate)
+        run: bash scripts/audit_history.sh
+
+      - name: Run audit_multiline_secrets.py 単体テスト
+        run: python -m pytest tests/test_audit_history.py -v
+
+      - name: Run pre-commit / pre-push hook 単体テスト
+        run: python -m pytest tests/test_pre_commit_hook.py tests/test_pre_push_hook.py -v
+
+      - name: Run build_pages.py 単体テスト
+        run: |
+          pip install -e .
+          python -m pytest tests/test_build_pages.py -v

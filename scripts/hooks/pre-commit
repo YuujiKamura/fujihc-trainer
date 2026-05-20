@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Auto-installed by scripts/install_b33_hooks.sh (= b33 brief 責務 2)
+# CLAUDE.md Rule 9 (= 物理層 gate): commit を regex 違反で block する。
+# 解除は `rm .git/hooks/pre-commit`、 もしくは git の標準 `--no-verify` (=
+# ただし --no-verify で抜けても CI 側 audit.yml で同じ regex を再走査する二重 gate)。
+set -uo pipefail
+
+# diff body の `+` 行のみ scan (= file header `+++` を skip して false positive 排除)
+DIFF=$(git diff --cached | grep '^+' | grep -v '^+++' || true)
+FILES=$(git diff --cached --name-only)
+
+fail() {
+  echo "" >&2
+  echo "❌ pre-commit blocked: $1" >&2
+  echo "" >&2
+  exit 1
+}
+
+# Strava OAuth URL literal (= 連携経路の coding pattern が leak した)
+echo "$DIFF" | grep -P 'strava\.com/oauth' > /dev/null && fail "Strava OAuth URL detected"
+
+# 40-hex token (= Strava access_token / git SHA shape、 false positive 受容)
+echo "$DIFF" | grep -P '\b[a-f0-9]{40}\b' > /dev/null && fail "40-hex token (Strava-shape) detected"
+
+# Bearer token
+echo "$DIFF" | grep -P 'Bearer\s+[A-Za-z0-9._-]{20,}' > /dev/null && fail "Bearer token detected"
+
+# OpenAI / GitHub token shape (= 将来の二重防御)
+echo "$DIFF" | grep -P 'sk-[A-Za-z0-9]{40,}' > /dev/null && fail "OpenAI key shape detected"
+echo "$DIFF" | grep -P 'gh[ps]_[A-Za-z0-9]{36,}' > /dev/null && fail "GitHub token detected"
+
+# secret key=value (= 同一行の client_secret= / access_token: 等)
+echo "$DIFF" | grep -P "(client_secret|refresh_token|access_token|api_key|api_secret)[\"'\\s:=]+[A-Za-z0-9._-]{20,}" > /dev/null && fail "secret key=value detected"
+
+# secret file 名 variant
+echo "$FILES" | grep -P '(^|/)(\.env(\.local|\.production|\.development\.local|\.test)?$|master\.key$|credentials\.yml\.enc$|config/credentials/.+\.yml\.enc$)' > /dev/null && fail "secret file staged"
+
+# 配布元再配布禁止 path (= GSI / OSM 同梱は class C1)
+echo "$FILES" | grep -P '^web/static/tiles/' > /dev/null && fail "redistribution-restricted tile staged (web/static/tiles/)"
+
+# master.key 内容 (= 32 hex 1 行 file、 filename rename を覆う)
+for f in $FILES; do
+  [ -f "$f" ] || continue
+  lines=$(wc -l < "$f" 2>/dev/null || echo 999)
+  if [ "$lines" -le 2 ]; then
+    if grep -P '^[a-f0-9]{32}$' "$f" > /dev/null 2>&1; then
+      fail "master.key-shaped file content detected: $f"
+    fi
+  fi
+done
+
+exit 0
