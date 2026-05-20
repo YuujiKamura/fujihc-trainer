@@ -14,3 +14,6 @@ node_modules/
 # .gitkeep のみ track、 中身 (tiles/ / map.pmtiles / course.json) は build 成果物。
 web/static/*
 !web/static/.gitkeep
+
+# Rails の暗号化鍵 (秘密、 漏洩で credentials.yml.enc が全部解ける)
+rails-app/config/master.key
