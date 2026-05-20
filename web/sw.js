@@ -13,14 +13,14 @@
 //     (= 2 回目以降 fetch ゼロ、 オフライン起動可)。
 // version bump (CACHE_NAME) は cache 全消しの強制リセット手段として残す。
 
-const CACHE_NAME = 'fujihill-v14';
+const CACHE_NAME = 'fujihill-v15';
 
 // install 時に一括取得する static 資産。 dynamic な tile / pmtiles は事前リスト不可、
 // fetch handler 側で cache-on-demand する (= 走った tile から順に永続化)。
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './viewer-maplibre.js?v=40',
+  './viewer-maplibre.js?v=41',
   './course.json',
   './static/course.json',
   './static/map.pmtiles',

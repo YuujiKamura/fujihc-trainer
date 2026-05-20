@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatElapsed, formatSpeed, formatPower, formatCadence, formatHr,
-  formatTrainerSpeed, formatAck, ACK_OK_COLOR, ACK_NG_COLOR, createHud,
+  formatTrainerSpeed, formatAck, formatEta, ACK_OK_COLOR, ACK_NG_COLOR, createHud,
 } from '../lib/hud.js';
 
 // id → fake 要素 を返す getEl。 textContent と style を持つ最小の偽要素。
@@ -179,5 +179,83 @@ describe('createHud', () => {
       hud.speed(1, { paused: false, connected: false });
       hud.total(1);
     }).not.toThrow();
+  });
+});
+
+// === b39 formatEta + createHud().eta() ===
+
+describe('formatEta (b39)', () => {
+  it('avgSpeed が 0 / 負 / NaN / undefined / null → "--" (= 開始直後 / paused のフォールバック)', () => {
+    expect(formatEta(10000, 0)).toBe('--');
+    expect(formatEta(10000, -5)).toBe('--');
+    expect(formatEta(10000, NaN)).toBe('--');
+    expect(formatEta(10000, undefined)).toBe('--');
+    expect(formatEta(10000, null)).toBe('--');
+  });
+
+  it('残り距離 ≤ 0 → "00:00" (= ゴール後 / 完走の表示)', () => {
+    expect(formatEta(0, 15)).toBe('00:00');
+    expect(formatEta(-100, 15)).toBe('00:00');
+  });
+
+  it('残り 0-59 分 → "あと N 分" (= 1 時間未満の表示形式)', () => {
+    // 10000m / 15kph = 0.6667 hr = 40.0 分 → round で 40 分
+    expect(formatEta(10000, 15)).toBe('あと 40 分');
+    // 10001m / 15kph = 40.004 分 → round で 40 分
+    expect(formatEta(10001, 15)).toBe('あと 40 分');
+    // 10100m / 15kph = 40.4 分 → round で 40 分
+    expect(formatEta(10100, 15)).toBe('あと 40 分');
+  });
+
+  it('小数 .5 → +1 分の境界 (= round 30 秒以上で繰り上げ、 b39 spec)', () => {
+    // 10125m / 15kph = 40.5 分 → round で 41 分
+    expect(formatEta(10125, 15)).toBe('あと 41 分');
+  });
+
+  it('59 分の左 edge → "あと 59 分" (= 1 時間表記に切り替わる直前)', () => {
+    // 14749m / 15kph = 58.996 分 → round で 59 分
+    expect(formatEta(14749, 15)).toBe('あと 59 分');
+  });
+
+  it('60 分への切替 (= 59.5 分以上で 60 分扱い → "あと 1 時間 0 分" 表記、 60 分表記は使わない)', () => {
+    // 14875m / 15kph = 59.5 分 → round で 60 分 → "あと 1 時間 0 分"
+    expect(formatEta(14875, 15)).toBe('あと 1 時間 0 分');
+  });
+
+  it('ちょうど 60 分 → "あと 1 時間 0 分" (= 60 分表記は使わず 1 時間扱いに統一)', () => {
+    // 15000m / 15kph = 60.0 分 → "あと 1 時間 0 分"
+    expect(formatEta(15000, 15)).toBe('あと 1 時間 0 分');
+  });
+
+  it('60 分超え → "あと N 時間 M 分" (= hours = floor(N/60), mins = N % 60)', () => {
+    // 15125m / 15kph = 60.5 分 → round で 61 分 → hours=1, mins=1 → "あと 1 時間 1 分"
+    expect(formatEta(15125, 15)).toBe('あと 1 時間 1 分');
+    // 15000m / 12kph = 75 分 → hours=1, mins=15 → "あと 1 時間 15 分"
+    expect(formatEta(15000, 12)).toBe('あと 1 時間 15 分');
+    // 30000m / 10kph = 180 分 → hours=3, mins=0 → "あと 3 時間 0 分"
+    expect(formatEta(30000, 10)).toBe('あと 3 時間 0 分');
+  });
+});
+
+describe('createHud().eta (b39)', () => {
+  it('正常値 → formatEta の結果を #eta に書く', () => {
+    const fd = fakeDom();
+    const hud = createHud(fd.getEl);
+    hud.eta({ remainingDist_m: 10000, avgSpeed_kmh: 15 });
+    expect(fd.text('eta')).toBe('あと 40 分');
+  });
+
+  it('avgSpeed_kmh が NaN → "--" を #eta に書く (= 開始直後の paused 状態を ride loop が NaN で伝える)', () => {
+    const fd = fakeDom();
+    const hud = createHud(fd.getEl);
+    hud.eta({ remainingDist_m: 10000, avgSpeed_kmh: NaN });
+    expect(fd.text('eta')).toBe('--');
+  });
+
+  it('残り 0 → "00:00" (= ゴール表示)', () => {
+    const fd = fakeDom();
+    const hud = createHud(fd.getEl);
+    hud.eta({ remainingDist_m: 0, avgSpeed_kmh: 15 });
+    expect(fd.text('eta')).toBe('00:00');
   });
 });

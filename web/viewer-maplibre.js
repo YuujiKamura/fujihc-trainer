@@ -69,6 +69,7 @@ import {
 } from './lib/ride_autosave.js';
 // brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) 用の区間分割 + UI helper.
 import { splitCourseIntoSections, formatSectionLabel } from './lib/course_sections.js';
+import { FUJIHC_LANDMARKS, snapLandmarksToCourse } from './lib/course_landmarks.js';
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
 // b31: GSI_DEM_DIRECT_BASE constant は terrain_loader.js 側で定義、 viewer 本体には
 // URL literal を書かない (= viewer_url_audit.test.js 単体 scan に対し GSI URL 出現ゼロ維持)。
@@ -1881,6 +1882,11 @@ async function loadCourse() {
     mapRenderer.setCameraDefaults({ zoom: 21, pitch: 85 });
   }
   await mapRenderer.renderCourse(course);
+  // b39: 富士ヒル公式 7 landmark を course.json に snap して 3D 走路に立てる。
+  // course.json と FUJIHC_LANDMARKS の data 都合は course_landmarks.js が SoT。
+  // scene 直接 touch は viewer-maplibre.js では禁止 (= mapRenderer.setLandmarks 経由必須)。
+  const snappedLandmarks = snapLandmarksToCourse(FUJIHC_LANDMARKS, course);
+  mapRenderer.setLandmarks(snappedLandmarks);
   // ride 中は start/goal マーカーをメイン map から hide する (= 現 body state に追随)。
   updateStartGoalVisibility();
 
@@ -2254,6 +2260,14 @@ function tick(t) {
     ? Math.floor((performance.now() - rideStartedAt) / 1000)
     : null;
   hud.ride({ elapsedSec, dist: curDist, ele: rEle, slope: pos.slope_pct });
+
+  // b39: ゴール ETA。 paused / 開始 30 秒以内は avgSpeed_kmh を NaN にして渡し、
+  // hud 側の整形規律 (= NaN → "--") に判定を移譲する (= hud SoT 規律維持)。
+  const paused = !rideStartedAt;
+  const avgSpeedForEta = (paused || elapsedSec == null || elapsedSec < 30 || curDist <= 0)
+    ? NaN
+    : (curDist / elapsedSec * 3.6);  // m/s → km/h
+  hud.eta({ remainingDist_m: totalDist - curDist, avgSpeed_kmh: avgSpeedForEta });
 
   // b9: 距離ラベルの表示窓を rider 現在地に追従させる (= 50m 刻みの間引きは renderer 内)。
   mapRenderer.updateLabelWindow(curDist);

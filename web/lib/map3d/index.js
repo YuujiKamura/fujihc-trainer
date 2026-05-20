@@ -23,6 +23,7 @@ import { createRiderMesh3d } from './rider_mesh3d.js';
 import { createCourseRibbon } from './course_ribbon3d.js';
 import { createMarkers3d } from './markers3d.js';
 import { createLabels3d, LABEL_BASE_HEIGHT_M } from './labels3d.js';
+import { createLandmarks3d } from './landmarks3d.js';
 import { ROAD_OFFSET_M } from './terrain_surface.js';
 import { loadDemStitched, loadPhotoCanvas } from './tile_loader3d.js';
 import { sampleHeightBilinear } from '../terrain3d.js';
@@ -106,6 +107,7 @@ export function createMapRenderer() {
   let ribbon3d = null;    // 部品3
   let markers3d = null;   // 部品6
   let labels3d = null;    // 部品7
+  let landmarks3d = null; // b39: 富士ヒル区間名標識 (= 7 件、 setLandmarks で生成 / 再呼出で dispose+再生成)
   let terrainMesh = null; // 部品2 の出力 mesh
   let shadowBoardEnabled = false;  // 影ボード (自機足元の影専用ボード) の有効/無効、 既定オフ
 
@@ -590,6 +592,32 @@ export function createMapRenderer() {
     setLabelHeight(heightM) {
       if (labels3d) labels3d.setLabelHeight(heightM);
       else pending.labelHeight = heightM;
+    },
+
+    /**
+     * b39 区間名標識: 富士ヒル公式 7 landmark を 3D 走路に立てる。
+     *
+     * 入力 snappedLandmarks は course_landmarks.js の snapLandmarksToCourse 戻り
+     * (= { id, name, idx, distance_m, lat, lon, elevation_m }[])。 boot 前 / 地形未準備で
+     * 呼ばれた場合は何もしない (= viewer-maplibre.js は map3d boot 完了後 + course 読込後に
+     * 呼ぶ契約、 pending 保留はしない)。 既存 landmarks3d があれば dispose + scene
+     * remove してから作り直す (= 再呼出時の GPU リソース leak 防止)。
+     */
+    setLandmarks(snappedLandmarks) {
+      if (landmarks3d) {
+        landmarks3d.dispose();
+        if (scene) scene.remove(landmarks3d.group);
+        landmarks3d = null;
+      }
+      if (!THREE || !scene || !range || !stitched || !geoMeta) return;
+      landmarks3d = createLandmarks3d(THREE, {
+        snappedLandmarks: snappedLandmarks || [],
+        range,
+        stitched,
+        centerLat: geoMeta.centerLat,
+        centerLon: geoMeta.centerLon,
+      });
+      scene.add(landmarks3d.group);
     },
   };
 }

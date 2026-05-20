@@ -137,6 +137,8 @@ import { riderPlacementAtDistance } from './lib/rider_placement.js';
 import { openTileCache } from './lib/tile_cache.js';
 import { adjustPitch } from './lib/camera_controller.js';
 import { createHud } from './lib/hud.js';
+import { FUJIHC_LANDMARKS, snapLandmarksToCourse } from './lib/course_landmarks.js';
+import { createLandmarks3d } from './lib/map3d/landmarks3d.js';
 
 // === 定数 ===
 // GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain_mesh.js 準拠)。
@@ -561,6 +563,17 @@ async function main() {
   scene.add(new THREE.Mesh(ribbonGeo, new THREE.MeshBasicMaterial({
     vertexColors: true, side: THREE.DoubleSide,
   })));
+
+  // b39: 富士ヒル公式 7 landmark を 3D 走路に立てる。 terrain3d.html は createMapRenderer
+  // 経由しない直結 form (= line 511 で scene を直接生成、 既存 ribbon / bike / sun と
+  // 並ぶ scene.add pattern)、 viewer-maplibre.js とは別契約で scene 直接 touch を
+  // 明示許可された scope。
+  const snappedLandmarks = snapLandmarksToCourse(FUJIHC_LANDMARKS, course);
+  const landmarks = createLandmarks3d(THREE, {
+    snappedLandmarks, range, stitched,
+    centerLat: geo.centerLat, centerLon: geo.centerLon, tileSize: TILE_PX,
+  });
+  scene.add(landmarks.group);
   // 始点 / 終点マーカー用にコース中心線の両端だけ投影する。
   const coursePath = buildCoursePath(course, {
     range, stitched, centerLat: geo.centerLat, centerLon: geo.centerLon,

@@ -66,6 +66,30 @@ export const ACK_OK_COLOR = '#7fff00';
 export const ACK_NG_COLOR = '#ff5050';
 
 /**
+ * 残り距離と平均速度から「フィニッシュまであと N」 を整形 (b39)。
+ *
+ * hud SoT 規律 = 整形 + DOM 書き込みのみ。 paused / elapsedSec / 30 秒境界の状態判定は
+ * 呼び出し側 (= ride loop) で済ませた上で、 ここには数値だけを渡す。 本関数は
+ * 「avgSpeed_kmh の妥当性」 のみ判定 (= 0 / NaN / 負 / undefined → "--")。
+ *
+ * 表示 spec (= b39 brief 確定、 60 分 = 1 時間扱い):
+ *  - avgSpeed_kmh ≤ 0 / NaN / 負 / undefined → "--"
+ *  - remainingDist_m ≤ 0 → "00:00" (= ゴール後 / 完走)
+ *  - 残り時間 = (remainingDist_m / 1000) / avgSpeed_kmh [hours]、 分への round (= 30 秒以上で +1 分)
+ *  - 0-59 分 → "あと N 分"
+ *  - 60 分以上 → "あと N 時間 M 分" (= hours = floor(N/60), mins = N % 60)
+ */
+export function formatEta(remainingDist_m, avgSpeed_kmh) {
+  if (avgSpeed_kmh == null || !Number.isFinite(avgSpeed_kmh) || avgSpeed_kmh <= 0) return '--';
+  if (remainingDist_m == null || !Number.isFinite(remainingDist_m) || remainingDist_m <= 0) return '00:00';
+  const minutes = Math.round((remainingDist_m / 1000) / avgSpeed_kmh * 60);
+  if (minutes < 60) return `あと ${minutes} 分`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `あと ${hours} 時間 ${mins} 分`;
+}
+
+/**
  * ライド HUD の更新メソッド束を作る。
  *
  * @param {(id:string)=>(Element|null)} getEl - id から要素を引く関数 (test では fake)
@@ -147,6 +171,16 @@ export function createHud(getEl) {
       } else {
         el.style.display = 'none';
       }
+    },
+
+    /**
+     * フィニッシュまでの残り時間予想を #eta に書く (b39)。
+     * 数値の妥当性判定は呼び出し側 (= ride loop)、 本 method は formatEta の結果を
+     * textContent に書くだけ。 paused / 開始 30 秒以内は ride loop 側で avgSpeed_kmh を
+     * NaN にして渡す = hud は「avgSpeed が NaN なら '--'」 を 1 規則で扱う。
+     */
+    eta({ remainingDist_m, avgSpeed_kmh }) {
+      write('eta', formatEta(remainingDist_m, avgSpeed_kmh));
     },
   };
 }

@@ -8,7 +8,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/map3d/index.js';
 
-// map_renderer.js が定める意味メソッド15個。 Three.js 実装も同じ顔ぶれを満たす。
+// map_renderer.js が定める意味メソッド (= b39 で setLandmarks を追加して 22 個)。
+// Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
   'isBooted', 'boot', 'onceIdle',
   'setCameraDefaults', 'updateCamera', 'projectToScreen', 'getCameraInfo', 'render',
@@ -19,20 +20,28 @@ const CONTRACT_METHODS = [
   'setStartGoalVisible',
   'setRiderScale', 'setCourseWidth', 'setRoadHeight', 'setLabelHeight',
   'setRiderShape', 'setShadowBoardEnabled',
+  'setLandmarks',  // b39 富士ヒル区間名標識 (= 7 件、 createLandmarks3d 経由)
 ];
 
-describe('createMapRenderer — 差し替え口21メソッド', () => {
-  it('21個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口22メソッド', () => {
+  it('22個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (20個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (22個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
+  });
+
+  it('boot 前 setLandmarks を呼んでも例外にならない (= viewer-maplibre.js の早呼びを許容、 b39)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setLandmarks([])).not.toThrow();
+    expect(() => r.setLandmarks(null)).not.toThrow();
+    expect(() => r.setLandmarks(undefined)).not.toThrow();
   });
 
   it('boot 前は isBooted() が false', () => {
