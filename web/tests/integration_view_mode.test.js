@@ -275,7 +275,8 @@ describe('brief 34 ε-8 integration: viewer-maplibre.js の source 構造', () =
   });
 
   it('btnIntroView click handler が setIntroConsent({mode:"view"}) + dispatchAfterIntro を呼ぶ', () => {
-    expect(viewer).toMatch(/btnIntroView[\s\S]{0,300}setIntroConsent\(\{[^}]*mode:\s*['"]view['"][^}]*\}\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+    // brief 32: btnIntroView click handler に data-intro-state 更新が挟まったため、 grep 範囲を 300→600 に拡張。
+    expect(viewer).toMatch(/btnIntroView[\s\S]{0,600}setIntroConsent\(\{[^}]*mode:\s*['"]view['"][^}]*\}\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
   });
 
   it('addRide / getClientId の guard に intro mode === "view" の short-circuit が含まれる (= 物理 disable の二重 gate)', () => {

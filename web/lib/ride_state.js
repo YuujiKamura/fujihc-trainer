@@ -39,6 +39,10 @@ export function createRideState(course) {
   let legacyTrkpts = [];
 
   function _legacyAppendTrkpt(extras) {
+    // brief 32: view モードでは record しない (= UI hide だけでなく buffer-level 物理 gate).
+    // mode-view CSS は UI 露出を hide するだけ、 内部 buffer (= legacyTrkpts) に lat/lon/power/hr が
+    // 貯まる経路を物理 disable する。 jsdom / node test (= document 不在) では skip しない (= 既存 test 互換).
+    if (typeof document !== 'undefined' && document.body && document.body.classList.contains('mode-view')) return;
     if (course.length === 0) return;
     // rider.position (= terrain query 経由の interpolated lat/lon/elevation) を
     // SoT に使う. rider が advance か直 tick かに関わらず位置が正しく動く.

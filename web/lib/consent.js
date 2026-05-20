@@ -14,7 +14,7 @@
 // 計算: scripts/compute_consent_hashes.js (= 将来追加可、 本 brief では手動更新)
 // 現行 (v1) 文言 hash. 文言は web/index.html の #intro-overlay 内に正本がある、
 // 比較先はこの const、 改竄耐性は CSP `script-src 'self'` で保証する。
-export const INTRO_CONSENT_HASH = 'v1-fujihill-intro-2026-05-15';
+export const INTRO_CONSENT_HASH = 'v2-fujihill-intro-2026-05-20';
 export const RIDE_CONSENT_HASH = 'v1-fujihill-ride-2026-05-15';
 
 // localStorage keys (= 改名する場合は migration 必須、 単純 set/get で済む).

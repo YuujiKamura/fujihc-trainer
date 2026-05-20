@@ -894,11 +894,19 @@ function showAttributionWarning(detail) {
 //   一般訪問者は intro 通過後の default 経路 (= ride or view) のみに到達する。
 function showIntroOverlay() {
   const ov = document.getElementById('intro-overlay');
-  if (ov) ov.classList.add('visible');
+  if (ov) {
+    ov.classList.add('visible');
+    // brief 32: internal state を data-intro-state 属性に expose (= e2e は state 遷移を toHaveAttribute で pin、
+    // 文言 grep だけの misleading test を回避)。
+    ov.dataset.introState = 'visible';
+  }
 }
 function hideIntroOverlay() {
   const ov = document.getElementById('intro-overlay');
-  if (ov) ov.classList.remove('visible');
+  if (ov) {
+    ov.classList.remove('visible');
+    ov.dataset.introState = 'hidden';
+  }
 }
 // brief 34 ε-3: 公開ガードレール consent-overlay 表示 / ボタン bind.
 // 「同意して ride 開始」= setRideConsent({history, strava, asked: true}) を保存 +
@@ -1009,6 +1017,21 @@ if (typeof document !== 'undefined') {
   if (btnIntroStart) btnIntroStart.addEventListener('click', () => {
     // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 属性の二重 gate、 keyboard activation 経由でも block).
     if (!terrainReady) return;
+    // brief 32: Web Bluetooth 未対応ブラウザ (= Firefox / Safari 等) なら overlay 内の未対応 message を
+    // visible 化 + ride ボタン disable + early-return。 user は btnIntroView 経由で view モードに誘導される
+    // (= btnIntroView は active 維持)。 BLE 未対応判定は ble_client.js の `isWebBluetoothSupported` 経由で行い、
+    // Web Bluetooth API の直叩きを viewer 側に書かない (= ble_responsibility_grep.test.js の規律遵守、 SoT は ble_client.js)。
+    if (!isWebBluetoothSupported()) {
+      const ov = document.getElementById('intro-overlay');
+      if (ov) ov.dataset.introState = 'ble-unsupported';
+      const unsupportedMsg = document.getElementById('intro-ble-unsupported');
+      if (unsupportedMsg) unsupportedMsg.hidden = false;
+      btnIntroStart.disabled = true;
+      return;
+    }
+    // brief 32: internal state を data-intro-state="ride-selected" に立てて遷移直前を expose。
+    const ov = document.getElementById('intro-overlay');
+    if (ov) ov.dataset.introState = 'ride-selected';
     // brief 34 ε-8: 'ride' mode を明示保存 (= default だが view 切替時に区別するため).
     setIntroConsent({ mode: 'ride' });
     // 2026-05-19: 観るモードから「最初の画面に戻る」経由で走るを選んだ場合の後始末。
@@ -1026,6 +1049,9 @@ if (typeof document !== 'undefined') {
   if (btnIntroView) btnIntroView.addEventListener('click', () => {
     // brief 34 ε-9: 地形 load 未完なら何もしない.
     if (!terrainReady) return;
+    // brief 32: internal state を data-intro-state="view-selected" に立てて遷移直前を expose。
+    const ov = document.getElementById('intro-overlay');
+    if (ov) ov.dataset.introState = 'view-selected';
     // brief 34 ε-8: 'view' mode で consent 保存 → dispatchAfterIntro で initViewMode に分岐.
     setIntroConsent({ mode: 'view' });
     hideIntroOverlay();
@@ -1204,7 +1230,13 @@ function bootCheckSetupStatus() {
 // `?map=1` / `?test=1` / `?ble=1` も intro 必須。 default 経路も同じ guard.
 // guard 未通過なら initMapMode / initTestMode / initBleMode / bootCheckSetupStatus を
 // 呼ばず、 intro-overlay を表示して user の click を待つ (= 「閉じる」/「試走デモ」).
-const CONSENT_DEV_BYPASS = new URLSearchParams(location.search).get('consent') === 'dev';
+// brief 32: hostname gate 追加。 Pages origin (= `*.github.io`) で `?consent=dev` を付けても
+// bypass されないように物理 gate。 dev bypass は localhost / 127.0.0.1 でのみ有効、 production で
+// 訪問者が intro skip → consent なしで viewer → GSI/OSM タイル fetch (= 配布元規律違反) を防ぐ。
+const CONSENT_DEV_BYPASS = (
+  (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
+  new URLSearchParams(location.search).get('consent') === 'dev'
+);
 function introConsented() {
   if (CONSENT_DEV_BYPASS) return true;
   return getIntroConsent() !== null;

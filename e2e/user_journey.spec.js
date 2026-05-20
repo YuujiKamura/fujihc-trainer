@@ -37,8 +37,35 @@ test('初回訪問: イントロが出て走る/観るを選べる', async ({ pa
   // consent 未保存 (= まっさらな初回訪問) → イントロ overlay が表示される
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await expect(page.locator('#intro-overlay')).toHaveAttribute('data-intro-state', 'visible');
   await expect(page.locator('#btnIntroStart')).toBeVisible();
   await expect(page.locator('#btnIntroView')).toBeVisible();
+  // brief 32: 文言追加分の物理 verify。
+  // - 「どこでも富士ヒル」 lead = アプリ識別の核
+  // - 「Web Bluetooth」 = ride モードで使う API の明示
+  // - 「*.github.io」 = 配布元 origin、 訪問者に URL バー確認を促す前置 (= b30 軸 1-4 物理化)
+  await expect(page.locator('#intro-overlay')).toContainText('どこでも富士ヒル');
+  await expect(page.locator('#intro-overlay')).toContainText('Web Bluetooth');
+  await expect(page.locator('#intro-overlay')).toContainText('.github.io');
+});
+
+test('brief 32: BLE 未対応ブラウザでは btnIntroStart click 後に未対応 message が出て disable、 btnIntroView は active', async ({ page }) => {
+  // brief 32 軸 7: Firefox / Safari 等の navigator.bluetooth 不在ブラウザを Chromium で mock 再現。
+  // click 前は terrain gate で disable、 terrain ready 後 click すると BLE 未対応判定で再 disable
+  // + 未対応 message visible のフロー (= ride 経路を物理 block + view 経路へ誘導)。
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'bluetooth', { get: () => undefined });
+  });
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  // terrain ready で button が一度 enabled になる (= 既存 terrain gate)。
+  await expect(page.locator('#btnIntroStart')).toBeEnabled({ timeout: 20_000 });
+  // click → navigator.bluetooth undefined 判定 → 未対応 message visible + button 再 disable。
+  await page.locator('#btnIntroStart').click();
+  await expect(page.locator('#intro-ble-unsupported')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#btnIntroStart')).toBeDisabled();
+  // btnIntroView は active 維持 (= user は view モードへ誘導される)。
+  await expect(page.locator('#btnIntroView')).toBeEnabled();
 });
 
 test('観るモードの再訪ユーザーが走行モードへ抜けられる', async ({ page }) => {

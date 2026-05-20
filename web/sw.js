@@ -13,7 +13,7 @@
 //     (= 2 回目以降 fetch ゼロ、 オフライン起動可)。
 // version bump (CACHE_NAME) は cache 全消しの強制リセット手段として残す。
 
-const CACHE_NAME = 'fujihill-v13';
+const CACHE_NAME = 'fujihill-v14';
 
 // install 時に一括取得する static 資産。 dynamic な tile / pmtiles は事前リスト不可、
 // fetch handler 側で cache-on-demand する (= 走った tile から順に永続化)。

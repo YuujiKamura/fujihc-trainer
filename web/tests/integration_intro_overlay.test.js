@@ -108,3 +108,42 @@ describe('brief 34 ε-1 integration: intro 文言 4 軸 (= 公開ガードレー
     expect(html).toMatch(/ログ保存なし/);
   });
 });
+
+describe('brief 32 intro overlay 改修: 文言 + state attribute + BLE 未対応 message', () => {
+  it('INTRO_CONSENT_HASH が v2 に bump 済 (= 文言改訂で旧 v1 の localStorage を自動 invalidation)', () => {
+    expect(INTRO_CONSENT_HASH).toBe('v2-fujihill-intro-2026-05-20');
+  });
+
+  it('「どこでも富士ヒル」 lead 文言が intro-panel に landing', () => {
+    expect(html).toMatch(/どこでも富士ヒル/);
+  });
+
+  it('Pages origin 誤認回避文言: URL バー / *.github.io 確認指示が intro-panel に landing', () => {
+    // brief 32: Web Bluetooth chooser 前置で訪問者が URL バーの origin を確認できるよう案内する
+    // (= spoof サイト経由の同意誤認回避、 b30 軸 1-4 物理化).
+    expect(html).toMatch(/URL バー/);
+    expect(html).toMatch(/\*\.github\.io/);
+  });
+
+  it('BLE 未対応 message DOM (#intro-ble-unsupported) が hidden 状態で landing', () => {
+    // brief 32: navigator.bluetooth === undefined のブラウザ向け message。 default hidden、
+    // click handler が visible 化 (= ride モード遷移を物理 block する gate の UI 部分).
+    expect(html).toMatch(/<p[^>]*id="intro-ble-unsupported"[^>]*hidden/);
+    expect(html).toMatch(/Web Bluetooth 未対応/);
+  });
+
+  it('#intro-overlay 初期 data-intro-state 属性 (= hidden、 showIntroOverlay で visible に書換)', () => {
+    // brief 32: state を data-intro-state 属性に expose して e2e は toHaveAttribute で pin
+    // (= 文言 grep だけの misleading test を回避、 drift catalog NG-R5-14 mitigation).
+    const introDiv = html.match(/<div\s+id="intro-overlay"[^>]*>/);
+    expect(introDiv).not.toBeNull();
+    expect(introDiv[0]).toMatch(/data-intro-state="hidden"/);
+  });
+
+  it('btnIntroClose / btnIntroView / btnIntroStart の 3 ボタン構成は維持 (= 既存 DOM 破壊なし)', () => {
+    // brief 32 は既存 3 button を変えない (= PROJECT-README § 既存資産優先、 brief 内「既存 DOM 名は維持」).
+    expect(html).toMatch(/<button[^>]*id="btnIntroClose"/);
+    expect(html).toMatch(/<button[^>]*id="btnIntroView"/);
+    expect(html).toMatch(/<button[^>]*id="btnIntroStart"/);
+  });
+});

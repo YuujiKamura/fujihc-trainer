@@ -131,7 +131,9 @@ describe('brief 34 ε-2: introConsented guard で起動分岐 2 箇所を制御'
   });
 
   it('CONSENT_DEV_BYPASS は ?consent=dev のみ true、 ?map=1 単独では bypass しない', () => {
-    expect(viewer).toMatch(/CONSENT_DEV_BYPASS\s*=\s*new\s+URLSearchParams\(location\.search\)\.get\(['"]consent['"]\)\s*===\s*['"]dev['"]/);
+    // brief 32: hostname gate 追加。 localhost / 127.0.0.1 のみ bypass 有効、 Pages origin (= `*.github.io`) で
+    // `?consent=dev` を URL に付けても bypass されない (= 配布元規律違反 / GSI 大量アクセス自粛違反リスクを物理 disable).
+    expect(viewer).toMatch(/CONSENT_DEV_BYPASS\s*=\s*\([\s\S]*?location\.hostname\s*===\s*['"]localhost['"][\s\S]*?location\.hostname\s*===\s*['"]127\.0\.0\.1['"][\s\S]*?new\s+URLSearchParams\(location\.search\)\.get\(['"]consent['"]\)\s*===\s*['"]dev['"]/);
   });
 
   it('consent.js を import (= getIntroConsent / setIntroConsent / getRideConsent / setRideConsent)', () => {

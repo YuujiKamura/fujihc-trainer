@@ -871,9 +871,10 @@
        - btnIntroView  = 「コースを観る」 (= trainer 不要、 区間勾配を眺める、 記録なし、 brief 34 ε-8)
        - btnIntroClose = 「閉じる」 (= 何もしない、 次回再表示)
      default は何もしない。 開発者本人の動作確認用 bypass は URL 引数 (?consent=dev) 経由のみ。 -->
-<div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+<div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" data-intro-state="hidden">
   <div id="intro-panel">
     <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
+    <p class="intro-lead"><strong>どこでも富士ヒル</strong> ── Zwift にない任意 GPX コース再現</p>
     <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。</p>
     <p>コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。</p>
     <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
@@ -882,6 +883,8 @@
     <p>2 つのモードがあります:</p>
     <p style="margin-left:1rem;"><strong style="color:#7fff00;">走る</strong> ── FTMS 対応 trainer (= 室内ローラー) と Chrome / Edge があれば、 Web Bluetooth で直接繋いで負荷連動で走れます。 走行ログを残せます。</p>
     <p style="margin-left:1rem;"><strong style="color:#7fff00;">観る</strong> ── trainer なしでも、 コース全 24km を 10 区間に分け、 各区間の平均勾配を表示、 選んだ区間を rider が一定速度で走る様子を任意視点で眺められます (Zwift Climb Portal と同じ発想、 ただし trainer 不要、 ログ保存なし)。</p>
+    <p class="intro-origin-check">「走る」を押すと <strong>Web Bluetooth</strong> の機器選択ダイアログがブラウザから出ます。 開く前に <strong>ブラウザの URL バーが <code>*.github.io</code> ドメイン (= 本家配布元) で始まっている</strong>ことを確認してから許可してください (= 別オリジンの spoof サイト経由で誤って trainer に接続されるのを防ぐ確認です)。</p>
+    <p id="intro-ble-unsupported" class="intro-ble-unsupported" hidden>お使いのブラウザは Web Bluetooth 未対応です (Firefox / Safari など)。 「観る」モードはご利用いただけます。</p>
     <div class="actions">
       <button id="btnIntroClose" type="button">閉じる</button>
       <button id="btnIntroView" type="button" disabled>コースを観る</button>

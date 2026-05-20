@@ -58,3 +58,25 @@ test('地図タイルの帰属表示 (#attrib) が riding 画面で可視、 GSI
   // 5. GSI 利用規約が要求する地理院タイル一覧へのリンクを持つ (= CLAUDE.md の #attrib 要件)。
   await expect(attrib.locator('a[href*="maps.gsi.go.jp/development/ichiran.html"]')).toHaveCount(1);
 });
+
+test('brief 32: 帰属表示 (#attrib) が intro overlay 表示中も可視 (= overlay z-index 1450 < attrib z-index 2001)', async ({ page }) => {
+  // consent skip 無しで goto → intro overlay が表示される state-checking 状態 → #attrib が
+  // overlay の下に隠れないことを pin (= GSI 利用規約「出典クレジット必須」 + brief 32 軸 7 要件、
+  // overlay 表示中も配布元出典は visible である規律の物理化)。
+  await page.goto('http://127.0.0.1:8000/');
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+
+  const attrib = page.locator('#attrib');
+  await expect(attrib).toBeVisible();
+  await expect(attrib).toContainText('国土地理院');
+  await expect(attrib).toContainText('OpenStreetMap');
+
+  // intro overlay 中心点と attrib 領域が重ならない、 もしくは attrib が上層に来ていることを
+  // elementFromPoint で確認 (= z-index 比較を計算で確認するのではなく実 DOM stack で pin)。
+  const topmostIsAttrib = await attrib.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return hit === el || el.contains(hit);
+  });
+  expect(topmostIsAttrib).toBe(true);
+});
