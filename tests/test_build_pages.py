@@ -129,14 +129,16 @@ def test_copy_tree_fails_on_existing_dst(fake_web: Path, tmp_path: Path) -> None
 
 # ---------- strip_strava_files ----------
 
-def test_strip_strava_files_removes_three_files(fake_web: Path, tmp_path: Path) -> None:
+def test_strip_strava_files_removes_oauth_callback_only(fake_web: Path, tmp_path: Path) -> None:
+    # 2026-05-20 fix: viewer-maplibre.js が strava_oauth.js を import するため source 配信維持、
+    # 削除対象は oauth-callback.html のみ。 Strava endpoint 通信は CSP rewrite で block する 2 段。
     site = tmp_path / "_site"
     build_pages.copy_tree(fake_web, site)
     removed = build_pages.strip_strava_files(site)
-    assert len(removed) == 3
-    assert not (site / "lib" / "strava_oauth.js").exists()
-    assert not (site / "lib" / "strava_upload.js").exists()
-    assert not (site / "oauth-callback.html").exists()
+    assert len(removed) == 1
+    assert (site / "lib" / "strava_oauth.js").exists()  # source 配信維持 (= viewer import 経路)
+    assert (site / "lib" / "strava_upload.js").exists()  # 同上
+    assert not (site / "oauth-callback.html").exists()  # entry point は削除維持
     assert (site / "lib" / "ride_state.js").exists()  # 過削除なし
 
 
@@ -239,8 +241,9 @@ def test_main_orchestrator_runs_all_steps(fake_web: Path, tmp_path: Path) -> Non
     assert rc == 0
     # 全 step の効果が _site/ に表れている
     assert site.exists()
-    assert not (site / "lib" / "strava_oauth.js").exists()
-    assert not (site / "lib" / "strava_upload.js").exists()
+    # 2026-05-20 fix: viewer import 経路維持で source 配信、 削除は oauth-callback.html のみ
+    assert (site / "lib" / "strava_oauth.js").exists()
+    assert (site / "lib" / "strava_upload.js").exists()
     assert not (site / "oauth-callback.html").exists()
     html = (site / "index.html").read_text(encoding="utf-8")
     assert "strava.com" not in html
