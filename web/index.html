@@ -823,16 +823,22 @@
       </details>
     </section>
 
-    <!-- brief 34 ε-5: 「このサイトの全データを削除」UI. setup-overlay の末尾 section.
-         click → 確認 dialog (= #clear-confirm-overlay) → 実行 → 完了 dialog で
-         Strava 設定ページ link 再提示 + intro overlay からやり直し. -->
+    <!-- brief 34 ε-5 / b43: setup-overlay 末尾の「データとキャッシュの管理」 section.
+         全データ削除 (= 破壊的、 #clear-confirm-overlay 確認 dialog 経由) と
+         アプリ更新 (= b43、 非破壊、 SW キャッシュのみ消して reload) の 2 操作を持つ. -->
     <section id="clear-data-section" style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333;">
-      <h3 style="color:#ff8866; font-size:14px; margin:0 0 0.4rem;">このサイトの全データを削除</h3>
+      <h3 style="color:#ff8866; font-size:14px; margin:0 0 0.4rem;">データとキャッシュの管理</h3>
       <div style="color:#aaa; font-size:11px; margin-bottom:0.4rem;">
         IndexedDB (= ride 履歴) と localStorage (= consent / Strava token / 設定値) を全削除し、
         intro overlay からやり直します。 確認 dialog 必須 (= 共用 PC 誤動作防止)。
       </div>
       <button id="btnClearAllData" style="background:#221a08; color:#ff8866; border:1px solid #ff8866;">全データを削除...</button>
+      <!-- b43: SW キャッシュ (= アプリ本体コード) を消して最新版に更新。 非破壊 (= 履歴は残る)。 -->
+      <div style="color:#aaa; font-size:11px; margin:0.6rem 0 0.4rem;">
+        アプリが古い版のままのときに使います。 Service Worker のキャッシュ (= アプリ本体コード) を
+        消して再読み込みします。 走行履歴と設定は残ります (= 非破壊)。
+      </div>
+      <button id="btnRefreshApp" style="background:#0a1a22; color:#8fd0ff; border:1px solid #8fd0ff;">アプリを最新版に更新</button>
     </section>
   </div>
 </div>
@@ -1084,6 +1090,6 @@
   <button id="mode-toggle-btn" type="button">切替</button>
 </div>
 
-<script type="module" src="viewer-maplibre.js?v=42"></script>
+<script type="module" src="viewer-maplibre.js?v=43"></script>
 </body>
 </html>

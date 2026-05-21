@@ -95,3 +95,81 @@ export async function clearAllLocalData(opts = {}) {
   const lsRes = clearAllLocalStorage({ storage: opts.storage });
   return { indexedDb: idbRes, localStorage: lsRes };
 }
+
+/**
+ * brief b43: Service Worker を unregister し CacheStorage を全削除する
+ * (= アプリ本体コードのキャッシュを捨てて最新版に更新する)。
+ *
+ * **非破壊**: IndexedDB / localStorage には触らない。 ride 履歴・設定・タイルの一次
+ * キャッシュ (= IndexedDB TileCache) は残る。「全データ削除」(= clearAllLocalData)
+ * とは別操作。 deleteIndexedDb / clearAllLocalStorage を呼ばないことで非破壊を構造的に担保。
+ *
+ * viewer-maplibre.js の `?nosw=1` URL パラメータ経路と「アプリを最新版に更新」 ボタンの
+ * 両方がこの 1 関数を呼ぶ (= SW クリアロジックの 1 本化、 双子コピペ回避)。
+ *
+ * @param {{serviceWorker?: ServiceWorkerContainer|null, caches?: CacheStorage|null}} [opts]
+ *   serviceWorker / caches に明示 null を渡せば「不在環境」 として扱う。 undefined / 未指定なら
+ *   navigator.serviceWorker / globalThis.caches に fallback。
+ * @returns {Promise<{unregistered:number, cachesDeleted:number, error?:string}>}
+ */
+export async function clearServiceWorkerCache(opts = {}) {
+  // null 明示 = 不在環境シミュレーション、 undefined / 未指定 = global fallback。
+  let sw;
+  if (opts.serviceWorker === null) {
+    sw = null;
+  } else if (opts.serviceWorker !== undefined) {
+    sw = opts.serviceWorker;
+  } else {
+    sw = (typeof navigator !== 'undefined' && navigator.serviceWorker) ? navigator.serviceWorker : null;
+  }
+  let cacheStore;
+  if (opts.caches === null) {
+    cacheStore = null;
+  } else if (opts.caches !== undefined) {
+    cacheStore = opts.caches;
+  } else {
+    cacheStore = (typeof globalThis !== 'undefined' && globalThis.caches) ? globalThis.caches : null;
+  }
+
+  let unregistered = 0;
+  let cachesDeleted = 0;
+  const errors = [];
+
+  // SW registration を全件 unregister。 失敗は throw せず error に畳む (= deleteIndexedDb と同作法)。
+  if (sw) {
+    try {
+      const regs = await sw.getRegistrations();
+      for (const reg of regs || []) {
+        try {
+          await reg.unregister();
+          unregistered += 1;
+        } catch (err) {
+          errors.push(`unregister: ${err && err.message ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`getRegistrations: ${err && err.message ? err.message : String(err)}`);
+    }
+  }
+
+  // CacheStorage を全 key 削除。
+  if (cacheStore) {
+    try {
+      const keys = await cacheStore.keys();
+      for (const k of keys || []) {
+        try {
+          await cacheStore.delete(k);
+          cachesDeleted += 1;
+        } catch (err) {
+          errors.push(`caches.delete: ${err && err.message ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`caches.keys: ${err && err.message ? err.message : String(err)}`);
+    }
+  }
+
+  const result = { unregistered, cachesDeleted };
+  if (errors.length > 0) result.error = errors.join('; ');
+  return result;
+}

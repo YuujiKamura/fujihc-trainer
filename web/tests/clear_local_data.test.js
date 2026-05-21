@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';  // jsdom global indexedDB を fake-indexeddb で提供 (= 既存 ride_db.test と同じ pattern)
 import { openRideDb, addRide } from '../lib/ride_db.js';
 import {
-  deleteIndexedDb, clearAllLocalStorage, clearAllLocalData,
+  deleteIndexedDb, clearAllLocalStorage, clearAllLocalData, clearServiceWorkerCache,
 } from '../lib/clear_local_data.js';
 
 // fake-indexeddb の state を test 間で隔離するため、 各 test 前に reset (= 同 origin と見做される).
@@ -198,5 +198,139 @@ describe('brief 34 ε-5 integration: 削除完了後の intro やり直し state
     // 一致 hash で再保存しても、 clear 後は消えてる前提
     await clearAllLocalData({ storage: ls });
     expect(getIntroConsent({ storage: ls })).toBe(null);
+  });
+});
+
+// b43: clearServiceWorkerCache (= SW キャッシュクリア、 非破壊) の単体テスト。
+// このテストが落ちたら何を検出したことになるか:
+//   - SW unregister / CacheStorage 削除の件数集計が壊れた
+//   - 非対応環境 / 空 collection / reject で throw して呼出側を巻き込む
+//   - 非破壊のはずが IndexedDB / localStorage に触った
+function makeCachesMock(keyList) {
+  const deleted = [];
+  return {
+    _deleted: deleted,
+    keys: async () => keyList.slice(),
+    delete: async (k) => { deleted.push(k); return true; },
+  };
+}
+function makeSwMock(regCount) {
+  const unregistered = [];
+  const regs = [];
+  for (let i = 0; i < regCount; i += 1) {
+    regs.push({ _id: i, unregister: async () => { unregistered.push(i); return true; } });
+  }
+  return { _unregistered: unregistered, getRegistrations: async () => regs };
+}
+
+describe('b43: clearServiceWorkerCache (= SW キャッシュクリア、 非破壊)', () => {
+  it('happy: caches 2 件 + registration 1 件 → delete 2 / unregister 1', async () => {
+    const caches = makeCachesMock(['fujihill-v16', 'fujihill-v17']);
+    const sw = makeSwMock(1);
+    const res = await clearServiceWorkerCache({ caches, serviceWorker: sw });
+    expect(res).toEqual({ unregistered: 1, cachesDeleted: 2 });
+    expect(caches._deleted).toEqual(['fujihill-v16', 'fujihill-v17']);
+    expect(sw._unregistered).toEqual([0]);
+  });
+
+  it('edge: caches あり keys 0 件 → cachesDeleted 0、 throw なし', async () => {
+    const res = await clearServiceWorkerCache({ caches: makeCachesMock([]), serviceWorker: makeSwMock(1) });
+    expect(res.cachesDeleted).toBe(0);
+    expect(res.unregistered).toBe(1);
+    expect(res.error).toBeUndefined();
+  });
+
+  it('edge: registration 複数 (2 件) → 全件 unregister', async () => {
+    const sw = makeSwMock(2);
+    const res = await clearServiceWorkerCache({ caches: makeCachesMock([]), serviceWorker: sw });
+    expect(res.unregistered).toBe(2);
+    expect(sw._unregistered).toEqual([0, 1]);
+  });
+
+  it('edge: 非対応環境 (serviceWorker:null / caches:null) → throw せず {0,0}', async () => {
+    const res = await clearServiceWorkerCache({ serviceWorker: null, caches: null });
+    expect(res).toEqual({ unregistered: 0, cachesDeleted: 0 });
+  });
+
+  it('error path (caches): caches.delete reject → error 文字列に畳まれ throw しない', async () => {
+    const caches = {
+      keys: async () => ['k1'],
+      delete: async () => { throw new Error('delete boom'); },
+    };
+    const res = await clearServiceWorkerCache({ caches, serviceWorker: null });
+    expect(res.cachesDeleted).toBe(0);
+    expect(res.error).toMatch(/delete boom/);
+  });
+
+  it('error path (serviceWorker): getRegistrations reject → error に畳まれ throw しない', async () => {
+    const sw = { getRegistrations: async () => { throw new Error('getReg boom'); } };
+    const res = await clearServiceWorkerCache({ serviceWorker: sw, caches: null });
+    expect(res.unregistered).toBe(0);
+    expect(res.error).toMatch(/getReg boom/);
+  });
+
+  it('error path (serviceWorker): unregister reject → error に畳まれ throw しない', async () => {
+    const sw = {
+      getRegistrations: async () => [{ unregister: async () => { throw new Error('unreg boom'); } }],
+    };
+    const res = await clearServiceWorkerCache({ serviceWorker: sw, caches: null });
+    expect(res.unregistered).toBe(0);
+    expect(res.error).toMatch(/unreg boom/);
+  });
+
+  it('非破壊 (behavioral): IndexedDB の deleteDatabase を呼ばない', async () => {
+    const idbSpy = vi.spyOn(globalThis.indexedDB, 'deleteDatabase');
+    await clearServiceWorkerCache({ caches: makeCachesMock(['k']), serviceWorker: makeSwMock(1) });
+    expect(idbSpy).not.toHaveBeenCalled();
+    idbSpy.mockRestore();
+  });
+
+  it('非破壊 (structural): clearServiceWorkerCache 本体が IndexedDB / localStorage の破壊 API を呼ばない', () => {
+    // signature は serviceWorker/caches のみ。 関数本体が deleteIndexedDb() /
+    // clearAllLocalStorage() / localStorage. / .deleteDatabase() を一切呼ばないことを
+    // source で pin (= 構造的非破壊、 global localStorage に依存しない pin)。
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'lib', 'clear_local_data.js'), 'utf8');
+    const m = src.match(/export async function clearServiceWorkerCache[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    expect(body).not.toMatch(/deleteIndexedDb\(|clearAllLocalStorage\(|localStorage\.|\.deleteDatabase\(/);
+  });
+});
+
+describe('b43: SW キャッシュクリアボタン source (= viewer / index.html)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+  const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
+
+  it('index.html に #btnRefreshApp があり #clear-data-section 内にある', () => {
+    expect(html).toMatch(/id="btnRefreshApp"/);
+    const m = html.match(/<section id="clear-data-section"[\s\S]*?<\/section>/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/id="btnRefreshApp"/);
+  });
+
+  it('btnRefreshApp click handler が clearServiceWorkerCache + location.reload を呼ぶ', () => {
+    // handler 周辺を distance match で限定抽出 (= 別箇所衝突回避、 既存 btnClearConfirm test と同方式)。
+    expect(viewer).toMatch(
+      /btnRefreshApp\.addEventListener\(['"]click['"][\s\S]{0,500}clearServiceWorkerCache\(\)[\s\S]{0,300}location\.reload\(\)/,
+    );
+  });
+
+  it('?nosw=1 経路が clearServiceWorkerCache を呼び inline caches.delete ループを持たない (= 双子コピペ撤去)', () => {
+    // ?nosw=1 分岐の body を抽出して assert。
+    const m = viewer.match(/has\(['"]nosw['"]\)\)\s*\{([\s\S]*?)\}\s*else\s+if/);
+    expect(m).not.toBeNull();
+    const body = m[1];
+    expect(body).toMatch(/clearServiceWorkerCache/);   // 関数呼出に 1 本化
+    expect(body).not.toMatch(/caches\.delete\(/);      // inline ループ撤去 (= negative grep)
+  });
+
+  it('viewer が clear_local_data.js から clearServiceWorkerCache を import している', () => {
+    expect(viewer).toMatch(
+      /import\s+\{[^}]*clearServiceWorkerCache[^}]*\}\s+from\s+['"]\.\/lib\/clear_local_data\.js['"]/,
+    );
   });
 });

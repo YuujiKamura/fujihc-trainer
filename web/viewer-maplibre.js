@@ -52,7 +52,7 @@ import {
   getRideConsent, setRideConsent, clearRideConsent,
 } from './lib/consent.js';
 // brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
-import { clearAllLocalData } from './lib/clear_local_data.js';
+import { clearAllLocalData, clearServiceWorkerCache } from './lib/clear_local_data.js';
 // task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタンの純ロジック (= URL 引数変換 + 文言定数).
 import {
   buildToggledSearch,
@@ -575,14 +575,10 @@ if (DEBUG_HUD) {
 // cache を全消しする (= 次回 reload から SW なし・常に network 直)。
 if ('serviceWorker' in navigator || window.caches) {
   if (new URLSearchParams(location.search).has('nosw')) {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations()
-        .then((regs) => regs.forEach((r) => r.unregister()))
-        .catch(() => {});
-    }
-    if (window.caches) {
-      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
-    }
+    // b43: SW unregister + CacheStorage 全消しは clear_local_data.js の
+    // clearServiceWorkerCache に 1 本化 (=「アプリを最新版に更新」 ボタン #btnRefreshApp と
+    // 同じ関数を共用、 inline ループの双子コピペを作らない)。
+    clearServiceWorkerCache().catch(() => {});
   } else if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js').catch((err) => {
@@ -2850,6 +2846,23 @@ function hideClearDone() {
 
 const btnClearAllData = document.getElementById('btnClearAllData');
 if (btnClearAllData) btnClearAllData.addEventListener('click', () => { showClearConfirm(); });
+
+// b43: 「アプリを最新版に更新」 ボタン。 SW を unregister + CacheStorage 全消ししてから reload し、
+// アプリ本体コードを最新版に取り直す。「全データ削除」 (= btnClearAllData、 IndexedDB +
+// localStorage を消す破壊的操作) とは別物 ── こちらは非破壊 (= ride 履歴 / 設定は残る) なので
+// 確認 dialog は付けない (最悪でも「再読込で数秒待つ」 だけ)。 SW クリアロジックは `?nosw=1`
+// 経路と共用の clearServiceWorkerCache。
+const btnRefreshApp = document.getElementById('btnRefreshApp');
+if (btnRefreshApp) btnRefreshApp.addEventListener('click', async () => {
+  btnRefreshApp.disabled = true;
+  btnRefreshApp.textContent = '更新中...';
+  try {
+    await clearServiceWorkerCache();
+  } catch (e) {
+    console.warn('[fujihill] clearServiceWorkerCache failed:', e);
+  }
+  location.reload();
+});
 
 const btnClearCancel = document.getElementById('btnClearCancel');
 if (btnClearCancel) btnClearCancel.addEventListener('click', () => { hideClearConfirm(); });
