@@ -1158,6 +1158,7 @@ if (typeof document !== 'undefined') {
     //     「履歴に保存」ボタンの hidden 判定を更新する。 これを怠ると走行後に保存ボタンが
     //     隠れたままで履歴が残らない。 初回 ride 選択時は mode-view が無く実害なし。
     document.body.classList.remove('mode-view');
+    refreshModeDisplay();  // 観る → 走る に戻った ── モード表示を「走る」に更新する
     if (typeof updatePostrideButtonVisibility === 'function') {
       updatePostrideButtonVisibility();
     }
@@ -1248,13 +1249,10 @@ if (typeof document !== 'undefined') {
   // (= initBleMode、 実機トレーナーの BLE 接続) に移るには URL を手書きするしかなかった。
   // 切替方式は reload 固定 ── TEST_MODE 定数はそのまま、 URL の test 引数を付け外して
   // 再読込する (= 起動経路を最初から組み直す、 ランタイム切替の init 二重走を構造的に回避)。
-  const modeToggleLabel = document.getElementById('mode-toggle-label');
   const modeToggleBtn = document.getElementById('mode-toggle-btn');
-  if (modeToggleLabel) {
-    modeToggleLabel.textContent = TEST_MODE ? MODE_LABEL_TEST : MODE_LABEL_PROD;
-  }
+  // モード表示 (ラベル / ボタン文言) は画面の実モードから出す ── refreshModeDisplay が一元管理。
+  refreshModeDisplay();
   if (modeToggleBtn) {
-    modeToggleBtn.textContent = TEST_MODE ? SWITCH_BTN_TO_PROD : SWITCH_BTN_TO_TEST;
     modeToggleBtn.addEventListener('click', () => {
       // 走行中ガード: 本番モードで実走中 (= body.state-riding) は未保存の走行ログ (trkpt)
       // がありうるため、 reload で失う旨を confirm する。 テストモードの「走行」は fake
@@ -1387,10 +1385,22 @@ function dispatchAfterIntro() {
 // trainer / bridge / Web Bluetooth 不要、 区間 list を表示して user の選択を待つ。
 // section 選択 → rideState.startFrom(start_idx) で fake state ride を開始、
 // 走行ログは保存しない (= IndexedDB / Strava upload を物理 disable は body.mode-view CSS + flag 経由).
+// モード表示 (#mode-toggle のラベル / ボタン文言) を画面の実モードから一元更新する。
+// 観る = ?test あり (= テスト用の裏口) もしくは観るモード起動中 (body.mode-view)。 走る = それ以外。
+// ?test の有無「だけ」を見ていた旧実装が、 観るモードを走る扱いする食い違いの原因だった。
+function refreshModeDisplay() {
+  const isView = TEST_MODE || document.body.classList.contains('mode-view');
+  const label = document.getElementById('mode-toggle-label');
+  const btn = document.getElementById('mode-toggle-btn');
+  if (label) label.textContent = isView ? MODE_LABEL_TEST : MODE_LABEL_PROD;
+  if (btn) btn.textContent = isView ? SWITCH_BTN_TO_PROD : SWITCH_BTN_TO_TEST;
+}
+
 function initViewMode() {
   if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initViewMode()); return; }
   status('VIEW MODE: 観るモード (= trainer 不要、 区間勾配を眺める)');
   document.body.classList.add('mode-view');
+  refreshModeDisplay();  // 観るモード確定 → モード表示を「観る」に更新
   // 全 overlay を hide してから section-overlay を出す (= 視覚的に他 UI を排他).
   hideDbinit();
   document.getElementById('setup-overlay')?.classList.remove('visible');

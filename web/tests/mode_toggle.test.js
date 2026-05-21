@@ -57,12 +57,12 @@ describe('buildToggledSearch — test 引数の付け外し', () => {
 
 describe('文言定数 (viewer / E2E の SoT)', () => {
   it('現在モード表示の文言', () => {
-    expect(MODE_LABEL_TEST).toBe('テストモード');
-    expect(MODE_LABEL_PROD).toBe('本番モード');
+    expect(MODE_LABEL_TEST).toBe('観るモード');
+    expect(MODE_LABEL_PROD).toBe('走るモード');
   });
 
   it('切替ボタンの文言', () => {
-    expect(SWITCH_BTN_TO_PROD).toBe('本番モードに切替');
-    expect(SWITCH_BTN_TO_TEST).toBe('テストモードに切替');
+    expect(SWITCH_BTN_TO_PROD).toBe('走るモードに切替');
+    expect(SWITCH_BTN_TO_TEST).toBe('観るモードに切替');
   });
 });

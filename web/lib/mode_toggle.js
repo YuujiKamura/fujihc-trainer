@@ -10,10 +10,18 @@
 //   本 module は DOM / location に触らない純関数のみ (= node test 可能を保つ)。
 
 // 切替ボタンと現在モード表示の文言。 viewer と E2E の双方がここを唯一の正本 (SoT) とする。
-export const MODE_LABEL_TEST = 'テストモード';
-export const MODE_LABEL_PROD = '本番モード';
-export const SWITCH_BTN_TO_PROD = '本番モードに切替';
-export const SWITCH_BTN_TO_TEST = 'テストモードに切替';
+//
+// 用語 (= モードは 2 つだけ、 表に出す正式名は「観る」「走る」):
+//   観る = トレーナー不要、 コースを眺める / デモ走行する。 走行記録は残さない。
+//   走る = 実トレーナーに Web Bluetooth で繋いで走る。 走行記録が残る。
+// 内部コードは歴史的経緯で別名 (= エイリアス) を持つ。 意図的なエイリアスとして以下に固定する:
+//   観る ≡ TEST / test / ?test / view / mode-view
+//   走る ≡ PROD / 本番 / ride / ble
+// 定数名 (MODE_LABEL_TEST 等) は内部エイリアス側のまま、 表示値だけ「観る/走る」に統一する。
+export const MODE_LABEL_TEST = '観るモード';
+export const MODE_LABEL_PROD = '走るモード';
+export const SWITCH_BTN_TO_PROD = '走るモードに切替';
+export const SWITCH_BTN_TO_TEST = '観るモードに切替';
 
 /**
  * 現在の location.search を受け、 enableTest に応じて `test` 引数だけを付け外しした
