@@ -46,14 +46,21 @@ test('Pages live: GSI direct DEM タイルが 200 + PNG で返る (= 訪問者�
     // GSI 公式の PNG 形式 DEM endpoint (= dem_png、 z=1-14 で PNG を返す)。
     // `dem` は txt 形式の endpoint で `.png` 拡張子を付けても 404 になる ── 2026-05-20 user 訂正
     // 「地形データが読み込まれてないだろ」 の root cause。
-    const r = await fetch('https://cyberjapandata.gsi.go.jp/xyz/dem_png/14/14506/6418.png');
+    // b40 直し2: タイル本体 (PNG 数 KB) を丸ごと落とす GET をやめ、 HEAD で status と
+    // レスポンスヘッダだけ取る (= 配布元への負荷を最小化、 user 指示「ハンドシェイクだけでいい」)。
+    const r = await fetch('https://cyberjapandata.gsi.go.jp/xyz/dem_png/14/14506/6418.png', { method: 'HEAD' });
     const ct = r.headers.get('content-type') || '';
-    const bytes = r.ok ? (await r.arrayBuffer()).byteLength : 0;
-    return { status: r.status, contentType: ct, bytes };
+    const len = r.headers.get('content-length');
+    return { status: r.status, contentType: ct, contentLength: len };
   });
   expect(result.status, 'GSI direct DEM タイル取得は Pages 環境で 200').toBe(200);
   expect(result.contentType, 'GSI direct DEM は PNG content-type').toMatch(/image\/(png|x-png)/i);
-  expect(result.bytes, 'GSI direct DEM PNG bytes > 0').toBeGreaterThan(0);
+  // 死活検知は弱めない: content-length が返ればタイル本体が在る証拠として正の整数を確認する。
+  // HEAD に content-length を返さないサーバの時のみ status + content-type に留め、
+  // GET でのタイル本体ダウンロードには戻さない (= 配布元負荷を増やさない)。
+  if (result.contentLength !== null) {
+    expect(Number(result.contentLength), 'GSI direct DEM の content-length が正の整数').toBeGreaterThan(0);
+  }
 });
 
 test('Pages live: viewer 起動でイントロ overlay が表示される', async ({ page }) => {

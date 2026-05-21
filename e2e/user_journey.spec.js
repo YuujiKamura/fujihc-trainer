@@ -17,7 +17,7 @@
 //      保存したライドが履歴一覧に出る (= 履歴機能の通しジャーニー)。
 //
 // viewer-maplibre.js の実コードをブラウザで動かすので、導線が壊れれば落ちる。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 import { RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE } from '../web/lib/ride_db.js';
 
@@ -87,7 +87,9 @@ test('brief 32: BLE 未対応訪問者が ride を阻まれて view モードへ
 test('観るモードの再訪ユーザーが走行モードへ抜けられる', async ({ page }) => {
   // 前回「観る」を選んだ再訪ユーザーを再現
   await seedIntroConsent(page, 'view');
-  await page.goto(VIEWER_URL);
+  // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 観る→走るのモード遷移導線は
+  // 地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
+  await page.goto(`${VIEWER_URL}?noterrain=1`);
 
   // 観るモードに入る (body.mode-view + 区間リスト panel が表示)
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 20_000 });
@@ -115,7 +117,7 @@ test('観るモードの再訪ユーザーが走行モードへ抜けられる',
 
 test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履歴機能の通しジャーニー)', async ({ page }) => {
   // ?test=1 でライドが自動開始する (= トレーナー不要のテストモード)
-  await page.goto(`${VIEWER_URL}?test=1&consent=dev`);
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev&noterrain=1`);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
 
   // 20 秒走らせる (= 慣性設定が大きく漕ぎ出しが遅いので、 動いたと分かる距離まで走らせる)
@@ -178,7 +180,7 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
 
 test('ゴール到達: viewer が固まらず、走行データが履歴に保存され閲覧できる', async ({ page }) => {
   // ?test=1 でライドが自動開始する (= トレーナー不要のテストモード)。
-  await page.goto(`${VIEWER_URL}?test=1&consent=dev`);
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev&noterrain=1`);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
   await page.waitForFunction(() => window.__goalTest?.info?.active === true, { timeout: 20_000 });
 
@@ -282,7 +284,7 @@ test('一定の力で漕ぐと記録速度はなめらか — 1 秒おきに跳�
   test.setTimeout(80_000);
 
   // 1. 走行モードでライド開始 (?test=1 = fake trainer + 心拍計、 自動 ride start)。
-  await page.goto(`${VIEWER_URL}?test=1&consent=dev`);
+  await page.goto(`${VIEWER_URL}?test=1&consent=dev&noterrain=1`);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
 
   // 2. 富士の登りを 30 秒、 一定の力 (fake trainer = 150W) で漕ぎ続ける。
@@ -437,6 +439,11 @@ test('brief 35 happy: ロード overlay の進捗数値が 0 から増えて den
 });
 
 test('brief 35 happy: タイル取得完了でロード overlay が fade out して viewer に到達', async ({ page }) => {
+  // 配布元 (GSI) を実際には叩かない ── 地形タイルを偽 PNG で intercept する。 base-test.js の
+  // 見張りより後に route を張るので見張りは黙り、 この route が応じる。 タイル「取得完了」 を
+  // pin するテストなので 404 ではなく valid PNG を返し、 overlay が done に到達できるようにする。
+  await page.route('https://cyberjapandata.gsi.go.jp/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG }));
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
@@ -467,8 +474,10 @@ test('brief 35 edge: GSI 通信無音 10s でロード overlay が silent state 
   await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
-  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
-  await page.locator('#btnIntroView').click();
+  // ロード overlay は module top の terrain probe 起動と同時に visible 化する (=「コースを観る」
+  // を押す前から動く設計、 viewer-maplibre.js)。 GSI 無音だと probe が止まり btnIntroView は
+  // terrainReady 待ちで disabled のままなので、 ここでは btnIntroView を click せず、 startup から
+  // 出ている overlay をそのまま観測する。
   await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 5_000 });
   // 10s 無音 → silent state 遷移 + 警告文言 + 諦め button visible
   await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', 'silent', { timeout: 15_000 });
@@ -503,9 +512,8 @@ test('brief 35 edge: 諦め button click でロード overlay が即時消えて
   await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
-  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 20_000 });
-  await page.locator('#btnIntroView').click();
-  // 10s 無音で諦め button visible
+  // btnIntroView は触らない (= :456 と同理由 ── GSI 無音で probe が止まると disabled のまま)。
+  // 諦め button は startup の terrain probe が 10s 無音になった時点で出る。
   await expect(page.locator('#btnLoadingGiveUp')).toBeVisible({ timeout: 15_000 });
   await page.locator('#btnLoadingGiveUp').click();
   // overlay が fade out して visible class が外れる

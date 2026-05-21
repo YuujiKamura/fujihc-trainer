@@ -158,6 +158,8 @@ function bootMap(env) {
     dbCenter: fujihill.dbCenter,
     onLoaded: onMapLoaded,
     onProgress: updateLoadingProgress,
+    // b41: ?noterrain= なら map3d は DEM / 航空写真を取得せず平坦地形で組む。
+    skipTerrain: SKIP_TERRAIN,
   });
 }
 
@@ -171,6 +173,9 @@ const LOADING_SILENCE_MS = 10_000;   // 10s 進捗無音で「応答がありま
 const LOADING_GIVE_UP_MS = 30_000;   // 30s 経過で強制諦め (= 自動 fade out + 諦め経路)
 
 function showLoadingOverlay(state) {
+  // b41: ?noterrain= では地形タイルを取得しない ── 取得進捗を映す overlay も出さない。
+  // 出すと進捗が永遠に来ず overlay が出っぱなしになり、 後続操作を覆って e2e を妨げる。
+  if (SKIP_TERRAIN) return;
   const ov = document.getElementById('loading-indicator');
   if (!ov) return;
   ov.classList.add('visible');
@@ -549,6 +554,11 @@ const WS_URL = 'ws://localhost:8765';
 // WebSocket 接続を skip、 fake state を 1Hz で push、 ride/scan は即座に fake 応答.
 // 起動例: python -m http.server -d web/ 8000 -> http://localhost:8000/?test=1
 const TEST_MODE = new URLSearchParams(location.search).has('test');
+// b41: ?noterrain= で地形タイル取得を物理 skip する。 起動直後の terrain probe も
+// 観る/走るモードの 3D 地図構築 (map3d) も、 配布元 (国土地理院 / OpenStreetMap) を
+// 一切叩かず平坦な地形で viewer を動かす。 地形そのものを検証しない e2e が、 配布元に
+// 迷惑をかけずに viewer の導線・履歴・モード切替を試すための入口 (= b40 / handoff 方針)。
+const SKIP_TERRAIN = new URLSearchParams(location.search).has('noterrain');
 // 2026-05-16: ?debug=1 で右上に debug HUD を表示 (= 座標 drift / camera 差分 / frame timing).
 // 走行中 user が「camera が rider 中心からズレる」「慣性力おかしい」 を数値で目視できる.
 // brief b2 High-4: debug HUD の有無を 1 回だけ確定。 tick() の debug 系
@@ -1594,7 +1604,12 @@ function startTerrainProbe() {
 }
 // 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
 let _terrainLoader = null;
-if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
+if (SKIP_TERRAIN) {
+  // b41: ?noterrain= では terrain probe を回さない (= 配布元を叩かない)。 probe 完了で
+  // 立つはずの terrain gate を即 open し、 全アクションボタンを通常どおり解禁する。
+  terrainReady = true;
+  try { updateActionButtonsForTerrain(); } catch (e) { /* document 不在等 silent */ }
+} else if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
   // brief 35: terrain probe の起動と同時にロード overlay を visible 化、 intro overlay 表示中の
   // 沈黙期間にも「動いている」 を訪問者に見せる。 Pages 環境では click 前から GSI direct fetch が
   // 走るため、 click 後の bootMap に bind するだけでは進捗が見えなかった (= 2026-05-20 user 訂正
@@ -1988,11 +2003,16 @@ async function buildMinimapTopBase() {
   // 既に DB に揃っていれば 9-16 タイル分の skipped で完走 (= OSM fetch ゼロ)、
   // 不足分のみ 1 req/sec で fetch + insert。 完走後は次回起動から完全 DB hit。
   // bridge 未起動 / 失敗時は無視 (= OSM 直叩き fallback が loadOsmTile 内で動く)。
-  fetch(`${HTTP_BASE_URL}/tiles/_fetch_minimap_raster`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-  }).catch(() => { /* silent: fallback は loadOsmTile が担う */ });
+  // b41: ?noterrain= では bridge への raster cache 構築依頼も出さない。 タイル取得を
+  // 物理 skip する経路で、 minimap raster の事前取得もその対象。 e2e bridge は本 POST を
+  // 501 で返すため、 訪問者には無害でも console error が fatalErrors を汚す ── それを断つ。
+  if (!SKIP_TERRAIN) {
+    fetch(`${HTTP_BASE_URL}/tiles/_fetch_minimap_raster`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => { /* silent: fallback は loadOsmTile が担う */ });
+  }
   const W = onscreen.width, H = onscreen.height;
   const PAD = 12;
   // course bbox を 20% margin で広げる

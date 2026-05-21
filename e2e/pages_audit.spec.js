@@ -11,7 +11,7 @@
 //
 // 真正性 verify (= 「画面が出た」 だけでなく中身を確認、 2026-05-19 規律) は
 // 既存 user_journey.spec.js の責務、 本 spec は Pages 配信物の表層 verify に絞る。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 
 test('oauth-callback.html は 404 (= class C1 物理除外、 visitor から到達不能)', async ({ page }) => {
   const response = await page.goto('/oauth-callback.html', { waitUntil: 'load' });

@@ -16,7 +16,7 @@
 // buildToggledSearch 呼出を壊せばこのテストが落ちる。
 // 文言は web/lib/mode_toggle.js の定数を import して照合 (= 文字列直書きの drift を防ぐ)。
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 import { MODE_LABEL_TEST, MODE_LABEL_PROD } from '../web/lib/mode_toggle.js';
 
 test('切替ボタンでテストモード ⇄ 本番モードを行き来できる', async ({ page }) => {
@@ -25,7 +25,10 @@ test('切替ボタンでテストモード ⇄ 本番モードを行き来でき
   page.on('dialog', (d) => d.accept());
 
   // --- テストモードで起動 ---
-  await page.goto('http://127.0.0.1:8000/?test=1&consent=dev');
+  // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 モード切替は地形と無関係。
+  // buildToggledSearch は test 以外の引数を保持するので、 本番モードへの reload 後も
+  // noterrain は残り、 reload 先でも配布元を叩かない。
+  await page.goto('http://127.0.0.1:8000/?test=1&consent=dev&noterrain=1');
   // initTestMode → 500ms タイマー → startRideConfirmed → state-riding。
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
   // 切替ボタンが可視で「テストモード」を表示。

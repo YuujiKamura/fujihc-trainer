@@ -16,7 +16,7 @@
 // 到達 + body.mode-view 確認」 を共通ジャーニーとし、 配布元通信の実測を真正性 verify
 // として読む。
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/';
@@ -273,7 +273,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const den = Number(await page.locator('#loading-progress-den').textContent());
     expect(num, 'overlay の num 最終値 が den (= 全タイル数) と一致').toBe(den);
     // GSI DEM 経路の fetch のみ counter (= seamlessphoto / photo 等は別 layer)
-    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/'));
+    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/'));
     console.log(`[brief 35 真正性] num=${num} den=${den} GSI DEM fetch=${demFetches.length}`);
     // num と DEM fetch 数は ±1 で同期 (= onProgress が fetch 直後に発火、 たまに ±1 ずれる
     // race を許容)。 「進捗が動いた」 が実通信に裏打ちされていることを pin。
@@ -293,7 +293,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
       const el = document.getElementById('loading-indicator');
       return el && el.dataset.loadingState === 'done';
     }, { timeout: 60_000 });
-    const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/')).length;
+    const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/')).length;
     expect(firstDemFetches, '1 回目は cache 空、 GSI DEM fetch が走る').toBeGreaterThan(0);
     // 2 回目: reload で cache hit
     await page.reload();
@@ -302,7 +302,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
       const el = document.getElementById('loading-indicator');
       return el && el.dataset.loadingState === 'done';
     }, { timeout: 15_000 });
-    const totalDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem/')).length;
+    const totalDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/')).length;
     const secondDemFetches = totalDemFetches - firstDemFetches;
     console.log(`[brief 35 真正性] 1 回目 DEM fetch=${firstDemFetches} / 2 回目 DEM fetch=${secondDemFetches}`);
     expect(secondDemFetches, '2 回目は cache hit で GSI DEM fetch ゼロ (= 配布元への再アクセス回避)').toBe(0);

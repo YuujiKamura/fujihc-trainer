@@ -20,3 +20,9 @@ rails-app/config/master.key
 
 # brief 33: Pages 配信物の build artifact (= scripts/build_pages.py が再生成、 _site/ は track 対象外)
 _site/
+
+# Playwright e2e の実行成果物 (= 失敗 test の screenshot / trace、 走るたび再生成)
+test-results/
+
+# Claude Code のリポジトリ単位ローカル状態 (= エージェント作業状態、 プロジェクト成果物ではない)
+.claude/

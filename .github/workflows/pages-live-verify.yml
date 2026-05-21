@@ -55,6 +55,9 @@ jobs:
       - name: Install playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Pages live test (= 実 GSI / OSM を叩く e2e)
-        run: npx playwright test e2e/pages_live_fetch.spec.js e2e/pages_live_terrain_render.spec.js
+        # b40 直し1-c: default config に testIgnore が入ったため、 ファイル名を明示指定しても
+        # testIgnore がマッチして 0 tests になる。 pages_live 系専用 config を --config 明示指定する
+        # (= 新規 config 指定なら testIgnore の影響を受けない)。 直し1-a と必ずセット。
+        run: npx playwright test --config=e2e/playwright.pages-live.config.js
         env:
           LIVE_VERIFY_EMAIL: ${{ github.event.inputs.user_agent_email }}

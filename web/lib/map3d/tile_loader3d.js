@@ -126,14 +126,24 @@ function imageToHeightGrid(img) {
  * @param {string} [args.gsiDirectBase] - b31: GSI direct base (= 'https://cyberjapandata.gsi.go.jp/xyz/dem')。
  *                                         未指定なら bridge fetch のみ (= 既存挙動)。
  * @param {(done:number,total:number)=>void} [args.onProgress]
+ * @param {boolean} [args.skipFetch] - b41: true なら配布元 (GSI) を一切叩かず、 標高ゼロの
+ *                                      平坦グリッドを合成して返す。 地形を検証しない e2e が
+ *                                      viewer を起動するときの経路 (= テストで配布元を叩かない)。
  * @returns {Promise<{stitched:{grid:Float32Array,width:number,height:number},
  *                     range:object, missing:number}>}
  */
-export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProgress }) {
+export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProgress, skipFetch }) {
   const range = tileRangeForBounds(bounds, DEM_ZOOM);
   if (range.count > MAX_TILES) {
     throw new RangeError(
       `DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
+  }
+  // b41: skipFetch なら DEM タイルを 1 枚も取らず、 標高ゼロの平坦グリッドを返す。
+  // stitchHeightGrid と同じ {grid,width,height} 形で返すので buildTerrainMesh は通常どおり通る。
+  if (skipFetch) {
+    const width = range.tilesX * TILE_PX;
+    const height = range.tilesY * TILE_PX;
+    return { stitched: { grid: new Float32Array(width * height), width, height }, range, missing: 0 };
   }
   const coords = tileCoordsForRange(range);
   const bridgeBase = demBaseUrl();
@@ -242,12 +252,13 @@ async function bytesToBitmap(bytes) {
  * が担う (= 本モジュールは Three 非依存を保つ)。
  *
  * @param {{range:object, tileCache:object|null,
- *          onProgress?:(done:number,total:number)=>void}} args
+ *          onProgress?:(done:number,total:number)=>void, skipFetch?:boolean}} args
  *   range = loadDemStitched() が返した range (= DEM と同じ範囲・同じ z)。
  *   tileCache = openTileCache() の戻り。 null なら毎回 GSI から取得する。
+ *   skipFetch = b41: true なら GSI を叩かず下地一色の canvas を返す (= テストで配布元を叩かない)。
  * @returns {Promise<HTMLCanvasElement>}
  */
-export async function loadPhotoCanvas({ range, tileCache, onProgress }) {
+export async function loadPhotoCanvas({ range, tileCache, onProgress, skipFetch }) {
   const coords = tileCoordsForRange(range);
   const canvas = document.createElement('canvas');
   canvas.width = range.tilesX * TILE_PX;
@@ -256,6 +267,9 @@ export async function loadPhotoCanvas({ range, tileCache, onProgress }) {
   // 欠損タイルが透けても暗灰で埋まるよう下地を塗る。
   ctx.fillStyle = '#3b424c';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // b41: skipFetch なら航空写真を 1 枚も取らず、 下地一色の canvas をそのまま返す。
+  if (skipFetch) return canvas;
 
   await mapLimit(coords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
     // tileCache hit → GSI リクエスト 0。 miss → GSI online から fetch して cache.set。

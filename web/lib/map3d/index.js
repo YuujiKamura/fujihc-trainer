@@ -261,15 +261,19 @@ export function createMapRenderer() {
           // 既存呼出 (= tileCache / gsiDirectBase 引数なし) は bridge fetch のみで挙動不変。
           // brief 35: onProgress (= (done, total) => void) を viewer から bind して
           // ロード overlay の進捗数値 / バーを更新する。 未指定なら従来挙動 (= silent fetch)。
+          // b41: opts.skipTerrain (= viewer の ?noterrain) なら DEM / 航空写真とも
+          // 配布元を叩かず、 平坦な標高ゼログリッド + 下地一色テクスチャで地形を組む。
           const dem = await loadDemStitched({
             bounds: opts.dbBounds, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
-            onProgress: opts.onProgress,
+            onProgress: opts.onProgress, skipFetch: opts.skipTerrain,
           });
           stitched = dem.stitched;
           range = dem.range;
 
           // 航空写真テクスチャ → 地形メッシュ。
-          const photoCanvas = await loadPhotoCanvas({ range: dem.range, tileCache });
+          const photoCanvas = await loadPhotoCanvas({
+            range: dem.range, tileCache, skipFetch: opts.skipTerrain,
+          });
           const built = buildTerrainMesh({ stitched: dem.stitched, range: dem.range, photoCanvas });
           terrainMesh = built.mesh;
           geoMeta = built.geo;

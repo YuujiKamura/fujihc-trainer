@@ -19,13 +19,15 @@
 //   - viewer-maplibre.js の実コードをブラウザで動かすため、
 //     showHistoryOverlay / appendHistoryRow / deleteRide / updatePostrideButtonVisibility
 //     のいずれを壊してもこのテストが落ちる。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 import {
   RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE, RIDE_INDEX_DATE,
 } from '../web/lib/ride_db.js';
 import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&consent=dev';
+// ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 履歴機能は IndexedDB 上の
+// 動作で地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
+const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&consent=dev&noterrain=1';
 
 // ride_db.js の正規スキーマ定数を使って IndexedDB に ride を 1 件書き込む。
 // スキーマ名 (DB / store / index) は文字列直書きせず import 定数を page に渡す。
@@ -102,10 +104,15 @@ test('履歴: ride 注入 → 一覧表示 → GPX ダウンロード → 削除
   await expect(page.locator('#history-list li')).toHaveCount(0);
 
   // 致命的 JS エラーなし
+  // bridge の tile 系 endpoint は e2e 環境で tile DB を持たないため 404/500/501/503 を
+  // 返すことがある。 これは「リソースの取得失敗」 であって viewer の JS 致命エラーでは
+  // ない ── fatalErrors (= JS 致命エラーの検出) の対象から外す。 viewer 本体の JS が
+  // 壊れていれば state 遷移など他の assertion が必ず先に落ちるので、 検出力は落ちない。
   const fatalErrors = consoleErrors.filter(e =>
     !e.includes('tile') && !e.includes('Tile') &&
     !e.includes('404') && !e.includes('net::ERR') &&
-    !e.includes('maplibre') && !e.includes('MapLibre')
+    !e.includes('maplibre') && !e.includes('MapLibre') &&
+    !e.includes('Failed to load resource')
   );
   expect(fatalErrors).toHaveLength(0);
 });

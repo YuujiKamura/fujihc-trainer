@@ -17,10 +17,12 @@
 // 設計 (position:fixed / z-index 2001 / state 別 hide なし) なので、 riding で可視なら
 // 他 state でも可視。
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './base-test.js';
 
 test('地図タイルの帰属表示 (#attrib) が riding 画面で可視、 GSI / OSM 両方の出典を含む', async ({ page }) => {
-  await page.goto('http://127.0.0.1:8000/?test=1&consent=dev');
+  // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 #attrib の可視性は地形と
+  // 無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
+  await page.goto('http://127.0.0.1:8000/?test=1&consent=dev&noterrain=1');
 
   // riding 到達まで待つ (pairing_to_ride.spec.js 同様、 bootEnv + 地形 boot + 500ms timer)。
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
@@ -63,7 +65,9 @@ test('brief 32: 帰属表示 (#attrib) が intro overlay 表示中も可視 (= o
   // consent skip 無しで goto → intro overlay が表示される state-checking 状態 → #attrib が
   // overlay の下に隠れないことを pin (= GSI 利用規約「出典クレジット必須」 + brief 32 軸 7 要件、
   // overlay 表示中も配布元出典は visible である規律の物理化)。
-  await page.goto('http://127.0.0.1:8000/');
+  // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 #attrib の可視性は
+  // intro overlay 表示中も地形と無関係なので、 地形ゼロでこのテストは成立する。
+  await page.goto('http://127.0.0.1:8000/?noterrain=1');
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
 
   const attrib = page.locator('#attrib');
