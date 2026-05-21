@@ -43,8 +43,12 @@ test('static/tiles/gsi_dem/ は 404 (= 配布元再配布禁止)', async ({ page
 });
 
 test('Pages 配信物の root を開いて intro overlay まで到達できる (= journey 入口)', async ({ page }) => {
-  // Pages baseURL で `/` を開く、 intro overlay が表示される (= 初回訪問者の入口)
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  // Pages baseURL で `/` を開く、 intro overlay が表示される (= 初回訪問者の入口)。
+  // ?noterrain=1: pages.yml は push 連動で走る ── viewer に配布元 (国土地理院) タイルを
+  // 取得させない。 push のたびに実 GSI を叩くのは repo CLAUDE.md「実 endpoint を叩く test は
+  // 手動 trigger のみ」 違反、 base-test.js の見張りもそれを赤で出す。 intro overlay の
+  // 到達確認は地形と無関係なので noterrain で成立する。
+  await page.goto('/?noterrain=1', { waitUntil: 'domcontentloaded' });
   // intro overlay は body class state-checking / state-dbinit 等の状態を経て visible になる
   // ただし bridge / WebSocket がないので state-checking から進まない可能性あり、 timeout 短めで pin
   // intro が直接 visible にならなくても、 HTML が load されること自体は基本 verify
@@ -52,7 +56,8 @@ test('Pages 配信物の root を開いて intro overlay まで到達できる (
 });
 
 test('Pages root で Strava 関連 DOM が body 内に存在しない (= 13 id の物理除外 e2e verify)', async ({ page }) => {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  // ?noterrain=1: 上と同じ ── push 連動 CI で配布元を叩かない。 Strava DOM の不在確認は地形と無関係。
+  await page.goto('/?noterrain=1', { waitUntil: 'domcontentloaded' });
   // brief 33 で削除した 13 id すべてが DOM に存在しないことを 1 件ずつ pin
   const stravaIds = [
     'strava-section', 'strava-fold', 'strava-status',
