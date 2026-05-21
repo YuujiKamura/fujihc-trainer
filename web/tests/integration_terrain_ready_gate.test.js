@@ -20,8 +20,11 @@ import { createTerrainLoader } from '../lib/terrain_loader.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
+// b42: probe オーケストレーションは terrain_phase.js へ切り離し済。移管先 source も読む。
+const TERRAIN_PHASE_PATH = resolve(__dirname, '..', 'lib', 'terrain_phase.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const html = readFileSync(INDEX_PATH, 'utf8');
+const terrainPhase = readFileSync(TERRAIN_PHASE_PATH, 'utf8');
 
 // viewer の updateActionButtonsForTerrain ロジックを忠実に再現する shim.
 // terrainReady と _pairConnected の状態から btn.disabled を解決する純関数 + 5 step indicator 制御。
@@ -173,9 +176,14 @@ describe('brief 34 ε-9 integration: HTML 構造 (= 5 step indicator + status ro
 });
 
 describe('brief 34 ε-9 integration: viewer source 構造', () => {
-  it('viewer は terrain_loader.js を import している', () => {
-    expect(viewer).toMatch(/from\s+['"]\.\/lib\/terrain_loader\.js['"]/);
-    expect(viewer).toMatch(/createTerrainLoader/);
+  it('viewer は terrain_phase.js を import している (= b42 切り離し後の probe 経路)', () => {
+    // b42: probe オーケストレーションは terrain_phase.js へ切り離し済。viewer は
+    // terrain_loader.js を直接 import せず、createTerrainPhase 経由で probe を起動する。
+    expect(viewer).toMatch(/from\s+['"]\.\/lib\/terrain_phase\.js['"]/);
+    expect(viewer).toMatch(/createTerrainPhase/);
+    // terrain_loader / GSI_DEM_DIRECT_BASE の責務は terrain_phase.js が持つ
+    expect(terrainPhase).toMatch(/from\s+['"]\.\/terrain_loader\.js['"]/);
+    expect(terrainPhase).toMatch(/createTerrainLoader/);
   });
 
   it('terrainReady 変数が module top で定義され、 default false', () => {
@@ -223,22 +231,25 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     expect(viewer).toMatch(/state\s*===?\s*['"]connected['"][\s\S]{0,800}setRideStartEnabled\(\s*terrainReady\s*\)/);
   });
 
-  it('startTerrainProbe 関数が定義され、 起動時 1 回呼ばれる', () => {
-    expect(viewer).toMatch(/function\s+startTerrainProbe\s*\(/);
-    // 起動 dispatch (= _terrainLoader への代入) がある
-    expect(viewer).toMatch(/_terrainLoader\s*=\s*startTerrainProbe\(\)/);
+  it('viewer は terrain_phase (createTerrainPhase) を import し起動時 1 回呼ぶ (= b42 切り離し)', () => {
+    // b42: probe オーケストレーションは terrain_phase.js に切り離し済。viewer は
+    // createTerrainPhase を import して起動配線 (= startTerrainPhase) するだけ。
+    expect(viewer).toMatch(/import\s+\{[^}]*createTerrainPhase[^}]*\}\s+from\s+['"]\.\/lib\/terrain_phase\.js['"]/);
+    expect(viewer).toMatch(/function\s+startTerrainPhase\s*\(/);
+    // 起動 dispatch (= _terrainPhase への代入) がある
+    expect(viewer).toMatch(/_terrainPhase\s*=\s*startTerrainPhase\(\)/);
   });
 
-  it('startTerrainProbe は bridge prefix + GSI_DEM_DIRECT_BASE + TileCache を渡す (= b31 経路差し替え)', () => {
-    const m = viewer.match(/function\s+startTerrainProbe\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    const body = m[0];
-    expect(body).toMatch(/static\/course\.json/);
-    expect(body).toMatch(/static\/map\.pmtiles/);
-    expect(body).toMatch(/static\/tiles\/gsi_dem/);   // bridge mode prefix 維持
-    // b31: GSI direct base const + TileCache DI が startTerrainProbe 内で組まれる
-    expect(body).toMatch(/GSI_DEM_DIRECT_BASE/);      // GSI direct base const 参照 (= literal は terrain_loader.js)
-    expect(body).toMatch(/openTileCache/);             // TileCache を Promise として cfg.tileCache へ渡す
+  it('terrain_phase.js が bridge prefix + GSI_DEM_DIRECT_BASE + TileCache を組む (= b42 移管先)', () => {
+    // b42: 旧 startTerrainProbe の URL 構築 / GSI direct base / TileCache DI は
+    // terrain_phase.js へ移管。本 test は移管先 source に対し pin する
+    // (= behavioral pin は terrain_phase.test.js が担う、 ここは配線の存在確認)。
+    expect(terrainPhase).toMatch(/static\/course\.json/);
+    expect(terrainPhase).toMatch(/static\/map\.pmtiles/);
+    expect(terrainPhase).toMatch(/static\/tiles\/gsi_dem/);   // bridge mode prefix 維持
+    // GSI direct base const 参照 (= literal の SoT は terrain_loader.js のまま)
+    expect(terrainPhase).toMatch(/GSI_DEM_DIRECT_BASE/);
+    expect(terrainPhase).toMatch(/openTileCache/);             // TileCache DI
   });
 
   it('updateTerrainStep 関数が phase で step-terrain の class を切替える (= done/active/failed)', () => {

@@ -73,9 +73,10 @@ import { FUJIHC_LANDMARKS, snapLandmarksToCourse } from './lib/course_landmarks.
 // brief 34 ε-9: 地形データ準備 loader. 起動直後 1 回 start()、 完了まで全アクションボタン disabled.
 // b31: GSI_DEM_DIRECT_BASE constant は terrain_loader.js 側で定義、 viewer 本体には
 // URL literal を書かない (= viewer_url_audit.test.js 単体 scan に対し GSI URL 出現ゼロ維持)。
-import { createTerrainLoader, GSI_DEM_DIRECT_BASE } from './lib/terrain_loader.js';
-// b31: TileCache (= IndexedDB) を startTerrainProbe に DI、 TTL 90 日内は GSI 取得ゼロ。
-import { openTileCache } from './lib/tile_cache.js';
+// b42: probe の URL 構築 / loader 生成 / GSI direct base / TileCache DI は terrain_phase.js
+// 側に切り離し済 (= createTerrainLoader / GSI_DEM_DIRECT_BASE / openTileCache の import は本
+// module から撤去)。viewer は createTerrainPhase を消費するだけ。
+import { createTerrainPhase } from './lib/terrain_phase.js';
 // b13-1: 機器設定パネルの共通スライダー機構
 import { mountControlPanel } from './lib/control_panel.js';
 
@@ -1544,42 +1545,27 @@ if (typeof document !== 'undefined') {
   }
 }
 
-// brief 34 ε-9: terrain loader の起動関数. URL は ENV から取り出すが、 ENV 未確定でも
-// 物理 URL は static / bridge どちらでも構築できる (= location.origin + BASE_PATH 経由).
-// ここで bridge 判定を避けて static 側 URL で probe する (= bridge mode でも /tiles/gsi_dem は
-// 同じ位置に存在、 失敗したら failed 状態で UI 表示).
-//
-// b31: Pages 環境 (= bridge.py 不在 + 同梱 tile 不在) でも probe が PASS するように、
-// GSI dem direct base を渡して bridge fetch 失敗時に GSI direct fetch + TileCache 保存に
-// fall back する経路を追加。 TileCache (= IndexedDB) hit 時は GSI への通信ゼロ (= TTL 90 日)。
-// 既存 bridge mode (= localhost 開発) は gsiTileBaseUrl 経由が先に試行されるので無変更挙動。
-function startTerrainProbe() {
+// b42: terrain probe (= フェーズ0「地形データ準備」) の起動配線。
+// probe の lifecycle オーケストレーション (= URL 構築 / SKIP_TERRAIN 分岐 / loader 生成 /
+// GSI direct base / TileCache DI) は terrain_phase.js (createTerrainPhase) へ切り離し済。
+// ここは createTerrainPhase を生成し、UI (= terrain status / step) / gate (= terrainReady) /
+// ロード overlay を subscribe callback で bind する薄い consumer 配線のみを持つ。
+function startTerrainPhase() {
   if (typeof document === 'undefined') return null;
-  // bridge / static は起動時点で判別困難 (= checkSetupStatus は async).
-  // ここは「bridge / static のどちらでも到達可能な URL」 = static 側 path で probe.
-  // bridge mode 起動済の localhost でも /static/* は web/static/ にあるため 404 にならない.
-  // static mode (= GitHub Pages) でも同じ path で配信される。
-  const courseUrl = `${BASE_PATH}static/course.json`;
-  const pmtilesUrl = `${BASE_PATH}static/map.pmtiles`;
-  const gsiTileBaseUrl = `${BASE_PATH}static/tiles/gsi_dem`;
-  // b31: GSI direct base は terrain_loader.js が SoT (= GSI_DEM_DIRECT_BASE export)、
-  // viewer 本体に URL literal を書かない (= 既存 viewer_url_audit.test.js の GSI 直叩き禁止 audit
-  // を本体 source に対し継続 PASS させる、 PROJECT-README L116 の方針)。
-  // TileCache は async 取得、 失敗時は null fallback (= IndexedDB 使えない環境でも probe は動く)。
-  // Promise を直接 cfg.tileCache に渡す (= terrain_loader 内で await する設計、 起動を block しない)。
-  const tileCachePromise = openTileCache().catch(() => null);
-  const loader = createTerrainLoader({
-    courseUrl, pmtilesUrl, gsiTileBaseUrl,
-    gsiDirectBase: GSI_DEM_DIRECT_BASE,
-    tileCache: tileCachePromise,
+  // SKIP_TERRAIN (= ?noterrain) の分岐は terrain_phase.js 内に 1 本化済。skip 時は loader を
+  // 生成せず即 done を emit するため配布元は一切叩かれない。SKIP_TERRAIN 定数自体は
+  // showLoadingOverlay の overlay-skip 判断 (= 下の起動ブロック / showLoadingOverlay 内) で
+  // viewer 側にも残る。
+  const phase = createTerrainPhase({
+    basePath: BASE_PATH,
+    skipTerrain: SKIP_TERRAIN,
   });
-  loader.subscribe((snap) => {
+  phase.subscribe((snap) => {
     setTerrainStatusUI(snap);
     updateTerrainStep(snap.phase);
-    // brief 35: terrain probe が click 前 (= module top の startTerrainProbe) から走る経路の
-    // 進捗をロード overlay に bind。 訪問者が「コースを観る」 を click する前から overlay は
-    // visible で、 「地形タイル取得中 N / M」 が動く ── intro overlay の文章を読んでる時間に
-    // 裏で確実に動いている signal を見せる (= 「死んでる」 と判断されない)。
+    // brief 35: probe の進捗をロード overlay に bind。 訪問者が「コースを観る」 を click する
+    // 前から overlay は visible で「地形タイル取得中 N / M」 が動く ── intro overlay の文章を
+    // 読んでいる時間に裏で確実に動いている signal を見せる (= 「死んでる」 と判断されない)。
     if (snap.total > 0) {
       updateLoadingProgress(snap.done, snap.total);
     }
@@ -1607,25 +1593,20 @@ function startTerrainProbe() {
     }
   });
   // start は fire-and-forget (= 完了は subscribe 経由).
-  loader.start().catch((e) => {
-    console.warn('[fujihill] terrain probe error:', e);
+  phase.start().catch((e) => {
+    console.warn('[fujihill] terrain phase error:', e);
   });
-  return loader;
+  return phase;
 }
 // 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
-let _terrainLoader = null;
-if (SKIP_TERRAIN) {
-  // b41: ?noterrain= では terrain probe を回さない (= 配布元を叩かない)。 probe 完了で
-  // 立つはずの terrain gate を即 open し、 全アクションボタンを通常どおり解禁する。
-  terrainReady = true;
-  try { updateActionButtonsForTerrain(); } catch (e) { /* document 不在等 silent */ }
-} else if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
-  // brief 35: terrain probe の起動と同時にロード overlay を visible 化、 intro overlay 表示中の
-  // 沈黙期間にも「動いている」 を訪問者に見せる。 Pages 環境では click 前から GSI direct fetch が
-  // 走るため、 click 後の bootMap に bind するだけでは進捗が見えなかった (= 2026-05-20 user 訂正
-  // 「地形データが読み込まれてないだろ」 を受けた fix)。
+let _terrainPhase = null;
+if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
+  // brief 35: terrain phase の起動と同時にロード overlay を visible 化、 intro overlay 表示中の
+  // 沈黙期間にも「動いている」 を訪問者に見せる。 showLoadingOverlay は SKIP_TERRAIN (= ?noterrain)
+  // のとき自前で early-return するため、 skip 経路では overlay は出ない (= 配布元を叩かない経路と
+  // overlay 非表示が一致)。
   try { showLoadingOverlay('idle'); } catch (e) { /* document 不在等 silent */ }
-  try { _terrainLoader = startTerrainProbe(); } catch (e) { console.warn('[fujihill] terrain probe init failed:', e); }
+  try { _terrainPhase = startTerrainPhase(); } catch (e) { console.warn('[fujihill] terrain phase init failed:', e); }
 }
 
 // 起動時の未完了 ride 復元 dialog。

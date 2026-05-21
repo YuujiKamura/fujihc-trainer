@@ -333,16 +333,27 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
   const terrainLoader = readFileSync(resolve(__dirname, '..', 'lib', 'terrain_loader.js'), 'utf8');
   const tileLoader3d = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'tile_loader3d.js'), 'utf8');
   const map3dIndex = readFileSync(resolve(__dirname, '..', 'lib', 'map3d', 'index.js'), 'utf8');
+  // b42: probe オーケストレーションは terrain_phase.js へ切り離し済 (= GSI direct base を
+  // loader へ渡す責務もここ)。
+  const terrainPhase = readFileSync(resolve(__dirname, '..', 'lib', 'terrain_phase.js'), 'utf8');
 
   it('terrain_loader.js が GSI_DEM_DIRECT_BASE を export (= cyberjapandata.gsi.go.jp/xyz/dem_png の SoT)', () => {
     // 2026-05-20 fix: viewer の PNG decode 経路と整合する dem_png (= PNG 形式 endpoint) を使う。
     expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem_png['"]/);
   });
 
-  it('viewer 本体 (viewer-maplibre.js) には GSI URL literal を書かず const import 経由 (= 既存 audit 互換)', () => {
-    // viewer-maplibre.js 本体には GSI URL literal が出現してはならない (= 既存 L46-48 で pin 済)
-    // 本 test は補助的に「viewer は GSI_DEM_DIRECT_BASE を import している」 を pin する
-    expect(viewer).toMatch(/import\s+\{[^}]*GSI_DEM_DIRECT_BASE[^}]*\}\s+from\s+['"]\.\/lib\/terrain_loader\.js['"]/);
+  it('viewer 本体 (viewer-maplibre.js) には GSI URL literal が出現しない (= 既存 audit 互換)', () => {
+    // viewer-maplibre.js 本体には GSI URL literal が出現してはならない (= 既存 L46-48 で pin 済)。
+    // b42: probe オーケストレーションが terrain_phase.js へ切り離され、viewer は
+    // GSI_DEM_DIRECT_BASE を import しなくなった。GSI URL literal 不在は引き続き pin。
+    expect(viewer).not.toMatch(/cyberjapandata\.gsi\.go\.jp/);
+  });
+
+  it('terrain_phase.js が GSI_DEM_DIRECT_BASE を const import 経由で受ける (= b42 移管先、literal 散在ゼロ)', () => {
+    // b42: GSI direct base を terrain_loader へ渡す責務は terrain_phase.js。import は
+    // const 経由、terrain_phase.js 本体に GSI URL literal は書かない (= SoT は terrain_loader.js)。
+    expect(terrainPhase).toMatch(/import\s+\{[^}]*GSI_DEM_DIRECT_BASE[^}]*\}\s+from\s+['"]\.\/terrain_loader\.js['"]/);
+    expect(terrainPhase).not.toMatch(/cyberjapandata\.gsi\.go\.jp/);
   });
 
   it('map3d/index.js も GSI_DEM_DIRECT_BASE を const import 経由で受ける (= literal 散在ゼロ)', () => {
