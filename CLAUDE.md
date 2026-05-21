@@ -111,6 +111,15 @@ helper script の追加 install は不要、 全部既存運用に乗ってる�
 - raw_conversations / raw_messages / session_chunks / session_files (= skill-miner の生 ingest、
   読み取り専用、 INSERT/UPDATE は外部 ingest pipeline の責務)
 
-## push 禁止
+## push
 
-`git push` は user の明示指示があるまで禁止。ローカル commit まで。
+`git push` (= origin = YuujiKamura/fujihc-trainer、 自分の repo) は、 触った module の
+全種類 test (= vitest + pytest + e2e、 該当するもの) が green なら **per-action 認可
+なしで実行してよい** (2026-05-21 user 改訂「できてるならプッシュに規制はない、 ルールを
+変えろ」)。 検証 green = 「できてる」、 できてれば push は規制しない。
+
+ただし:
+- 検証未済での push は禁止 (= Rule 1、 「できてる」 の実体は test green)。
+- `data/*.sqlite` / PMTiles 等の配布元データ・credentials は commit 段階で止める
+  (= 上記「DB / バイナリ」 + global Rule 11)、 push 以前の問題。
+- upstream / 他人名義 repo への push・PR・Issue は従来どおり禁止 (= 人間判断を経由)。
