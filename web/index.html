@@ -200,7 +200,6 @@
   #setup-list .dev-name { font-weight: bold; }
   #setup-list .dev-meta { color: #888; font-size: 11px; }
   #setup-buttons { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-  #setup-buttons button { font: inherit; padding: 0.4rem 0.9rem; cursor: pointer; min-height: 36px; }
   #setup-error { color: #ff5050; margin: 0.4rem 0; min-height: 1em; font-size: 12px; }
 
   #btnRideStart { display: block; width: 100%; margin-top: 0.9rem; background: #7fff00; color: #000; font: bold 18px/1.4 ui-monospace, monospace; border: none; border-radius: 6px; padding: 0.8rem 1.2rem; min-height: 56px; cursor: pointer; }
@@ -213,7 +212,7 @@
   #postride-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
   #postride-panel .gpx-line { background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; margin: 0.5rem 0; font-family: ui-monospace, monospace; font-size: 12px; color: #ffd54a; word-break: break-all; }
   #postride-panel .hint { color: #aaa; font-size: 12px; margin: 0.4rem 0; }
-  #postride-panel button { font: inherit; padding: 0.5rem 1rem; margin-right: 0.4rem; min-height: 36px; cursor: pointer; }
+  #postride-panel button { margin-right: 0.4rem; }
 
   /* brief 26b: dbinit-overlay (= 起動時 DB 構築 UI、 setup-overlay とは独立 DOM)
      z-index: 1400 (= setup 1500 / postride 1600 / confirm 1700 より下)、
@@ -230,8 +229,6 @@
   #dbinit-panel .progress-bar .label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; mix-blend-mode: difference; }
   #dbinit-panel .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
   #dbinit-panel input[type=text] { flex: 1; padding: 0.4rem 0.6rem; min-height: 32px; font: inherit; background: #0c0c10; color: #ddd; border: 1px solid #333; border-radius: 4px; }
-  #dbinit-panel button { font: inherit; padding: 0.4rem 0.9rem; cursor: pointer; min-height: 36px; background: #2a2a36; color: #ffd54a; border: 1px solid #444; border-radius: 4px; }
-  #dbinit-panel button:hover { background: #3a3a48; }
   #dbinit-panel #btnDbinitSkip { background: #14141a; color: #aaa; }
 
   #confirm-overlay { position: fixed; inset: 0; z-index: 1700; background: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; }
@@ -239,7 +236,6 @@
   #confirm-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 8px; padding: 1.2rem 1.4rem; max-width: 440px; }
   #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
   #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
-  #confirm-panel button { font: inherit; padding: 0.5rem 1rem; min-height: 36px; cursor: pointer; }
 
   /* brief 34 ε-1: 公開ガードレール intro-overlay (= z-index 1450、 ページ読込直後に必ず表示).
      setup-overlay (1500) より下、 dbinit-overlay (1400) / history-overlay (1550) との衝突なし. */
@@ -250,7 +246,7 @@
   #intro-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; line-height: 1.6; }
   #intro-panel p.intro-disclaimer { color: #ffd54a; font-weight: bold; background: #221a08; border-left: 3px solid #ffd54a; padding: 0.6rem 0.8rem; }
   #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
-  #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
   #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   /* 2026-05-15 fix: 走行系 button (= 地形 load 完了まで disabled) のグレーアウト表現を強制.
      btnSetupGoView は inline style で色 hardcode してたので :disabled 擬似クラスが効かなかった、
@@ -326,7 +322,7 @@
   /* 標高情報は副、 小さく gray で下段に. */
   #section-list .sec-meta { color: #888; font-size: 11px; grid-column: 1; grid-row: 2; }
   #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
-  #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
   /* state-riding 中の view モード戻り button (= section list に戻るための導線). */
   #btnViewModeBackToList { position: fixed; right: 1rem; top: 1rem; z-index: 1000; display: none; padding: 0.5rem 1rem; background: rgba(0, 0, 0, 0.8); color: #7fff00; border: 1px solid #7fff00; border-radius: 4px; font: 14px ui-monospace, monospace; cursor: pointer; }
   body.state-riding.mode-view #btnViewModeBackToList { display: block; }
@@ -345,7 +341,7 @@
   #consent-panel .opt-row label { color: #ddd; font-size: 13px; line-height: 1.5; }
   #consent-panel .opt-row label .opt-title { color: #ffd54a; font-weight: bold; display: block; margin-bottom: 0.2rem; }
   #consent-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
-  #consent-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #consent-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
   #consent-panel .actions button#btnConsentAccept { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #consent-panel .actions button#btnConsentCancel { background: #14141a; color: #aaa; }
   /* preflight-overlay (= ride 開始前の事前 validation panel、 z-index 1465).
@@ -358,7 +354,7 @@
   #preflight-list { list-style: none; padding: 0; margin: 0.6rem 0; background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; max-height: 320px; overflow-y: auto; }
   #preflight-message { font-size: 13px; margin: 0.4rem 0; }
   #preflight-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
-  #preflight-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #preflight-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
   #preflight-panel .actions button#btnPreflightStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #preflight-panel .actions button#btnPreflightStart:disabled { background: #444; color: #888; border-color: #444; cursor: not-allowed; }
   /* save-summary block (= postride 冒頭の保存予定 summary). postride-panel 内で使用. */
@@ -375,7 +371,7 @@
   #restore-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
   #restore-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
   #restore-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
-  #restore-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: #2a2a36; color: #ddd; }
+  #restore-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
   #restore-panel .actions button#btnRestoreYes { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
   #restore-panel .actions button#btnRestoreDiscard { background: #14141a; color: #ff8866; border-color: #ff8866; }
   /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
@@ -422,13 +418,12 @@
   #history-list .ride-actions button { font: inherit; padding: 0.3rem 0.6rem; margin-left: 0.3rem; min-height: 32px; cursor: pointer; }
   #history-empty { color: #888; padding: 0.6rem; }
   #history-buttons { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
-  #history-buttons button { font: inherit; padding: 0.4rem 0.9rem; min-height: 36px; cursor: pointer; }
 
   /* brief 33: setup-overlay 内 Strava 連携セクション */
   #strava-section { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid #333; }
   #strava-section h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
   #strava-section .strava-status { color: #aaa; font-size: 12px; margin-bottom: 0.4rem; }
-  #strava-section button { font: inherit; padding: 0.4rem 0.9rem; margin-right: 0.4rem; min-height: 36px; cursor: pointer; }
+  #strava-section button { margin-right: 0.4rem; }
   #strava-section a { color: #7fff00; text-decoration: underline; font-size: 12px; }
 
   /* ローディングインジケータ (= MAP_MODE 起動時、 全描画完了まで表示).
@@ -567,6 +562,10 @@
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
+    font: inherit;
+    padding: 0.5rem 1.1rem;
+    min-height: 40px;
+    cursor: pointer;
   }
   button:hover:not(:disabled) {
     background: #25363a;
