@@ -15,14 +15,17 @@
 /**
  * 富士ヒル公式コースの主要 checkpoint 7 件。
  *
- * 配列は distance 昇順、 `id='start'` (= 料金所) と `id='finish'` (= 五合目) は
+ * 配列は distance 昇順、 `id='start'` (= 計測開始地点) と `id='finish'` (= 五合目) は
  * 両端固定 (= snap で course の両端 idx に必ず張り付く)。
  *
  * `ele_m_official: null` は「公式 reference に標高記載なし」、 実装時 course.json
  * snap 後の elevation で確定する。
  */
 export const FUJIHC_LANDMARKS = [
-  { id: 'start',    name: '料金所',         distance_m_official: 0,     ele_m_official: 1088 },
+  // id='start' の旧称 '料金所' は誤り ── 計測開始地点は料金所ではない (2026-05-21 指摘)。
+  // 正しい地名が未確定なので name は空にし、 viewer に標識を出さない (landmarks3d.js が
+  // 空 name を skip)。 id='start' 自体は course 起点 (idx=0) として残す。
+  { id: 'start',    name: '',               distance_m_official: 0,     ele_m_official: 1088 },
   { id: 'jukaidai', name: '樹海台駐車場',    distance_m_official: 10500, ele_m_official: null },
   { id: 'san_go',   name: '三合目',         distance_m_official: 12800, ele_m_official: null },
   { id: 'osawa',    name: '大沢駐車場',      distance_m_official: 17200, ele_m_official: 2020 },

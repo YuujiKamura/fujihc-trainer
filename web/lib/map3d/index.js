@@ -277,10 +277,9 @@ export function createMapRenderer() {
           const built = buildTerrainMesh({ stitched: dem.stitched, range: dem.range, photoCanvas });
           terrainMesh = built.mesh;
           geoMeta = built.geo;
-          // 地形メッシュも自機の影を受ける ── 巨大ライダー (倍率最大 50) の影はコース
-          // リボン幅をはみ出すので、 はみ出たぶんを地形メッシュの山肌へ落として自然に
-          // 投影する (= リボンだけを受け手にすると影がリボンの外で消える)。
-          terrainMesh.receiveShadow = true;
+          // 地形メッシュは自機の影を受けない ── 自機の影が地形の山肌へ伸びるのが
+          // 不自然なため、 受け手にしない (2026-05-21 指摘、 Three.js 既定 false)。
+          // 自機の影はコースリボン上 (ribbon の receiveShadow) でのみ受ける。
           scene.add(terrainMesh);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);

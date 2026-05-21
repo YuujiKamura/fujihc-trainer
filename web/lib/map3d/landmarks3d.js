@@ -116,6 +116,9 @@ export function createLandmarks3d(THREE, opts) {
   // snappedLandmarks と Three.js オブジェクトを 1 対 1 で持つ。
   const entries = [];
   for (let i = 0; i < snappedLandmarks.length; i++) {
+    // name が空の landmark は標識を出さない ── course 起点 (id='start' 等) のように
+    // id は要るが viewer に出す地名が無い landmark。 course_landmarks.js を参照。
+    if (!snappedLandmarks[i].name) continue;
     const canvas = makeLandmarkCanvas(snappedLandmarks[i].name);
     const aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
     const texture = new THREE.CanvasTexture(canvas);

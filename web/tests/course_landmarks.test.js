@@ -38,9 +38,12 @@ describe('FUJIHC_LANDMARKS data 整合', () => {
     expect(ids).toEqual(['start', 'jukaidai', 'san_go', 'osawa', 'yon_go', 'okuniwa', 'finish']);
   });
 
-  it('各 landmark に name 文字列が存在 (= UI 表示の地名が空欠落するのを防ぐ)', () => {
+  it("name は全件文字列、 start 以外は非空 (= UI の地名欠落を防ぐ。 id='start' は標識を出さないため空)", () => {
     for (const lm of FUJIHC_LANDMARKS) {
       expect(typeof lm.name).toBe('string');
+      // id='start' は計測開始地点 ── 旧称 '料金所' は誤りで正しい地名が未確定のため
+      // name を空にし viewer に標識を出さない (course_landmarks.js / landmarks3d.js)。
+      if (lm.id === 'start') continue;
       expect(lm.name.length).toBeGreaterThan(0);
     }
   });

@@ -162,4 +162,13 @@ describe('createLandmarks3d', () => {
     const l = createLandmarks3d(THREE, { ...geo });
     expect(l.landmarkCount).toBe(0);
   });
+
+  it('name が空の landmark は sprite を作らない (= course 起点等、 表示する地名が無い landmark)', () => {
+    const THREE = mockThree();
+    const lms = makeSnappedLandmarks();
+    lms[0].name = '';  // start を「地名なし」にする (= course_landmarks.js の id='start')
+    const l = createLandmarks3d(THREE, { snappedLandmarks: lms, ...geo });
+    expect(l.landmarkCount).toBe(6);
+    expect(l.group.children.length).toBe(6);
+  });
 });
