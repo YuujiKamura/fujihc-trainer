@@ -307,9 +307,19 @@ describe('b43: SW キャッシュクリアボタン source (= viewer / index.htm
 
   it('index.html に #btnRefreshApp があり #clear-data-section 内にある', () => {
     expect(html).toMatch(/id="btnRefreshApp"/);
-    const m = html.match(/<section id="clear-data-section"[\s\S]*?<\/section>/);
+    // b44: clear-data-section は <section> から <details> へ変更 (= フォールド化)。
+    const m = html.match(/<details id="clear-data-section"[\s\S]*?<\/details>/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/id="btnRefreshApp"/);
+  });
+
+  it('b44: setup-overlay の補助 section が <details> でデフォルト閉じ (open 属性なし)', () => {
+    // 機器の状態 / 機器選択 / データとキャッシュの管理 を <details> で畳む。
+    for (const id of ['device-status-fold', 'bridge-scan-section', 'clear-data-section']) {
+      const m = html.match(new RegExp(`<details id="${id}"[^>]*>`));
+      expect(m, `${id} が <details> である`).not.toBeNull();
+      expect(m[0], `${id} に open 属性がない (= デフォルト閉じ)`).not.toMatch(/\bopen\b/);
+    }
   });
 
   it('btnRefreshApp click handler が clearServiceWorkerCache + location.reload を呼ぶ', () => {

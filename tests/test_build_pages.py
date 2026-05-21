@@ -188,32 +188,20 @@ def test_rewrite_csp_idempotent() -> None:
     assert once == twice
 
 
-# ---------- bump_sw_cache ----------
+# ---------- sw.js CACHE_NAME (= b44: build は書き換えない) ----------
 
-def test_bump_sw_cache_v13_to_v14(fake_web: Path, tmp_path: Path) -> None:
+def test_sw_cache_name_copied_verbatim(fake_web: Path, tmp_path: Path) -> None:
+    """b44: build_pages は _site/sw.js の CACHE_NAME を書き換えない (= web/sw.js の
+    コピーのまま)。 旧 bump_sw_cache が固定値 fujihill-v14 で潰し、 web 側の版数 bump が
+    Pages 配信物に伝播しなかった事故の撤去を pin。"""
+    import re
     site = tmp_path / "_site"
-    build_pages.copy_tree(fake_web, site)
-    before, after = build_pages.bump_sw_cache(site / "sw.js")
-    assert before == "fujihill-v13"
-    assert after == "fujihill-v14"
-    text = (site / "sw.js").read_text(encoding="utf-8")
-    assert "fujihill-v14" in text
-    assert "fujihill-v13" not in text
-
-
-def test_bump_sw_cache_idempotent_on_v14(tmp_path: Path) -> None:
-    sw = tmp_path / "sw.js"
-    sw.write_text("const CACHE_NAME = 'fujihill-v14';\n", encoding="utf-8")
-    before, after = build_pages.bump_sw_cache(sw)
-    assert before == "fujihill-v14"
-    assert after == "fujihill-v14"
-
-
-def test_bump_sw_cache_raises_when_pattern_missing(tmp_path: Path) -> None:
-    sw = tmp_path / "sw.js"
-    sw.write_text("// no CACHE_NAME here\n", encoding="utf-8")
-    with pytest.raises(SystemExit):
-        build_pages.bump_sw_cache(sw)
+    build_pages.main(["--src", str(fake_web), "--dst", str(site)])
+    web_m = re.search(r"CACHE_NAME\s*=\s*'([^']+)'", (fake_web / "sw.js").read_text(encoding="utf-8"))
+    site_m = re.search(r"CACHE_NAME\s*=\s*'([^']+)'", (site / "sw.js").read_text(encoding="utf-8"))
+    assert web_m is not None and site_m is not None
+    # build が版数を書き換えていない = 両者の CACHE_NAME が同値。
+    assert web_m.group(1) == site_m.group(1)
 
 
 # ---------- verify_no_dem ----------
@@ -249,7 +237,6 @@ def test_main_orchestrator_runs_all_steps(fake_web: Path, tmp_path: Path) -> Non
     assert "strava.com" not in html
     for dom_id in build_pages.STRAVA_DOM_IDS:
         assert f'id="{dom_id}"' not in html
-    assert "fujihill-v14" in (site / "sw.js").read_text(encoding="utf-8")
     assert "frame-ancestors 'none'" in html
 
 

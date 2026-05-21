@@ -2,7 +2,7 @@
 
 責務 1 (= b33 brief §6): 関数分離して各々 pytest で個別 pin。
 順序: clean → copy_tree → strip_strava_files → rewrite_dom → rewrite_csp →
-      bump_sw_cache → verify_no_dem
+      verify_no_dem
 
 build 後の _site/ は viewer_url_audit.test.js (= 責務 3) で URL pin される。
 """
@@ -54,9 +54,6 @@ CSP_STRIPPED = (
     "frame-ancestors 'none'; "
     "form-action 'self'"
 )
-
-SW_CACHE_BEFORE = "fujihill-v13"
-SW_CACHE_AFTER = "fujihill-v14"
 
 
 def clean(site_dir: Path) -> None:
@@ -174,26 +171,6 @@ def rewrite_csp_in_file(html_path: Path) -> None:
     html_path.write_text(out, encoding="utf-8")
 
 
-SW_CACHE_RE = re.compile(r"const\s+CACHE_NAME\s*=\s*'([^']+)'")
-
-
-def bump_sw_cache(sw_path: Path) -> tuple[str, str]:
-    """sw.js の CACHE_NAME を bump (= fujihill-v13 → fujihill-v14)。
-    Returns: (before, after) tuple。
-    冪等: 既に v14 なら ('fujihill-v14', 'fujihill-v14') を返す。"""
-    text = sw_path.read_text(encoding="utf-8")
-    m = SW_CACHE_RE.search(text)
-    if m is None:
-        raise SystemExit(f"ERROR: CACHE_NAME pattern not found in {sw_path}")
-    before = m.group(1)
-    after = SW_CACHE_AFTER
-    if before == SW_CACHE_AFTER:
-        return (before, after)
-    new_text = SW_CACHE_RE.sub(f"const CACHE_NAME = '{after}'", text, count=1)
-    sw_path.write_text(new_text, encoding="utf-8")
-    return (before, after)
-
-
 def verify_no_dem(site_dir: Path) -> None:
     """_site/static/tiles/gsi_dem/ が存在しないことを assert (= 配布元 ToS 違反防止)。
     存在したら SystemExit。"""
@@ -235,11 +212,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[build_pages] rewrite_csp: {index_path}")
     rewrite_csp_in_file(index_path)
 
-    sw_path = dst / "sw.js"
-    if sw_path.exists():
-        print(f"[build_pages] bump_sw_cache: {sw_path}")
-        before, after = bump_sw_cache(sw_path)
-        print(f"[build_pages]   {before} -> {after}")
+    # b44: _site/sw.js の CACHE_NAME は web/sw.js のコピーのまま (= 書き換えない)。
+    # 旧 bump_sw_cache は固定値 fujihill-v14 で潰しており、 web 側の版数 bump が
+    # Pages 配信物に伝播しなかった ── 撤去済。
 
     print(f"[build_pages] verify_no_dem: {dst}")
     verify_no_dem(dst)

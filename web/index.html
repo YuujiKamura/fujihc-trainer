@@ -759,23 +759,30 @@
          「pmtiles 読み込み中 / GSI 標高 N/M / 完了」 を表示、 phase で色を変える
          (= pending/loading=黄、 done=緑、 failed=赤). 完了で setup-status が表面に戻る. -->
     <div id="terrain-status" class="status-line" style="color:#ffd54a; margin:0.3rem 0;">地形データ準備中...</div>
-    <div class="pair-cols">
-      <section><h3>trainer</h3><dl>
-        <dt>機種</dt><dd><span id="p-device">--</span></dd>
-        <dt>状態</dt><dd><span id="p-state">--</span></dd>
-        <dt>応答</dt><dd><span id="p-ack">--</span></dd>
-      </dl></section>
-      <section><h3>live values</h3><dl>
-        <dt>power</dt><dd><span id="p-power">--</span> W</dd>
-        <dt>cadence</dt><dd><span id="p-cadence">--</span> rpm</dd>
-        <dt>speed</dt><dd><span id="p-speed">--</span> km/h</dd>
-        <dt>hr</dt><dd><span id="p-hr">--</span> bpm</dd>
-      </dl></section>
-    </div>
+    <!-- b44: 機器の状態 (trainer 情報 / live values) はフォールド、 デフォルト閉じ。
+         接続前は中身が `--` ばかりで、 走行前に常時表示する必要がない。 -->
+    <details id="device-status-fold">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:14px; font-weight:bold;">機器の状態</summary>
+      <div class="pair-cols" style="margin-top:0.4rem;">
+        <section><h3>trainer</h3><dl>
+          <dt>機種</dt><dd><span id="p-device">--</span></dd>
+          <dt>状態</dt><dd><span id="p-state">--</span></dd>
+          <dt>応答</dt><dd><span id="p-ack">--</span></dd>
+        </dl></section>
+        <section><h3>live values</h3><dl>
+          <dt>power</dt><dd><span id="p-power">--</span> W</dd>
+          <dt>cadence</dt><dd><span id="p-cadence">--</span> rpm</dd>
+          <dt>speed</dt><dd><span id="p-speed">--</span> km/h</dd>
+          <dt>hr</dt><dd><span id="p-hr">--</span> bpm</dd>
+        </dl></section>
+      </div>
+    </details>
     <!-- 2026-05-15 fix: bridge mode 用 UI (= python BLE 経由の scan list) を section で囲み、
          default 経路 (= Web Bluetooth) では 1 個 hide で全部消えるように。 -->
-    <section id="bridge-scan-section">
-      <h3>機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></h3>
+    <!-- b44: 機器選択 (bridge mode 用 scan list) はフォールド、 デフォルト閉じ。
+         Web Bluetooth 経路では元々 hidden、 補助的な UI。 -->
+    <details id="bridge-scan-section">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:14px; font-weight:bold;">機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></summary>
       <ul id="setup-list"></ul>
       <div id="setup-error"></div>
       <div id="setup-buttons">
@@ -783,7 +790,7 @@
         <button id="btnScanHrm">心拍計スキャン</button>
         <button id="btnClosePairing" hidden>ライドに戻る</button>
       </div>
-    </section>
+    </details>
     <!-- brief 32: default 経路 (= initBleMode) で unhide、 訪問者は browser から直接 BLE 接続. -->
     <section id="ble-section" hidden>
       <h3>Web Bluetooth 直接接続</h3>
@@ -826,8 +833,8 @@
     <!-- brief 34 ε-5 / b43: setup-overlay 末尾の「データとキャッシュの管理」 section.
          全データ削除 (= 破壊的、 #clear-confirm-overlay 確認 dialog 経由) と
          アプリ更新 (= b43、 非破壊、 SW キャッシュのみ消して reload) の 2 操作を持つ. -->
-    <section id="clear-data-section" style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333;">
-      <h3 style="color:#ff8866; font-size:14px; margin:0 0 0.4rem;">データとキャッシュの管理</h3>
+    <details id="clear-data-section" style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333;">
+      <summary style="cursor:pointer; color:#ff8866; font-size:14px; font-weight:bold; margin:0 0 0.4rem;">データとキャッシュの管理</summary>
       <div style="color:#aaa; font-size:11px; margin-bottom:0.4rem;">
         IndexedDB (= ride 履歴) と localStorage (= consent / Strava token / 設定値) を全削除し、
         intro overlay からやり直します。 確認 dialog 必須 (= 共用 PC 誤動作防止)。
@@ -839,7 +846,7 @@
         消して再読み込みします。 走行履歴と設定は残ります (= 非破壊)。
       </div>
       <button id="btnRefreshApp" style="background:#0a1a22; color:#8fd0ff; border:1px solid #8fd0ff;">アプリを最新版に更新</button>
-    </section>
+    </details>
   </div>
 </div>
 
@@ -1090,6 +1097,6 @@
   <button id="mode-toggle-btn" type="button">切替</button>
 </div>
 
-<script type="module" src="viewer-maplibre.js?v=43"></script>
+<script type="module" src="viewer-maplibre.js?v=44"></script>
 </body>
 </html>

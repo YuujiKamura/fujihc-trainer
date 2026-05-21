@@ -48,12 +48,16 @@ test('ペアリング完了 → ライド開始 → state-riding に遷移する
   expect(fatalErrors).toHaveLength(0);
 });
 
-// b43: SW キャッシュクリア (= アプリ最新版更新) ボタンが setup 画面に出ることを pin。
-test('setup 画面に「アプリを最新版に更新」 ボタン (#btnRefreshApp) が表示される', async ({ page }) => {
+// b43/b44: SW キャッシュクリア (= アプリ最新版更新) ボタンが setup 画面に出ることを pin。
+test('setup 画面でデータとキャッシュ管理を開くと「アプリを最新版に更新」 ボタンが出る', async ({ page }) => {
   // ?ble=1&consent=dev: intro を bypass し Web Bluetooth ペアリング画面 (setup-overlay) を出す。
   // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。
   await page.goto('http://127.0.0.1:8000/?ble=1&consent=dev&noterrain=1');
-  // b43: 「アプリを最新版に更新」 ボタンは setup-overlay 内 #clear-data-section にある。
-  await expect(page.locator('#btnRefreshApp')).toBeVisible({ timeout: 20_000 });
+  // b44: #clear-data-section は <details> でデフォルト閉じ。 summary をクリックして開く。
+  const fold = page.locator('#clear-data-section');
+  await expect(fold).toBeAttached({ timeout: 20_000 });
+  await fold.locator('summary').click();
+  // 開いた中に「アプリを最新版に更新」 ボタンが出る。
+  await expect(page.locator('#btnRefreshApp')).toBeVisible();
   await expect(page.locator('#btnRefreshApp')).toHaveText(/最新版に更新/);
 });
