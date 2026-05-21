@@ -22,39 +22,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>慣性シミュレータ — 富士ヒルトレーナー</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden;
-               font-family: -apple-system, "Segoe UI", sans-serif; color: #e6edf3; }
+  :root {
+    --app-bg: #07110f;
+    --panel: rgba(10,18,18,0.9);
+    --panel-raised: #1d2b2f;
+    --border: #314247;
+    --text: #eef4f1;
+    --muted: #9aaaa5;
+    --primary: #62d0a2;
+    --accent: #f2c14e;
+  }
+  html, body { margin: 0; height: 100%; background: var(--app-bg); overflow: hidden;
+               font-family: -apple-system, "Segoe UI", sans-serif; color: var(--text); }
   #canvas-wrap { position: absolute; inset: 0; }
   canvas { display: block; }
 
-  .panel { position: absolute; background: rgba(20,26,34,0.92); border: 1px solid #30363d;
+  .panel { position: absolute; background: var(--panel); border: 1px solid var(--border);
            border-radius: 8px; padding: 12px 14px; }
   #controls { right: 12px; top: 12px; width: 250px; }
   #readout  { left: 12px;  top: 12px; width: 230px; }
 
-  .panel h2 { margin: 0 0 8px; font-size: 13px; color: #58a6ff; font-weight: 600; }
+  .panel h2 { margin: 0 0 8px; font-size: 13px; color: var(--accent); font-weight: 600; }
   .row { margin: 9px 0; }
   .row label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
-  .row label b { color: #f0f6fc; font-variant-numeric: tabular-nums; }
-  input[type=range] { width: 100%; accent-color: #58a6ff; }
-  .hint { font-size: 10.5px; color: #8b949e; line-height: 1.4; margin-top: 2px; }
+  .row label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--primary); }
+  .hint { font-size: 10.5px; color: var(--muted); line-height: 1.4; margin-top: 2px; }
 
   .btns { display: flex; gap: 6px; margin-top: 10px; }
   button { flex: 1; padding: 7px 4px; font-size: 12px; cursor: pointer;
-           background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; }
-  button:hover { background: #30363d; }
-  button.primary { background: #1f6feb; border-color: #1f6feb; }
-  button.primary:hover { background: #388bfd; }
+           background: var(--panel-raised); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+  button:hover { background: #25363a; }
+  button.primary { background: var(--primary); color: #06120e; border-color: var(--primary); font-weight: 700; }
+  button.primary:hover { background: #7bdab3; }
 
   .metric { display: flex; justify-content: space-between; font-size: 12.5px; margin: 6px 0; }
-  .metric span { color: #8b949e; }
+  .metric span { color: var(--muted); }
   .metric b { font-variant-numeric: tabular-nums; font-size: 14px; }
-  .big { font-size: 18px; color: #f0f6fc; }
-  .coast-val { color: #3fb950; }
-  #trace { width: 100%; height: 56px; background: #0d1117; border: 1px solid #30363d;
+  .big { font-size: 18px; color: var(--text); }
+  .coast-val { color: var(--primary); }
+  #trace { width: 100%; height: 56px; background: var(--app-bg); border: 1px solid var(--border);
            border-radius: 4px; margin-top: 8px; }
-  .state-pedal { color: #3fb950; }
-  .state-coast { color: #d29922; }
+  .state-pedal { color: var(--primary); }
+  .state-coast { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -220,9 +230,9 @@ function paintLabel(lab, text) {
   cx.clearRect(0, 0, 160, 64);
   cx.font = 'bold 40px sans-serif';
   cx.textAlign = 'center'; cx.textBaseline = 'middle';
-  cx.lineWidth = 6; cx.strokeStyle = '#0d1117';
+  cx.lineWidth = 6; cx.strokeStyle = '#07110f';
   cx.strokeText(text, 80, 34);
-  cx.fillStyle = '#58a6ff';
+  cx.fillStyle = '#62d0a2';
   cx.fillText(text, 80, 34);
   lab.tex.needsUpdate = true;
 }
@@ -424,7 +434,7 @@ function drawTrace() {
     });
     tcx.stroke();
   };
-  draw('vp', '#3fb950');
+  draw('vp', '#62d0a2');
 }
 
 // ---- カメラ ----------------------------------------------------------------
