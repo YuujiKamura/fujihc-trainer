@@ -1,134 +1,105 @@
-# fujihill-trainer
+# fujihc-trainer
 
-富士ヒルクライム (= Mt. Fuji HC) コースを室内 trainer (FTMS) で再現する練習補助 app。
+富士ヒルクライム (= 富士スバルライン、 標高差 約 1270m) のコースを、 室内のスマートトレーナーで再現する練習補助アプリ。
 
-## 初回セットアップ
+> 本アプリは富士ヒルクライム大会の **非公認** な個人プロジェクト。 大会の主催者・運営とは無関係です。
+
+## このアプリは何をするか
+
+GPX のコースデータと地形タイルから 3D の走行画面を組み、 スマートトレーナー (FTMS = Bluetooth でパワー / ケイデンスをやり取りする規格) と繋いで、 そのコースを室内で走れるようにする。 訪問者は 2 つのモードから選ぶ:
+
+- **走る**: トレーナーと繋ぎ、 実際に漕いでコースを登る。 走行記録はブラウザ内に残る。
+- **観る**: トレーナーなしで、 コースを再生で眺める。 記録は取らない。
+
+構成は 3 つに分かれる ── ブラウザで動く viewer (= 画面描画)、 ローカルの bridge (= トレーナーとの通信 + タイル配信)、 ローカルのタイル DB (= 地形データの保管)。 viewer 単体でも `?test=1` で UI 操作の確認はできる。
+
+なお、 リポジトリ名は `fujihc-trainer` だが、 Python の module 名は歴史的な経緯で `fujihill` のまま (= 下記コマンドの `python -m fujihill.*`)。
+
+## セットアップ
 
 ### コースデータ (= web/course.json)
 
-GPX (例えば公式 [fujihc.jp/course](https://fujihc.jp/course/) で公開されているもの) を `src/fujihill/course.py` で変換した派生 JSON。 距離 / 標高 / 勾配 / lat / lon の列で、 元 GPX とは別物。 自分の GPX を使いたい場合は:
+GPX を `src/fujihill/course.py` で変換した派生 JSON (= 距離 / 標高 / 勾配 / 緯度 / 経度 の列)。 自分が権利を持つ GPX を使うこと:
 
 ```sh
-python -m fujihill.course ~/path/to/your.gpx > web/course.json
+python -m fujihill.course ~/path/to/your.gpx --export-json web/course.json
 ```
 
-- 富士ヒル以外のコースでも動作する、 minimap bbox は `tile_constants.MINIMAP_BBOX` を要書換
+`--export-json` を付けないと走行サマリが表示されるだけで JSON は書き出されない。 富士ヒル以外のコースでも動く ── その場合 `src/fujihill/tile_constants.py` の `MINIMAP_BBOX` を書き換える。
 
-### タイル DB セットアップ
+### タイル DB
 
-タイル DB (= 国土地理院 DEM + OSM 地名 PMTiles) をローカルに用意する:
+地形タイル (= 国土地理院の標高データ + OpenStreetMap の地名) をローカル DB に用意する:
 
 ```sh
-python scripts/init_tile_db.py
-# → data/tiles.sqlite (空 schema_v1) を作成
+python scripts/init_tile_db.py        # 空の data/tiles.sqlite を作る
+python scripts/fetch_gsi_dem.py       # 国土地理院 標高タイル (zoom 14)
+python scripts/fetch_osm_pmtiles.py   # OpenStreetMap 地名抽出
 ```
 
-その後、 個別 fetch スクリプト (brief 15 / 16 で landing 予定) で実データを投入:
-
-```sh
-python scripts/fetch_gsi_dem.py    # GSI DEM タイル (= zoom 17, 約 36 秒)
-python scripts/fetch_osm_pmtiles.py # OSM 地名抽出 (= 数秒)
-```
-
-- **想定 DB サイズ**: 約 16 MB (= zoom 17 単一化、 富士ヒル course ±1km buffer / corridor=3)
-- **DL 時間**: 約 36 秒 (GSI DEM) + 数秒 (OSM PMTiles 抽出)
+- 国土地理院への取得は 1 req/s で、 富士ヒルコースの場合 zoom 14 の数十タイルのみ (= 約 36 タイルなら 1 分弱)
 - DB は `.gitignore` 済 (= `data/*.sqlite`)、 リポには含めない
+- 出来上がった DB の実サイズは `init` 後に確認すること
 
-## 画面操作確認 (= trainer / bridge 不要、 brief 22)
+## 動かす
 
-viewer の操作系 (= camera / wheel zoom / pitch drag / ride 進行 button) を
-trainer や bridge.py を起動せずに確認できる. fake state が 1Hz で流れて
-ride_start ボタンで pairing → riding 遷移、 button 全部押せる。
-
-**dev server 選択 (brief 34 ε-10)**: pmtiles を経由した地図描画 (= 観るモード /
-走るモードの map 表示) は **HTTP Range request (Byte Serving)** が必須。
-`python -m http.server` は Range 非対応のため、 `?test=1` の純粋な UI 操作確認以外
-(= 観るモード / 地図描画を含む動作) では使えない (= pmtiles が「Server returned no
-content-length header」error で読めず、 地図が灰色のまま)。
+`?test=1` の純粋な UI 操作確認以外 (= 観るモード / 走るモード / 地図描画を含む動作) は、 地図描画が **HTTP Range request (= ファイルの一部だけを取得する仕組み)** を必要とする。 標準の `python -m http.server` は Range 非対応なので、 地図を含む確認では使えない。
 
 ```sh
-# (A) 観るモード / 走るモード を含む fully functional な local 確認 (= 推奨)
-#     aiohttp 経由で Range request 対応、 地図描画 (pmtiles) が動く。
+# 地図描画まで含む完全な確認 (= 推奨、 こちらをまず使う)
 python -m fujihill.bridge --dummy
-# その後 browser で http://localhost:8000/?test=1 (= ?test=1 で fake state、 trainer 不要)
+# → ブラウザで http://localhost:8000/?test=1 (= ?test=1 で trainer 不要)
 
-# (B) UI 操作のみの軽量確認 (= 地図描画は機能しない、 limited)
-#     Range request 非対応、 tile が 404 で灰色背景になり pmtiles map も読めない。
-#     `index.html` / script の 200 配信を見るだけの用途に限定。
+# UI 操作だけの軽量確認 (= 地図は描画されない、 index.html / script の配信を見るだけ)
 python -m http.server -d web/ 8000
 ```
 
-- (A) は tile + WebSocket + dummy ride loop が全部走る、 GPU 負荷 / FPS / 温度 実測も可
-- (B) は `python -m http.server` 由来の Range 非対応で pmtiles map が描画できない、 観るモード遷移しても地図が空白
-- GitHub Pages 本番は Cloudflare 経由で `Accept-Ranges: bytes` 対応済、 prod では (A)/(B) の差異は問題にならない
+観るモード / 走るモードを確認するなら必ず上 (= bridge) を使う。 下 (= http.server) は地図が灰色のまま遷移するので、 画面遷移そのものだけ見たい時の限定用途。 GitHub Pages 本番は配信側が Range 対応済なので、 この差は本番では問題にならない。
 
 ## テスト
 
 ```sh
-python -m pytest
+python -m pytest   # Python 側
+npm test           # JavaScript 側 (= vitest、 web/tests/)
 ```
 
-## OSS clone した人へ (= 第三者 ToS / 規約遵守)
+変更したら両方走らせる。
 
-このアプリは地図タイルとして以下のデータ source を使う:
+## 配布元 (国土地理院 / OpenStreetMap) への配慮
 
-- **OpenStreetMap (ODbL ライセンス)**: 表示時 `© OpenStreetMap contributors (ODbL)` の表記義務。 Protomaps が再配布する PMTiles ファイル経由のみで取得、 `tile.openstreetmap.org` (= OSMF 公式 tile server) は **絶対に直接叩くな** (Tile Usage Policy 違反、 brief 13/17b 参照)
-- **国土地理院標高タイル**: 表示時「国土地理院 標高タイル」の出典明示義務、 大量アクセス自粛 (= `scripts/fetch_gsi_dem.py` は 1 req/s で 36 タイルだけ取得する設計)
+このアプリは地図タイルを国土地理院と OpenStreetMap という無償の配布元から取得する。 配布元に迷惑をかけないことを設計の軸にしている ── 一度取ったタイルはローカルに保存して二度と取りに行かない、 取得範囲は最小限にする、 出典を画面に常時表示する。 この考え方と、 AI エージェント向けの詳しい禁止事項は `CLAUDE.md` を参照 (= こちらが正本)。
 
-### 考え方 (= 規約の文字より上位)
+clone した人が必ず守ること:
 
-国土地理院は国民の税金で運営される公的機関、 OSM は寄付ベースの市民プロジェクト。 どちらも「全員のため」 と引き受けて無償公開してくれている。 規約の文字を逐語的に守るだけでなく、 **配布元の立場で「やってほしくないこと」 を想像する** ことを設計の軸にする。 具体的には:
+- **`scripts/fetch_gsi_dem.py` の `--user-agent` に自分の連絡先 (= email) を入れる**。 国土地理院が大量取得者を同定するのに使うので、 既定値のままだとリポ作者の連絡先を僭称することになる:
+  ```sh
+  python scripts/fetch_gsi_dem.py --user-agent "fujihill-trainer/0.1 (your-email@example.com)"
+  ```
+- **`tile.openstreetmap.org` を直接叩かない**。 OpenStreetMap の Tile Usage Policy 違反。 OpenStreetMap データは Protomaps の PMTiles 経由でのみ取得する。 表示時は `© OpenStreetMap contributors (ODbL)` の出典表記が必要。
+- **国土地理院タイルの出典明示**。 表示時に「国土地理院 標高タイル」 の出典を出す。
+- **DB ファイルをリポに commit しない**。 `data/*.sqlite` と PMTiles の元ファイルはリポ外。 数百 MB 以上のバイナリを含めない。
+- **`bridge.py` は `127.0.0.1` 限定で bind する** (= HTTP / WebSocket 両方)。 LAN 内の他端末に地図タイルを再配布する事故を物理的に止めるため、 `0.0.0.0` への変更はしない。
 
-- 一度取ったタイルは手元 `data/tiles.sqlite` に永久保存して、 配布元には二度と取りに行かない (= 「キャッシュは活かす、 再配布はしない」 の本意)
-- テスト自動化で実 endpoint を毎日 / push 毎に叩かない、 contract verify は手動 trigger だけにする
-- `--user-agent` には自分の連絡先 (= email) を必ず入れる、 default の URL のままにしない (= 他人を僭称する form を避ける)
-- bbox / zoom を増やす変更は配布元負荷を直に増やすので、 必要性を 1 度問うてから書く
+## Strava 連携 (= 使う人だけ)
 
-AI エージェント向けの詳細指針は `CLAUDE.md` § 考え方 を参照 (= 過去 AI が踏んだ anti-example も記録)。
+走行終了画面から、 (a) GPX をブラウザにダウンロード、 (b) Strava に直接アップロード、 (c) ブラウザ内に履歴保存 ── の 3 つがブラウザだけで完結する。
 
-### scripts/fetch_gsi_dem.py を走らせる前に
+### 自分の Strava アプリを用意する
 
-`--user-agent` 引数で **自分の連絡先を含む文字列**に書き換えろ:
-```bash
-python scripts/fetch_gsi_dem.py --user-agent "fujihill-trainer/0.1 (your-email@example.com)"
-```
+リポに固定の client_id は埋め込まない (= 各自の活動が混ざらないため)。 各自で自分の Strava アプリを作って設定する:
 
-地理院側で heavy user 同定に email が使われる、 default の `(https://github.com/YuujiKamura/fujihc-trainer)` のままだと他人 (= リポ作者) の連絡先を僭称することになる。
-
-### 公開リポに DB ファイルを commit するな
-
-`data/*.sqlite` は `.gitignore` で除外済、 PMTiles 元ファイルもリポ外配置 (= `~/Downloads/japan.pmtiles` 等) が前提。 数百 MB ~ 数 GB の binary をリポに含めるな。
-
-### bind は 127.0.0.1 限定
-
-`bridge.py` は HTTP server (port 8000) も WebSocket server (port 8765) も `127.0.0.1` bind 明示、 LAN 内の他端末からアクセス不可。 これは ODbL タイルを LAN 内に再配布する事故を物理的に止めるため、 `0.0.0.0` への変更は禁止。
-
-## Strava 連携 (brief 33)
-
-ride 終了画面から (a) GPX を browser download、 (b) Strava に直送 (= OAuth PKCE)、 (c) IndexedDB に履歴保存 の 3 分岐が browser だけで完結する。
-
-### Strava app の用意
-
-repo に固定 client_id は埋め込まない (= 各 user の activity が混線しないため)。 各自で自分の Strava app を作って setup する:
-
-1. [Strava API Settings](https://www.strava.com/settings/api) で My API Application を作成
-2. Authorization Callback Domain に GitHub Pages の host (例: `<your>.github.io`) を登録
-3. browser dev console で `localStorage.setItem('fujihill.strava.client_id', '<your_client_id>')` を実行
+1. [Strava API Settings](https://www.strava.com/settings/api) で API Application を作成
+2. Authorization Callback Domain に GitHub Pages のホスト (例: `<your>.github.io`) を登録
+3. ブラウザの dev console で `localStorage.setItem('fujihill.strava.client_id', '<your_client_id>')` を実行
 
 ### 連携解除
 
-setup-overlay 内の「連携を解除」 button で localStorage の token を削除可能。 ただし**これだけでは Strava 側に app 登録が残ったまま**になる、 完全に断つには [Strava 設定 → 連携アプリ](https://www.strava.com/settings/apps) から fujihill-trainer を revoke すること。
+設定画面の「連携を解除」 ボタンでブラウザ内のトークンを削除できる。 ただしこれだけでは Strava 側にアプリ登録が残るので、 完全に断つには [Strava 設定 → 連携アプリ](https://www.strava.com/settings/apps) からこのアプリを revoke する。
 
-### ToS 適合性 (= Rule 11 class C2)
+### 扱うデータの範囲
 
-本実装は Strava API Agreement §5.1 「本人 OAuth で取得した自分のデータを本人 UI で扱う」例外の範囲内:
+- アップロードは自分の Strava アカウントへの自己投稿のみ (= 第三者への再配布ではない)
+- 走行記録 (trkpt) の保存先はブラウザ内のみ (= サーバには送らない)
+- 履歴画面に出るのは自分の走行のみ
 
-- upload は user 自身の Strava アカウントへの self-publish (= 第三者再配布ではない)
-- IndexedDB の trkpts 保存先は user の browser local のみ (= cloud sync / server upload なし)
-- 履歴 UI は本人 UI 内の本人 ride 一覧のみ (= §2.10 publicly viewable 制約から外)
-
-公開リポに ride 実データを commit しない (= `data/`, IndexedDB は repo 外)、 第三者の Strava activity を扱わない。
-
-### XSS 防御 / token 漏洩境界
-
-`access_token` / `refresh_token` は `localStorage` 保存、 XSS で読み取られると本人の Strava への任意 upload (= scope=`activity:write`) が可能になる。 防御は (a) `index.html` / `oauth-callback.html` の CSP `script-src 'self'`、 (b) 外部 CDN / analytics / font CDN 一切なし (= `web/lib/vendor/` 配下に self-host)、 (c) inline `<script>` を avoid (= oauth-callback の token 交換は `web/lib/oauth_callback_main.js` に externalize) の 3 重 gate。 完了条件として grep gate (`web/tests/brief33_grep_gate.test.js`) で CI 上 pin。
+OAuth のアクセストークンはブラウザの localStorage に保存される ── クラウドには送られないが、 万一ブラウザに不正なスクリプトが入り込むと読み取られうるので、 このアプリは外部 CDN / 解析タグを一切使わず全部 self-host している。 公開リポに走行の実データを commit しないこと、 他人の Strava データは扱わないこと。
