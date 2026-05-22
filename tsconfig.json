@@ -1,0 +1,27 @@
+{
+  // b56: viewer を TypeScript の型規律に乗せる toolchain。viewer はブラウザが .js を
+  // 直読みする静的配信で Vite ビルドを通らないため、.ts へ改名せず、JSDoc + // @ts-check
+  // でファイル単位に「型の壁」へ入れる段階移行方式を採る。tsc は型チェック専用
+  // (noEmit)、出力は何も生成しない。
+  "compilerOptions": {
+    "allowJs": true,
+    // checkJs:false ── 既存 .js 群はチェック対象外。先頭に // @ts-check を書いた
+    // ファイルだけが壁に入る (= per-file opt-in、.ts 改名と同じ段階移行だが
+    // ブラウザを壊さない)。
+    "checkJs": false,
+    "strict": true,
+    "noEmit": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // course_loader.js は fetch / typeof fetch を使うため DOM lib が要る。
+    "lib": ["ESNext", "DOM"],
+    "skipLibCheck": true
+  },
+  // include は壁に入れるファイルだけを明示列挙する。web/**/* で広く取ると Gemini の
+  // web/src/** と camera worker の web/lib/map3d/** を typecheck scope に巻き込み、
+  // 共有 config が 3 AI の競合面になる (b56 7軸 audit の LOAD-BEARING 指摘)。
+  // import 先 (gpx_smooth.js / terrain.js 等) は tsc が型解決のため自動で辿るが
+  // checkJs:false でチェックはされない。
+  "include": ["web/lib/course_loader.js"]
+}

@@ -46,6 +46,16 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude — b56 完了。TypeScript toolchain を導入 (`typescript` devDep +
+  `tsconfig.json` + `typecheck` script、`pretest` で `npm test` に接続し typecheck 赤=
+  出荷不可)。viewer はブラウザが `.js` を直読みする静的配信で Vite ビルドを通らないため
+  `.ts` 改名はせず、`web/lib/course_loader.js` 先頭に `// @ts-check` を足して JSDoc を
+  strict 型チェックの壁に入れた (= 7軸 audit で `.ts` 改名が本番/e2e の viewer を壊すと
+  判明し方式変更、user 承認「方式1で進め」)。改名なしなので viewer / sw.js / 既存テスト
+  は無傷。typecheck 0 error / vitest 1438 green / e2e 追跡 spec 33 green / build green、
+  実画面で course 読込 (1968 pts, 23.8 km) と描画が不変なことを目視確認。注: e2e の
+  `svelte_map.spec.js` 2 件 fail は未追跡の Gemini レーン (Svelte 殻が GSI を冷フェッチ、
+  b40 見張りが設計通り発火) で本作業と無関係。
 - 2026-05-22 Claude — 衝突復旧2 (brief `b52-restore-index-dom-primary`)。主エントリ
   `index.html` を engine 未配線の Svelte 殻から動く DOM 版に戻し、Svelte 殻を
   `index-svelte.html` へ分離、`index-dom.html` 削除。e2e 8 spec を index.html へ、

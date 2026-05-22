@@ -1,5 +1,10 @@
+// @ts-check
 // b50: viewer-maplibre.js の loadCourse() から「fetch → 平滑化 → terrain 構築」の
 // 純粋部を切り出した course ローダ。
+//
+// b56: このファイルは TypeScript の型の壁に入っている。先頭の // @ts-check で
+// tsc --noEmit (npm run typecheck) が JSDoc 注釈を strict 検証する ── 型がずれると
+// テストが赤になる。ファイルは .js のまま (viewer はブラウザ直読み、改名すると壊れる)。
 //
 // DOM・モジュールグローバルに一切触れない framework 非依存モジュール ── 現行 viewer も
 // 将来の殻 (Svelte 等) も同じこれを import して course を読む。viewer 固有の配線

@@ -6,6 +6,8 @@
   "scripts": {
     "build": "vite build",
     "build:watch": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -17,6 +19,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "fake-indexeddb": "^6.2.5",
     "svelte": "^5.55.9",
+    "typescript": "^6.0.3",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
   }
