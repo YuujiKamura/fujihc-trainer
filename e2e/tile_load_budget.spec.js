@@ -22,10 +22,20 @@ const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
 const GSI_ORIGIN = 'https://cyberjapandata.gsi.go.jp';
 const OSM_ORIGIN = 'https://tile.openstreetmap.org';
 
-// 1x1 transparent PNG (= base64 decode、 dem_png として decode 可能な最小 valid PNG)。
-// 中身は全 0 で標高情報を持たないが、 fetch 経路と TileCache 保存経路の verify が目的なので OK。
+// 1x1 黒 PNG (= color type 2 / RGB、 base64 decode)。 標高ゼロの平坦タイル相当だが、
+// fetch 経路 → bytesToBitmap (= createImageBitmap) decode → TileCache 保存 → 再訪 hit の
+// chain を verify するのが目的なので 1x1 で十分。
+//
+// 旧 fixture (= 1x1 透過 PNG `iVBORw0KGgoAAA...RU5ErkJggg==`) は構造的には valid PNG だが
+// Chromium の createImageBitmap が `InvalidStateError: The source image could not be decoded`
+// で reject する ── viewer の tile_loader3d.js bytesToBitmap が createImageBitmap で
+// decode する経路なので、 旧 fixture では全タイルが decode 失敗 → loadDemStitched が
+// 「DEM タイルが 1 枚も取得できませんでした」 で throw → boot 失敗 → TileCache が
+// loadDemStitched 経由で 1 件も書かれず、 再訪 cache hit / overlay 同期 test が落ちていた。
+// createImageBitmap が確実に decode できる最小 PNG に差し替える (= 配布元への通信は増えない、
+// route mock が返す byte 列を変えるだけ)。
 const VALID_PNG_BYTES = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC',
   'base64',
 );
 
@@ -131,12 +141,18 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     // 地形メッシュ load 完了まで余裕を持って待つ (= loadDemStitched + loadPhotoCanvas の取得分)
     await page.waitForTimeout(5000);
-    // dem への通信のみカウント (= seamlessphoto は別 layer で許容、 brief は dem に絞ってない
-    // が、 配布元規律の MAX_TILES=200 は同一 source に対する制約として広く取る)
+    // MAX_TILES=200 は loadDemStitched 1 回が取得する DEM tile 数の上限 (= range.count gate)。
+    // 制約が掛かる「同一 source への 1 layer 分の取得」 は DEM 経路 (= `/xyz/dem_png/`)、
+    // 航空写真 (= `/xyz/seamlessphoto/`) は別 layer の loadPhotoCanvas が取得する別範囲なので
+    // DEM の MAX_TILES gate には合算しない。 DEM だけを抜き出して上限内かを pin する。
+    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/'));
     const totalFetches = gsi.fetchedUrls.length;
-    console.log(`[b31-budget] GSI total fetch count = ${totalFetches}`);
-    expect(totalFetches).toBeLessThanOrEqual(200);
-    expect(totalFetches).toBeGreaterThan(0);  // 取得が走った証拠 (= chain 経路 verify)
+    console.log(`[b31-budget] GSI DEM fetch = ${demFetches.length} / total fetch = ${totalFetches}`);
+    expect(demFetches.length, 'DEM 取得が MAX_TILES=200 以下').toBeLessThanOrEqual(200);
+    expect(demFetches.length).toBeGreaterThan(0);  // 取得が走った証拠 (= chain 経路 verify)
+    // 全 layer 合算でも青天井ではないことの guard。 DEM + 航空写真の 2 layer はそれぞれ
+    // MAX_TILES 内なので、 合算は 2*MAX_TILES + probe 数枚に収まる (= 暴走取得の検出)。
+    expect(totalFetches, '全 layer 合算でも 2*MAX_TILES + probe 余裕の範囲内').toBeLessThanOrEqual(2 * 200 + 20);
   });
 
   test('初回訪問: GSI への同時接続が GSI_FETCH_LIMIT = 6 以下', async ({ page }) => {
