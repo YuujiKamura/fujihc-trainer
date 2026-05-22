@@ -26,6 +26,23 @@
   既に touch 済 ── レーン表の除外記述が現実と乖離している。page URL の追従 (主エントリ
   リネームへの retarget) は Claude 管理、Svelte 検証ロジックを足す場合のみ要調整。
 
+## 全ワーカーへの通達 — 画面検証はキャプチャ機構で実画面を観る (PDCA 必須)
+
+UI / viewer に触る全 brief の検証で、`?cap=1` キャプチャ機構 (b49 で実装、
+`web/lib/map3d/` の index.js / scene.js が viewer の描画フレームを画像バッファに
+出力する) を使い、出力画像を**実際に開いて目視批評**しろ。
+
+test green / HTTP 200 / build 成功は「画面を観た」ことにならない ── intro 画面・
+loading 中・別 state でも撮れてしまう。手順:
+
+1. 期待する最終 state を 1 つ先に言語化する。
+2. その state へ実際に到達させる (intro / consent overlay を抜ける等、到達まで責任を持つ)。
+3. `?cap=1` でキャプチャする。
+4. 出力画像を開いて、期待した要素・配置・色と画面の食い違いを具体的に述べる。
+
+食い違いゼロを無言で PASS と言うな。観た上で批評しろ。これを各 brief の verify /
+PDCA ループに必ず組み込むこと。
+
 ## タスク (engine リファクタ / Claude レーン)
 
 計画の正本: `~/.agents/scratch/fujihc-trainer-project/refactor-plan-svelte-migration.md`
@@ -46,6 +63,9 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude (差配) — 全ワーカー通達を追加: 画面検証は `?cap=1` キャプチャ
+  機構で実画面を観て批評すること (test green ≠ 画面確認)。各 brief の verify /
+  PDCA ループに必須。詳細は上「全ワーカーへの通達」節。
 - 2026-05-22 Claude — b56 完了。TypeScript toolchain を導入 (`typescript` devDep +
   `tsconfig.json` + `typecheck` script、`pretest` で `npm test` に接続し typecheck 赤=
   出荷不可)。viewer はブラウザが `.js` を直読みする静的配信で Vite ビルドを通らないため
