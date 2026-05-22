@@ -95,8 +95,12 @@ describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   });
 
   // brief 23: GPS ジッター除去 (= 短距離ジグザグ補正のみ、 window=5)
-  it('smoothCourse を web/lib/gpx_smooth.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*smoothCourse[^}]*\}\s+from\s+['"]\.\/lib\/gpx_smooth\.js['"]/);
+  it('b50: course 読込は course_loader.js 経由 (smoothCourse は course_loader が持つ)', () => {
+    // b50: fetch → smoothCourse → createTerrain は course_loader.js に切り出し済。
+    //   viewer は loadCourseData を import、smoothCourse は course_loader.js が import する。
+    expect(viewer).toMatch(/import\s+\{[^}]*loadCourseData[^}]*\}\s+from\s+['"]\.\/lib\/course_loader\.js['"]/);
+    const loader = readFileSync(resolve(__dirname, '..', 'lib', 'course_loader.js'), 'utf8');
+    expect(loader).toMatch(/import\s+\{[^}]*smoothCourse[^}]*\}\s+from\s+['"]\.\/gpx_smooth\.js['"]/);
   });
 
   // brief 24 + 25 / b12 Phase 2.5: 勾配グレード色分けの道路幅 polygon 描画は

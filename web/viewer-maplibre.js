@@ -9,8 +9,9 @@ import { createMapRenderer } from './lib/map3d/index.js';
 import { BIKE_SHAPE_DEFAULTS, BIKE_SHAPE_RANGE } from './lib/map3d/rider_mesh3d.js';
 // b12 Phase 1: 富士ヒル固有値 (bounds / center / course file) は course 定義に集約.
 import { fujihill } from './courses/fujihill.js';
-// brief 23: GPS ジッター除去の moving average (= window 5、 短距離ジグザグ補正のみ)
-import { smoothCourse } from './lib/gpx_smooth.js';
+// b50: course.json の fetch → 平滑化 (smoothCourse) → terrain 構築 (createTerrain) は
+//   course_loader.js に切り出し済。viewer は loadCourseData を呼ぶだけ。
+import { loadCourseData } from './lib/course_loader.js';
 // brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
 // b12 Phase 2.5: コース polygon / セグメントラベル / ライダー geometry / カメラ計算 /
 // 勾配色 / mesh cache は地図描画モジュール (map_renderer.js) の中へ集約済。
@@ -31,7 +32,6 @@ import { createRideState } from './lib/ride_state.js';
 // createRideState は HTML / 既存 source-grep tests が期待する API surface (= rideState 変数 /
 // rideState.startFrom / rideState.appendTrkpt 等) を維持する shim 経路で残す (= 同じ Rider を
 // 内側に持つため二重 state にはならない).
-import { createTerrain } from './lib/terrain.js';
 import { createRider } from './lib/rider.js';
 import { integratePhysics } from './lib/bike_physics.js';
 // brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
@@ -1782,19 +1782,23 @@ async function loadCourse() {
   // bootEnv() で freeze 済の値、 caller 全部 await 経由なので未確定状態で呼ばれることはない。
   // 万一 ENV 未初期化なら bridge mode の旧 default で fallback (= localhost 起動の従来挙動)。
   const url = ENV ? ENV.courseUrl : 'course.json';
+  // b50: fetch → 平滑化 → terrain 構築の純粋部は course_loader.js に切り出し済。
+  //   失敗時の status 文言は旧挙動を維持 ── 空 course は「course.json empty」、
+  //   それ以外 (HTTP / network / JSON parse) は「course.json load failed: …」。
+  let loaded;
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    course = await resp.json();
-  } catch (err) { status(`course.json load failed: ${err.message}`); return; }
-  if (!course.length) { status('course.json empty'); return; }
-  // brief 23: GPS ジッター除去. lat/lon の short-window moving average (window=5)
-  // で短距離ジグザグだけ補正、 道路カーブは保存. distance_m / slope_pct / elevation_m は不変.
-  course = smoothCourse(course);
+    loaded = await loadCourseData(url);
+  } catch (err) {
+    const msg = err && err.message;
+    if (msg === 'course.json empty') status('course.json empty');
+    else status(`course.json load failed: ${msg}`);
+    return;
+  }
+  course = loaded.course;
   // brief 35: Terrain + Rider を viewer の 1 source-of-truth として確立.
   // rideState (= 後方互換 shim) は内部で同じ Rider を保持するので、 viewer 側の rider 変数と
   // shim 内 Rider は完全同一 instance、 二重 state にならない (= _rider 公開で共有).
-  terrain = createTerrain({ course });
+  terrain = loaded.terrain;
   rideState = createRideState(course);
   // shim 内 Rider と新 viewer 経路の rider を一致させる. 別 instance を作ると進行 state が
   // 二重管理になって drift する (= 過去 brief 19 の curIdx 二重持ち bug と同型予防).
@@ -2857,3 +2861,7 @@ window.addEventListener('message', (ev) => {
   if (ev.origin !== location.origin) return;  // same-origin only
   updateStravaStatusUI();
 });
+
+// Svelte Interop
+window.fujihillInterop = { startTerrainPhase, onTerrainLoaderDone };
+

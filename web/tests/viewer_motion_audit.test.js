@@ -2,7 +2,8 @@
 // source-grep + behavioral 両面で pin する gate.
 //
 // 検証要点:
-//   1. viewer は terrain + rider 変数を持ち、 createTerrain / createRider を import している
+//   1. viewer は terrain + rider 変数を持ち、 createRider を import している
+//      (b50: terrain 構築 createTerrain は course_loader.js に切り出し済)
 //   2. 旧 module global (playSpeed / curIdx / curDist / spinAngle) は live コードに無い
 //      (= コメント内の言及はマイグレーション履歴として許容)
 //   3. wsHandlers.state は rider.setSpeed / rider.setSensors を呼ぶ (= 1 経路化)
@@ -37,8 +38,10 @@ function stripComments(src) {
 const viewerLive = stripComments(viewer);
 
 describe('brief 35: viewer は Terrain + Rider 2 層モデルを使う', () => {
-  it('createTerrain を web/lib/terrain.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*createTerrain[^}]*\}\s+from\s+['"]\.\/lib\/terrain\.js['"]/);
+  it('b50: terrain 構築は course_loader.js (createTerrain を import)', () => {
+    // b50: createTerrain 呼び出しは viewer から course_loader.js へ切り出し済。
+    const loader = readFileSync(resolve(__dirname, '..', 'lib', 'course_loader.js'), 'utf8');
+    expect(loader).toMatch(/import\s+\{[^}]*createTerrain[^}]*\}\s+from\s+['"]\.\/terrain\.js['"]/);
   });
 
   it('createRider を web/lib/rider.js から import している', () => {
@@ -50,10 +53,13 @@ describe('brief 35: viewer は Terrain + Rider 2 層モデルを使う', () => {
     expect(viewerLive).toMatch(/let\s+rider\s*=\s*null/);
   });
 
-  it('loadCourse で terrain = createTerrain({course}) が呼ばれる', () => {
-    // stripComments は block コメント外しが粗いので、 ここは生 source で grep する
-    // (= コメント内に偶然 createTerrain と書くことは brief 35 では起きないため誤検出リスク低).
-    expect(viewer).toMatch(/terrain\s*=\s*createTerrain\(\s*\{\s*course\s*\}\s*\)/);
+  it('b50: loadCourse は loadCourseData 経由で terrain を得る', () => {
+    // b50: loadCourse の「fetch → 平滑化 → terrain 構築」は course_loader.js に切り出し済。
+    //   viewer は loadCourseData を呼び、terrain 構築 (createTerrain) は course_loader が持つ。
+    expect(viewer).toMatch(/import\s+\{[^}]*loadCourseData[^}]*\}\s+from\s+['"]\.\/lib\/course_loader\.js['"]/);
+    expect(viewer).toMatch(/loadCourseData\(/);
+    const loader = readFileSync(resolve(__dirname, '..', 'lib', 'course_loader.js'), 'utf8');
+    expect(loader).toMatch(/createTerrain\(\s*\{\s*course\s*\}\s*\)/);
   });
 
   it('loadCourse で rider が rideState._rider と一致 (= 二重 state 防止)', () => {
