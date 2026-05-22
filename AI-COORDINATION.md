@@ -63,6 +63,7 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-23 Claude — b68 完了 (commit `1576e1e`)。完成済みブランチ `b62-atmosphere-tuning-sliders` を `b46-terrain-loader-screen` にマージし、富士遠景の物理ベース大気散乱 (b61) と散乱パラメータ調整スライダー 4 本 (`atmoMie` / `atmoG` / `atmoDensity` / `atmoSun`、b62) を現行ブランチへ復活 (新規実装でなくブランチ合流)。実コンフリクトは AI-COORDINATION.md の Worklog のみ ── b62 側 2 エントリと b46 側「全ワーカー通達」1 エントリを時系列順で両方残して解決。`viewer-maplibre.js` は auto-merge で b62 の atmosphere 4 def と b46 のパワー def が共存、`index.js` / `scene.js` / `map3d_index.test.js` は b46 が分岐点以降未 touch で b62 版がそのまま入る。7軸 audit 3 round で CONVERGED (LOAD-BEARING 0 / COSMETIC 1)。検証: vitest 1519 passed / 0 failed、pytest 239 passed / 4 skipped / 0 failed (test_fake_trainer はポート衝突で既知ハング、b59 と同じく --ignore)、e2e `atmosphere_sliders.spec.js` 2/2 passed、bridge 無し静的サーバ (python http.server 8090) で viewer を起動 → atmoMie デフォルト (5e-6) と 40e-6 で 2 枚キャプチャを比較、Mie 上昇で富士遠景が霞み Mie 低下で山体の輪郭が戻る挙動を目視確認、機器設定パネルに散乱スライダー 4 本が並ぶことも確認。
 - 2026-05-22 Claude — b62 完了 (branch `b62-atmosphere-tuning-sliders`、base `ada555f`)。
   b61 の大気散乱が白っぽすぎる件を是正。`atmosphere3d.js` の `ATMO_BETA_MIE` を
   21e-6 → 5e-6 に下げ Rayleigh 優位に (= 白濁を脱し青い透明感)。散乱パラメータを機器設定
