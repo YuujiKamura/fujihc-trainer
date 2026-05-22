@@ -6,6 +6,7 @@ logs/
 data/measurements/*.jsonl
 data/*.sqlite
 data/*.pmtiles
+data/debug-frame.png
 
 node_modules/
 .omc/

@@ -234,6 +234,33 @@ export function createMapRenderer() {
     } catch { return 'orbit'; }
   }
 
+  // URL ?cap=1 のとき画面送信モード。 WebGL 描画 buffer を一定間隔で PNG 化し、
+  // bridge の POST /debug/frame に送って data/debug-frame.png へ保存させる。
+  // OS のウィンドウキャプチャは WebGL canvas で白飛びするため、 描画結果を
+  // viewer 自身から送り出して開発時に実画面を実ファイルで観られるようにする入口。
+  function captureEnabled() {
+    try { return new URLSearchParams(location.search).get('cap') === '1'; }
+    catch { return false; }
+  }
+
+  // 画面送信ループ。 scene 生成後に 1 回だけ呼ぶ。 renderer の canvas を一定間隔で
+  // PNG Blob 化し bridge へ POST する。 送信失敗 (= bridge 不在の static mode 等) は
+  // 黙って無視 ── デバッグ用途なので best-effort。
+  let captureTimer = null;
+  function startFrameCapture() {
+    if (captureTimer || !scene || !scene.renderer) return;
+    const canvas = scene.renderer.domElement;
+    captureTimer = setInterval(() => {
+      try {
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          fetch(`${location.origin}/debug/frame`, { method: 'POST', body: blob })
+            .catch(() => { /* bridge 不在等は無視 */ });
+        }, 'image/png');
+      } catch { /* toBlob 不可環境は無視 */ }
+    }, 1500);
+  }
+
   return {
     // === ライフサイクル ===
 
@@ -276,7 +303,7 @@ export function createMapRenderer() {
           const { createScene } = await import('./scene.js');
           const { buildTerrainMesh } = await import('./terrain_mesh3d.js');
 
-          scene = createScene({ container });
+          scene = createScene({ container, capture: captureEnabled() });
 
           // DEM タイル → 連結標高グリッド。 範囲は course 定義由来の DB bbox。
           // dbBounds が不正 (undefined 等) だと tileRangeForBounds が TypeError を投げ、
@@ -343,6 +370,8 @@ export function createMapRenderer() {
 
           terrainReady = true;
           fireOnLoaded();
+          // ?cap=1 のとき画面送信ループを開始する (= 開発時に実画面を観るための入口)。
+          if (captureEnabled()) startFrameCapture();
         } catch (e) {
           // 例外時も viewer をロード画面で止めないよう onLoaded は呼ぶ。 terrainReady は
           // false のまま ── idle 発火・renderCourse の gate は地形が本当に組めたかを見る。

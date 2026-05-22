@@ -105,7 +105,11 @@ function buildSkyDome() {
  * @param {{container: HTMLElement}} args - container は canvas を載せる DOM 要素。
  * @returns {object} シーン操作 API
  */
-export function createScene({ container }) {
+// opts.capture: true なら WebGLRenderer を preserveDrawingBuffer 付きで生成する。
+// これで描画 buffer が合成後もクリアされず、 canvas.toBlob() でいつでも実画面を
+// PNG 化できる (= ?cap=1 のデバッグ画面送信用)。 既定 false ── 通常運用では
+// preserveDrawingBuffer の僅かなコストを払わない。
+export function createScene({ container, capture = false }) {
   const scene = new THREE.Scene();
   // 背景はグラデーション青空ドーム (= MapLibre 版 sky の移植)。 単色 Color やテクスチャ背景
   // ではなく BackSide 球メッシュなので確実に描画され、 カメラを回しても天頂/地平線が正しい。
@@ -114,7 +118,7 @@ export function createScene({ container }) {
   const skyDome = buildSkyDome();
   scene.add(skyDome);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!capture });
   // 影を shadow map で描く (= 自機の影を地形へ投影する)。 PCFSoft で影の縁を柔らかく。
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;

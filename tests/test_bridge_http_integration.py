@@ -122,6 +122,27 @@ async def test_metrics_endpoint(aiohttp_client, db_with_one_tile):
     assert metrics["osm"]["404"] == 1
 
 
+async def test_debug_frame_endpoint(aiohttp_client, db_with_one_tile, tmp_path):
+    """POST /debug/frame -> PNG body を debug_frame_path に保存する (= ?cap=1 画面送信)."""
+    out = tmp_path / "debug-frame.png"
+    client = await aiohttp_client(make_http_app(db_with_one_tile, debug_frame_path=out))
+    png = b"\x89PNG\r\n\x1a\n" + b"fake-frame-bytes"
+    resp = await client.post("/debug/frame", data=png)
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["bytes"] == len(png)
+    assert out.read_bytes() == png
+
+
+async def test_debug_frame_endpoint_empty_body(aiohttp_client, db_with_one_tile, tmp_path):
+    """空 body は 400 で弾く (= 壊れた送信で保存済みフレームを潰さない)."""
+    out = tmp_path / "debug-frame.png"
+    client = await aiohttp_client(make_http_app(db_with_one_tile, debug_frame_path=out))
+    resp = await client.post("/debug/frame", data=b"")
+    assert resp.status == 400
+    assert not out.exists()
+
+
 def test_bind_is_127_0_0_1_in_source():
     """bridge.py の bind が 0.0.0.0 に化けたら fail (= LOAD-BEARING source-grep gate).
 

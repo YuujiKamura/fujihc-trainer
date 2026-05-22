@@ -29,6 +29,7 @@ def make_http_app(
     course_path: str | Path | None = None,
     progress_broadcaster: Optional[Callable[[dict], Awaitable[None]]] = None,
     web_root: str | Path | None = None,
+    debug_frame_path: str | Path | None = None,
 ) -> web.Application:
     """tile_server の handler を aiohttp の route に mount した app を返す.
 
@@ -38,6 +39,7 @@ def make_http_app(
             /tiles/_setup_status は course_path を必要とする.
         progress_broadcaster: 1 進捗イベント (dict) を WS 全 client に流す
             async callable. None なら dbinit progress は no-op.
+        debug_frame_path: POST /debug/frame の PNG 保存先. None 時は data/debug-frame.png.
 
     route:
       GET  /tiles/{source}/{z}/{x}/{y}.{ext}     タイル binary
@@ -47,6 +49,7 @@ def make_http_app(
       GET  /tiles/_setup_status                  source 別充足度 (brief 26b)
       POST /tiles/_fetch_gsi                     GSI fetch 起動 (brief 26b)
       POST /tiles/_extract_osm                   OSM 抽出起動 (brief 26b)
+      POST /debug/frame                          viewer 画面 PNG を保存 (デバッグ)
     bind: 127.0.0.1 限定 (= 呼び出し側の TCPSite で pin、 LAN 内 ODbL 再配布事故防止)
     """
     handlers = tile_server.register_tile_routes(str(db_path))
@@ -194,6 +197,23 @@ def make_http_app(
         inflight['osm'] = asyncio.create_task(_runner())
         return web.json_response({'state': 'started', 'source': 'osm'}, status=202)
 
+    # POST /debug/frame: viewer の WebGL 画面を PNG で受け取りローカルに保存する。
+    # 開発時に viewer の実レンダリング結果を実ファイルとして観るためのデバッグ用途
+    # (= OS のウィンドウキャプチャは WebGL canvas で白飛びするため、 描画 buffer 自体を
+    # viewer 側から送ってもらう)。 viewer は ?cap=1 のときだけ送信する。 bridge は
+    # 127.0.0.1 限定 bind なので外部からは届かない。 保存先は既定 data/debug-frame.png。
+    if debug_frame_path is None:
+        debug_frame_path = Path(__file__).resolve().parent.parent.parent / 'data' / 'debug-frame.png'
+    debug_frame_path = Path(debug_frame_path)
+
+    async def h_debug_frame(request: web.Request) -> web.Response:
+        body = await request.read()
+        if not body:
+            return web.json_response({'error': 'empty body'}, status=400)
+        debug_frame_path.parent.mkdir(parents=True, exist_ok=True)
+        debug_frame_path.write_bytes(body)
+        return web.json_response({'saved': str(debug_frame_path), 'bytes': len(body)})
+
     app.router.add_get("/tiles/{source}/metadata.json", h_metadata)
     app.router.add_get("/tiles/_style.json", h_style)
     app.router.add_get("/tiles/_metrics", h_metrics)
@@ -201,6 +221,7 @@ def make_http_app(
     app.router.add_post("/tiles/_fetch_gsi", h_fetch_gsi)
     app.router.add_post("/tiles/_extract_osm", h_extract_osm)
     app.router.add_post("/tiles/_fetch_minimap_raster", h_fetch_minimap_raster)
+    app.router.add_post("/debug/frame", h_debug_frame)
     app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
 
     # 静的 file 配信 (= viewer HTML / JS / CSS / course.json)、 同一 origin で /tiles/ と並走。
