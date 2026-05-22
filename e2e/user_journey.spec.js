@@ -30,9 +30,8 @@ test('初回訪問: 地形データローダー画面が出て「開始」 ボ�
   // 走る / 観る / 閉じる の 3 ボタンは廃止されている
   await expect(page.locator('#btnIntroStart')).toHaveCount(0);
   await expect(page.locator('#btnIntroView')).toHaveCount(0);
-  // アプリ説明 + 注意書き 2 文が地形データローダー画面に載っている
+  // アプリ説明 + GPS 誤差の注意書きが地形データローダー画面に載っている
   await expect(page.locator('#intro-overlay')).toContainText('練習補助シミュレータ');
-  await expect(page.locator('#intro-overlay')).toContainText('公式が認定');
   await expect(page.locator('#intro-overlay')).toContainText('誤差');
 });
 

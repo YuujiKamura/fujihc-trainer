@@ -928,9 +928,7 @@
 <div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" data-intro-state="hidden">
   <div id="intro-panel">
     <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
-    <p class="intro-lead"><strong>どこでも富士ヒル</strong> ── Zwift にない任意 GPX コース再現</p>
-    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。 コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。 データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし)。</p>
-    <p class="intro-disclaimer">富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
+    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。 データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用)。</p>
     <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 この不確実性を許容してご利用ください。</p>
     <p id="terrain-loader-lead" class="terrain-loader-lead">「開始」 を押すと地形データ (国土地理院 / OpenStreetMap タイル) の読み込みを始めます。 読み込み完了後にトレーナー接続画面へ進みます。</p>
     <!-- 「開始」 押下後に表示する地形ロード進捗。 押下前は hidden。 -->
@@ -1075,6 +1073,6 @@
      静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
 <div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
 
-<script type="module" src="viewer-maplibre.js?v=45"></script>
+<script type="module" src="viewer-maplibre.js?v=46"></script>
 </body>
 </html>

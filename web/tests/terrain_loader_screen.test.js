@@ -38,13 +38,12 @@ describe('b46: 起動で地形データローダー画面が出る (= #intro-ove
     expect(body).toMatch(/<button[^>]*id="btnTerrainLoaderStart"/);
   });
 
-  it('大会非公認 / GPS 誤差の注意書き 2 文が地形データローダー画面に載る', () => {
+  it('GPS 誤差の注意書きが地形データローダー画面に載る', () => {
+    // 2026-05-22 user 指示: 「公式が認定 / 後援するアプリではない」 の注意書きは
+    // 書くこと自体が不要として撤去。 GPS 誤差 (= コース精度の不確実性) の注意書きは残す。
     const block = HTML.match(/<div\s+id="intro-overlay"[\s\S]*?<\/div>\s*<\/div>/);
     expect(block).not.toBeNull();
     const body = block[0];
-    // (1) 公式が認定 / 後援するアプリではない
-    expect(body).toMatch(/公式が認定\s*\/\s*後援するアプリではなく/);
-    // (2) GPS データの誤差
     expect(body).toMatch(/GPS データで.*誤差/);
   });
 

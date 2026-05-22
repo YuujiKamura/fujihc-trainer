@@ -200,14 +200,11 @@ describe('brief 34 ε-6 integration: 全 overlay の HTML 初期 state (= defaul
   });
 });
 
-describe('brief 34 ε-6 integration: intro / footer の帰属メッセージ整合 (= 公開可否の最終 gate)', () => {
-  it('intro-overlay 内の帰属メッセージは「公式が認定 / 後援するアプリではなく」を含む', () => {
-    expect(HTML).toMatch(/公式が認定\s*\/\s*後援するアプリではなく/);
-  });
-
-  it('intro-overlay 内の帰属メッセージは「コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換」を含む (= GPX 由来明示)', () => {
-    expect(HTML).toMatch(/コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換/);
-  });
+describe('brief 34 ε-6 integration: footer の帰属メッセージ整合 (= 配布元クレジット表示の gate)', () => {
+  // 2026-05-22 user 指示: intro-overlay の「公式が認定 / 後援するアプリではなく」
+  // 「公式が一般公開している GPX を派生変換」 の 2 文は事実誤認・不要として撤去した
+  // (= 富士ヒルコースは Zwift にもある / 公式 GPX 由来をわざわざ書くのは迷惑、 という user 判断)。
+  // よって両文を pin する it も削除。 配布元クレジット (#attrib の GSI/OSM) の pin は残す。
 
   it('index.html の #attrib 要素が GSI / OSM 両方の出典と地理院タイル一覧リンクを含む (= 帰属表示文字列の SoT)', () => {
     // task-g: b12 Phase 4 の Three.js 化で MapLibre AttributionControl が消えたため、
