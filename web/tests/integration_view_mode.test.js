@@ -214,3 +214,22 @@ describe('b46 integration: viewer-maplibre.js の source 構造', () => {
     expect(viewer).toMatch(/rideState\.startFrom\(/);
   });
 });
+
+describe('b47: 観る→走る遷移で mode-view フラグが外れる', () => {
+  // mode-view は付ける箇所が 3 つに対し外す箇所が exitViewModeToSetup 1 つしかなく、
+  // 観るモードの区間ライド中に btnOpenPairing で走るモードへ移ると mode-view が残る bug。
+  it('startRideConfirmed が実走開始時に body から mode-view を外す', () => {
+    // 実走開始は「観るモードではない」 ことが確定する瞬間。 経路に依らず矛盾状態
+    // (= 実走中かつ観るモード) を断つため、 唯一の実走窓口でフラグを強制解除する。
+    const m = viewer.match(/function\s+startRideConfirmed\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/classList\.remove\(['"]mode-view['"]\)/);
+  });
+
+  it('btnOpenPairing ハンドラが mode-view 中は exitViewModeToSetup へ分岐する', () => {
+    // 観るモード中の「ペアリング画面を開く」 は走るモードへの切替操作。
+    // showPairing だけでなく exitViewModeToSetup を通して mode-view を確実に外す。
+    expect(viewer).toMatch(
+      /btnOpenPairing[\s\S]{0,300}classList\.contains\(['"]mode-view['"]\)[\s\S]{0,150}exitViewModeToSetup\(/);
+  });
+});

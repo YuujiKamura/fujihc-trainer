@@ -2410,6 +2410,12 @@ document.getElementById('btnPause').addEventListener('click', () => { if (rideSt
 // = 履歴も Strava も使わない declaration として扱う (= v3 設計通り)。
 function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
+  // b47: 実走の開始は「観るモードではない」 ことが確定する瞬間。 観るモード中に
+  //   btnOpenPairing でトレーナー接続画面を開き、 そこから btnRideStart を押した経路
+  //   では mode-view フラグが残り「実走中かつ観るモード」 の矛盾状態になる
+  //   (= 区間リストパネルが出っ放し / 走行記録が観るモード扱いでブロック)。
+  //   実走開始の唯一の窓口でフラグを強制解除し、 経路に依らず矛盾状態を断つ。
+  document.body.classList.remove('mode-view');
   if (rideState) rideState.start();
   else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
   lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
@@ -2511,7 +2517,17 @@ document.getElementById('btnBackToPairing').addEventListener('click', () => {
   updateStepIndicator(-1, 3);
   const b = document.getElementById('btnRideStart'); if (b && !b.disabled) requestAnimationFrame(() => b.focus());
 });
-document.getElementById('btnOpenPairing').addEventListener('click', () => { showPairing(); });
+document.getElementById('btnOpenPairing').addEventListener('click', () => {
+  // b47: 観るモード中の btnOpenPairing は「走るモードへ切り替える」 操作。 showPairing
+  //   だけだと mode-view が残り、 トレーナー接続画面・実ライドに移っても観るモードの
+  //   UI / 記録ガードが効いたままになる。 観るモード中は exitViewModeToSetup を通して
+  //   区間 rideState を畳み、 mode-view を外し、 state-pairing に落としてから setup を出す。
+  if (document.body.classList.contains('mode-view')) {
+    exitViewModeToSetup();
+  } else {
+    showPairing();
+  }
+});
 document.getElementById('btnClosePairing').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('visible');
 });
