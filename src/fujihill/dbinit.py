@@ -32,7 +32,7 @@ from fujihill.tile_constants import (
 )
 from fujihill.tile_coverage import enumerate_bbox_tiles, enumerate_coverage_tiles
 
-GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png'
+GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/{z}/{x}/{y}.png'
 OSM_RASTER_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 DEFAULT_USER_AGENT = (
     'fujihill-trainer/0.1 (https://github.com/YuujiKamura/fujihc-trainer)'
@@ -186,7 +186,7 @@ async def fetch_gsi_async(
             await asyncio.sleep(rate_limit_sec)
 
     await asyncio.to_thread(_upsert_metadata_sync, db_path, 'gsi_dem', [
-        ('attribution', '国土地理院 標高タイル (dem_png)'),
+        ('attribution', '国土地理院 標高タイル (dem5a_png)'),
         ('format', 'png'),
         ('minzoom', str(zoom)),
         ('maxzoom', str(zoom)),

@@ -21,8 +21,10 @@
 
 import { tileRangeForBounds, stitchHeightGrid, decodeGsiHeightGrid } from '../terrain3d.js';
 
-// GSI dem_png の native zoom は 14 (= 256x256 で約 6m grid、 terrain3d.html 準拠)。
-export const DEM_ZOOM = 14;
+// DEM タイルの取得 zoom。 b59 で dem_png z14 (= 10m メッシュ相当) から dem5a_png z15
+// (= 5m メッシュ、 256x256) へ引上げて地形を高精細化。 dem5a_png は z15 が native 上限。
+// dem_png と dem5a_png は同一の標高 PNG エンコードなので decodeGsiHeightGrid は不変。
+export const DEM_ZOOM = 15;
 export const TILE_PX = 256;
 // GSI への同時接続数。 fujihc CLAUDE.md「同時接続 6 本以下」── 減らす方向のみ可、増やし禁止。
 export const GSI_FETCH_LIMIT = 6;

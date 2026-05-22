@@ -8,6 +8,9 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 // b12 Phase 1: 富士ヒル固有値の正本は course 定義オブジェクト.
 import { fujihill } from '../courses/fujihill.js';
+// b59: demBounds の z15 タイル数 pin 用.
+import { tileRangeForBounds } from '../lib/terrain3d.js';
+import { MAX_TILES } from '../lib/map3d/tile_loader3d.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
@@ -109,5 +112,71 @@ describe('brief 34 ε-7 integration: course.json と DB bbox の整合 (= 課題
     const dLon = Math.abs(start.lon - cLon);
     expect(dLat).toBeLessThan(0.2);
     expect(dLon).toBeLessThan(0.2);
+  });
+});
+
+describe('b59: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲)', () => {
+  // src/fujihill/tile_constants.py の FUJI_TERRAIN_BBOX の写し [W, S, E, N]。
+  // 片方を動かしたら必ず両方を同期しろ ── 対になる pytest 側 pin は
+  // tests/test_b59_dem5a.py。
+  const PY_FUJI_TERRAIN_BBOX = [138.6845, 35.3561, 138.7642, 35.4566];
+  // 富士山頂 (tile_constants.py / dbinit の covers_fuji_summit と同じ点)。
+  const FUJI_SUMMIT = [138.7274, 35.3606];
+  const COURSE = JSON.parse(readFileSync(resolve(__dirname, '..', 'course.json'), 'utf8'));
+
+  it('fujihill.demBounds が存在し [138.6845, 35.3561, 138.7642, 35.4566]', () => {
+    expect(fujihill.demBounds).toEqual([138.6845, 35.3561, 138.7642, 35.4566]);
+  });
+
+  it('demBounds は dbBounds に内包される (= MapLibre source 範囲の内側)', () => {
+    const [dw, ds, de, dn] = fujihill.demBounds;
+    const [bw, bs, be, bn] = fujihill.dbBounds;
+    expect(dw).toBeGreaterThanOrEqual(bw);
+    expect(ds).toBeGreaterThanOrEqual(bs);
+    expect(de).toBeLessThanOrEqual(be);
+    expect(dn).toBeLessThanOrEqual(bn);
+  });
+
+  it('demBounds は course 全点を覆う (= コース地形が欠けない)', () => {
+    const [w, s, e, n] = fujihill.demBounds;
+    for (const p of COURSE) {
+      expect(p.lon).toBeGreaterThanOrEqual(w);
+      expect(p.lon).toBeLessThanOrEqual(e);
+      expect(p.lat).toBeGreaterThanOrEqual(s);
+      expect(p.lat).toBeLessThanOrEqual(n);
+    }
+  });
+
+  it('demBounds は富士山頂を覆う (= 3D 地形に富士山体が乗る、 南で切れない)', () => {
+    const [w, s, e, n] = fujihill.demBounds;
+    expect(FUJI_SUMMIT[0]).toBeGreaterThanOrEqual(w);
+    expect(FUJI_SUMMIT[0]).toBeLessThanOrEqual(e);
+    expect(FUJI_SUMMIT[1]).toBeGreaterThanOrEqual(s);
+    expect(FUJI_SUMMIT[1]).toBeLessThanOrEqual(n);
+  });
+
+  it('demBounds の z15 タイル数が MAX_TILES (200) 以下 (= loadDemStitched が RangeError を投げない)', () => {
+    // b59 の肝: dbBounds 全域 (22km四方) を z15 で取ると 437 枚で MAX_TILES 超過。
+    // course 外接 ∪ 富士山頂 に絞ることで z15 でも 200 内 (= 96 枚) に収める。
+    const range = tileRangeForBounds(fujihill.demBounds, 15);
+    expect(range.count).toBeGreaterThan(0);
+    expect(range.count).toBeLessThanOrEqual(MAX_TILES);
+  });
+
+  it('demBounds は Python の FUJI_TERRAIN_BBOX に内包される (= cross-language 二重定義 drift 検出)', () => {
+    // FUJI_TERRAIN_BBOX (Python prefetch 範囲) ⊇ demBounds (JS request 範囲) でないと、
+    // bridge mode で DB に無いタイルを viewer が要求して地形が欠ける。
+    const [jw, js, je, jn] = fujihill.demBounds;
+    const [pw, ps, pe, pn] = PY_FUJI_TERRAIN_BBOX;
+    expect(jw).toBeGreaterThanOrEqual(pw);
+    expect(js).toBeGreaterThanOrEqual(ps);
+    expect(je).toBeLessThanOrEqual(pe);
+    expect(jn).toBeLessThanOrEqual(pn);
+  });
+
+  it('viewer-maplibre.js の bootMap は DEM 範囲に fujihill.demBounds を渡す (= dbBounds 流用への回帰防止)', () => {
+    // b59: map3d boot に渡す DEM 範囲は demBounds。 dbBounds (22km四方) に戻すと
+    // z15 で 437 枚 → MAX_TILES 超過 → 地形が組めない。
+    expect(VIEWER).toMatch(/dbBounds:\s*fujihill\.demBounds/);
   });
 });

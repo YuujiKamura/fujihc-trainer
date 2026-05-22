@@ -206,7 +206,7 @@ def test_build_style_json_zoom_defaults_from_central_constants(empty_db):
     # 中央定数 OSM_VECTOR_ZOOMS=[17] → min=max=17
     assert style['sources']['osm']['minzoom'] == min(OSM_VECTOR_ZOOMS)
     assert style['sources']['osm']['maxzoom'] == max(OSM_VECTOR_ZOOMS)
-    # 中央定数 GSI_DEM_ZOOMS=[14] → min=max=14
+    # 中央定数 GSI_DEM_ZOOMS=[15] → min=max=15 (b59: dem5a z15)
     assert style['sources']['gsi_dem']['minzoom'] == min(GSI_DEM_ZOOMS)
     assert style['sources']['gsi_dem']['maxzoom'] == max(GSI_DEM_ZOOMS)
 

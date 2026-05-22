@@ -14,16 +14,21 @@ DEFAULT_CORRIDOR_TILES = 3
 DEFAULT_BUFFER_M = 1000  # 1 km
 
 # zoom 範囲 (brief 15/16 で source 別に override 可)
-GSI_DEM_ZOOMS = [14]  # 標高は 14 で十分 (= MapLibre terrain 要求最大)
+# b59: dem5a (5mメッシュ) は z15 が native 上限。dem_png (10m相当) z14 から引上げて
+# 地形を高精細化。描画は Three.js 地形メッシュで、MapLibre terrain は使っていない。
+GSI_DEM_ZOOMS = [15]
 
 # DEM タイル事前取得 (bridge SQLite DB 用) の bbox.
 # (lon_min, lat_min, lon_max, lat_max).
 #
-# JS 側 (web/terrain3d.html) は courseBounds(course, 1500m) で動的に bbox を算出する。
-# 富士ヒルコースの実測: bbox ≈ [138.673, 35.359, 138.776, 35.466]、 z=14 で 5×7=35 tiles。
-# Python 事前取得は JS が要求するタイルを必ず内包するよう +0.01° のマージンを加えた
-# 固定値を使う (= bridge DB が JS 要求タイルを全 hit できる前提)。
-FUJI_TERRAIN_BBOX = (138.660, 35.340, 138.790, 35.480)
+# b59: viewer の Three.js 地形ローダーは web/courses/fujihill.js の demBounds 定数を
+# loadDemStitched に渡す。この FUJI_TERRAIN_BBOX は demBounds と同値に保つ
+# (= 二重定義、 ずれると bridge DB が JS 要求タイルを hit しきれず地形が欠ける、
+# test で FUJI_TERRAIN_BBOX ⊇ demBounds を pin する)。
+# demBounds = 富士ヒルコース外接 ∪ 富士山頂 + 500m buffer。 富士山頂 (138.7274,
+# 35.3606) はコース南端より南にあり、 これを含めないと 3D 地形メッシュに富士の山体が
+# 乗らず南で地形が切れる。 z15 で 96 tiles (corridor との和集合込、 MAX_TILES 200 内)。
+FUJI_TERRAIN_BBOX = (138.6845, 35.3561, 138.7642, 35.4566)
 
 # OSM は zoom 13/14/15 の 3 段持つ (2026-05-15 再改).
 # 理由: viewer は minzoom=13/maxzoom=15 で OSM source を declare、 ride 開始前の

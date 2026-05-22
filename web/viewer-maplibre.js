@@ -150,7 +150,13 @@ function bootMap(env) {
   // #loading-progress-num / #loading-bar-fill を更新する。 完了 (= onMapLoaded) で fade out。
   showLoadingOverlay('idle');
   return mapRenderer.boot(env, {
-    dbBounds: fujihill.dbBounds,
+    // b59: map3d boot の opts.dbBounds は loadDemStitched の DEM メッシュ範囲として
+    // 消費される (= そこから組む geoMeta がカメラ注視点・span・投影の元にもなる)。
+    // 渡す実体は DEM 専用の demBounds (= コース外接 ∪ 富士山頂、 z15 で 96 tiles)。
+    // opts キー名 dbBounds は据え置く ── 受け側 map3d/index.js は camera worker
+    // 作業中レーンで触れないため。 dbBounds 全域 (22km四方) を z15 で渡すと 437 tiles
+    // で MAX_TILES 超過 → 地形が組めない。
+    dbBounds: fujihill.demBounds,
     dbCenter: fujihill.dbCenter,
     onLoaded: onMapLoaded,
     onProgress: updateLoadingProgress,

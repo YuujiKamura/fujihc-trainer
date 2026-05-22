@@ -20,7 +20,8 @@ import { tileXToLon, tileYToLat } from '../lib/tile_math.js';
 
 // === helpers ===
 
-// GSI dem_png encoding: 標高 m を h*100 の 24bit (負値は 2's complement) に詰める.
+// GSI 標高タイル encoding (dem_png / dem5a_png 共通): 標高 m を h*100 の 24bit
+// (負値は 2's complement) に詰める. b59 で取得元は dem5a_png z15 へ移行したが encoding は同一.
 function gsiEncode(height_m) {
   let raw = Math.round(height_m * 100);
   if (raw < 0) raw += 16777216;

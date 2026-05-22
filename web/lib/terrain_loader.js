@@ -24,15 +24,15 @@
 // fujihill.js は何も import しない純データなので循環依存は発生しない。
 import { fujihill } from '../courses/fujihill.js';
 
-// b31: GSI dem の公式 endpoint (= dem_png 256x256 8-bit、 国土地理院 地理院タイル一覧)。
+// b31/b59: GSI dem の公式 endpoint (= dem5a_png 256x256、 国土地理院 地理院タイル一覧)。
 // Pages 環境で同梱 tile が無い時の fallback 取得元 (= 訪問者単位 fetch + TileCache 90 日 TTL)。
 // viewer-maplibre.js / map3d/index.js は本 constant を import して渡す (= literal を本体 source に
 // 書かない、 viewer_url_audit.test.js の単体 scan は本体に GSI URL 出現ゼロを引き続き保証)。
-// 2026-05-20: `dem` (= GSI 公式の txt 形式 endpoint) ではなく `dem_png` (= PNG 形式 endpoint) を
-// 使う。 viewer は PNG bytes として decode する経路 (= tile_loader3d.js bytesToBitmap)、 `dem` に
-// `.png` 拡張子を付けても GSI は 404 を返す ── Pages 環境で「地形データが読み込まれない」 と
-// user 訂正があった root cause。 GSI 公式の「地理院タイル一覧」 で確認 (= dem_png z=1-14 PNG)。
-export const GSI_DEM_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png';
+// b59: `dem5a_png` (= 5mメッシュ、 z15 が native 上限) を使う。 viewer は PNG bytes として
+// decode する経路 (= tile_loader3d.js bytesToBitmap)、 txt 形式の `dem` に `.png` 拡張子を
+// 付けても GSI は 404 を返す (= b31 で dem_png に直した root cause)。 b59 で地形高精細化の
+// ため dem_png (z1-14) から dem5a_png (z15) へ。 両者は同一の標高 PNG エンコード。
+export const GSI_DEM_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png';
 
 // 経度・緯度 → z=14 タイル座標 (= 整数). EPSG:3857 Web Mercator.
 // tile_math.js と同等、 ただし z=14 固定でも汎用に z を受け取る.
@@ -52,11 +52,13 @@ function latToTileY(lat, z) {
 // 値は従来の inline literal (138.75 / 35.40) と完全同一、 動作は不変。
 const DB_CENTER_LON = fujihill.dbCenter[0];
 const DB_CENTER_LAT = fujihill.dbCenter[1];
-const GSI_PROBE_Z = 14;
+// b59: probe zoom は DEM 取得 zoom (= GSI_DEM_ZOOMS / tile_loader3d.js DEM_ZOOM) と
+// 必ず一致させる。 ずれると Python prefetch 済の DB に無いタイルを probe して全 miss し、
+// terrainReady が永遠 false になり viewer がローダー画面で停止する。 dem5a z15 に統一。
+const GSI_PROBE_Z = 15;
 
-// z=14 の中央タイル + 隣 2 枚 (= 同 z の x±0, y±0 + x+1, y+1) を probe する。
-// course の本 ride viewport は z=13..15、 z=14 は典型 9 タイルの中心、 1 枚 fetch 成功すれば
-// gsi_dem source が DB として実在することを確認できる軽量 sample。
+// z=15 の中央タイル + 隣 2 枚 (= 同 z の x±0, y±0 + x+1, y+1) を probe する。
+// 1 枚でも fetch 成功すれば gsi_dem source が DB として実在することを確認できる軽量 sample。
 //
 // b31: buildGsiProbeCoords を分離 (= probe 経路の IndexedDB chain で z/x/y が必要)。
 // buildGsiProbeUrls は pure formatter のまま (= NG-R1-7 「1 関数 multi-層」 回避、

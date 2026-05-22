@@ -81,10 +81,12 @@ describe('mapLimit', () => {
 });
 
 describe('GSI 配慮の定数 (fujihc CLAUDE.md ── 変更禁止の pin)', () => {
-  it('同時接続上限は 6、タイル上限は 200、DEM zoom は 14', () => {
+  it('同時接続上限は 6、タイル上限は 200、DEM zoom は 15、タイルは 256px', () => {
     expect(GSI_FETCH_LIMIT).toBe(6);
     expect(MAX_TILES).toBe(200);
-    expect(DEM_ZOOM).toBe(14);
+    // b59: dem5a (5mメッシュ) は z15 が native 上限。dem_png z14 から引上げて高精細化。
+    // GSI_FETCH_LIMIT / MAX_TILES は配布元配慮の上限で変更禁止のまま。
+    expect(DEM_ZOOM).toBe(15);
     expect(TILE_PX).toBe(256);
   });
 });

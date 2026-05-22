@@ -36,10 +36,10 @@ function makeFetch(map) {
 }
 
 describe('buildGsiProbeUrls', () => {
-  it('default lon/lat (= 富士山中央) で z=14 タイル 3 枚を生成', () => {
+  it('default lon/lat (= 富士山中央) で z=15 タイル 3 枚を生成 (b59: dem5a z15)', () => {
     const urls = buildGsiProbeUrls('/tiles/gsi_dem');
     expect(urls.length).toBe(3);
-    expect(urls[0]).toMatch(/\/14\/\d+\/\d+\.png$/);
+    expect(urls[0]).toMatch(/\/15\/\d+\/\d+\.png$/);
   });
 
   it('opts.lon / opts.lat で別座標の tile を計算', () => {
@@ -52,8 +52,8 @@ describe('buildGsiProbeUrls', () => {
   });
 
   it('prefix の前置形を尊重 (= /tiles/gsi_dem / /gsi_dem 両対応)', () => {
-    expect(buildGsiProbeUrls('/tiles/gsi_dem')[0]).toMatch(/^\/tiles\/gsi_dem\/14\//);
-    expect(buildGsiProbeUrls('/gsi_dem')[0]).toMatch(/^\/gsi_dem\/14\//);
+    expect(buildGsiProbeUrls('/tiles/gsi_dem')[0]).toMatch(/^\/tiles\/gsi_dem\/15\//);
+    expect(buildGsiProbeUrls('/gsi_dem')[0]).toMatch(/^\/gsi_dem\/15\//);
   });
 });
 
@@ -367,11 +367,20 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     expect(urls[2]).toMatch(new RegExp(`/${coords[2].z}/${coords[2].x}/${coords[2].y}\\.png$`));
   });
 
-  it('GSI_DEM_DIRECT_BASE は GSI dem の公式 PNG endpoint (= cyberjapandata.gsi.go.jp/xyz/dem_png)', () => {
-    // 2026-05-20 fix: viewer は PNG bytes として decode する経路なので、 GSI 公式の PNG endpoint
-    // (= dem_png) を使う。 txt 形式の `dem` 経路に `.png` 拡張子を付けても GSI は 404 を返す
-    // ── Pages 環境で「地形データが読み込まれてないだろ」 と user 訂正された root cause。
-    expect(GSI_DEM_DIRECT_BASE).toBe('https://cyberjapandata.gsi.go.jp/xyz/dem_png');
+  it('probe zoom は DEM 取得 zoom (= dem5a z15) と一致する (b59)', () => {
+    // b59: GSI_PROBE_Z は module-scope const で export されないため、 probe coords 経由で
+    // pin する。 probe zoom が DEM 取得 zoom (tile_loader3d.js DEM_ZOOM / GSI_DEM_ZOOMS)
+    // とずれると、 Python prefetch 済 DB に無いタイルを probe して terrainReady 永久 false。
+    const coords = buildGsiProbeCoords();
+    for (const c of coords) {
+      expect(c.z).toBe(15);
+    }
+  });
+
+  it('GSI_DEM_DIRECT_BASE は GSI dem5a の公式 PNG endpoint (= cyberjapandata.gsi.go.jp/xyz/dem5a_png)', () => {
+    // b59: viewer は PNG bytes として decode する経路。 dem5a_png (= 5mメッシュ、 z15 が
+    // native 上限) を使う。 txt 形式の `dem` 経路に `.png` 拡張子を付けても GSI は 404 を返す。
+    expect(GSI_DEM_DIRECT_BASE).toBe('https://cyberjapandata.gsi.go.jp/xyz/dem5a_png');
   });
 
   it('tileCache hit 時に GSI fetch ゼロ (= TTL 内再取得ゼロ)', async () => {

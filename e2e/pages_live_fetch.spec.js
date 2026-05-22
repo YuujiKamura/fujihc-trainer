@@ -43,12 +43,13 @@ test('Pages live: bridge endpoint は Pages 配信に存在しない (= bridge.p
 test('Pages live: GSI direct DEM タイルが 200 + PNG で返る (= 訪問者単位 fetch の実 fallback 経路)', async ({ page }) => {
   await page.goto(PAGES_URL);
   const result = await page.evaluate(async () => {
-    // GSI 公式の PNG 形式 DEM endpoint (= dem_png、 z=1-14 で PNG を返す)。
+    // GSI 公式の PNG 形式 DEM endpoint (= b59 で dem5a_png、 z15 が native 上限で PNG を返す)。
     // `dem` は txt 形式の endpoint で `.png` 拡張子を付けても 404 になる ── 2026-05-20 user 訂正
     // 「地形データが読み込まれてないだろ」 の root cause。
     // b40 直し2: タイル本体 (PNG 数 KB) を丸ごと落とす GET をやめ、 HEAD で status と
     // レスポンスヘッダだけ取る (= 配布元への負荷を最小化、 user 指示「ハンドシェイクだけでいい」)。
-    const r = await fetch('https://cyberjapandata.gsi.go.jp/xyz/dem_png/14/14506/6418.png', { method: 'HEAD' });
+    // 座標は富士スバルライン中腹の z15 dem5a タイル (= viewer の実 fallback 経路と一致)。
+    const r = await fetch('https://cyberjapandata.gsi.go.jp/xyz/dem5a_png/15/29012/12935.png', { method: 'HEAD' });
     const ct = r.headers.get('content-type') || '';
     const len = r.headers.get('content-length');
     return { status: r.status, contentType: ct, contentLength: len };

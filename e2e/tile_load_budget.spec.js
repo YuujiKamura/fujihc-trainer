@@ -8,7 +8,7 @@
 //
 // 「Pages 環境 simulate」: bridge 経由 (= `${origin}/tiles/gsi_dem/**`) と 同梱経由
 // (= `${origin}/static/tiles/gsi_dem/**`) を route で 404 にし、 GSI direct fetch
-// (= cyberjapandata.gsi.go.jp/xyz/dem) を強制発火させる。 bridge.py が立っていても
+// (= cyberjapandata.gsi.go.jp/xyz/dem5a_png) を強制発火させる。 bridge.py が立っていても
 // route intercept が優先されるので、 既存 playwright.config.js を維持したまま動く。
 //
 // ジャーニーテスト規律 (= 2026-05-19 user 確立): 個別 assertion ではなく訪問者導線を
@@ -142,10 +142,10 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     // 地形メッシュ load 完了まで余裕を持って待つ (= loadDemStitched + loadPhotoCanvas の取得分)
     await page.waitForTimeout(5000);
     // MAX_TILES=200 は loadDemStitched 1 回が取得する DEM tile 数の上限 (= range.count gate)。
-    // 制約が掛かる「同一 source への 1 layer 分の取得」 は DEM 経路 (= `/xyz/dem_png/`)、
+    // 制約が掛かる「同一 source への 1 layer 分の取得」 は DEM 経路 (= `/xyz/dem5a_png/`)、
     // 航空写真 (= `/xyz/seamlessphoto/`) は別 layer の loadPhotoCanvas が取得する別範囲なので
     // DEM の MAX_TILES gate には合算しない。 DEM だけを抜き出して上限内かを pin する。
-    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/'));
+    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem5a_png/'));
     const totalFetches = gsi.fetchedUrls.length;
     console.log(`[b31-budget] GSI DEM fetch = ${demFetches.length} / total fetch = ${totalFetches}`);
     expect(demFetches.length, 'DEM 取得が MAX_TILES=200 以下').toBeLessThanOrEqual(200);
@@ -249,10 +249,10 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const result = await page.evaluate(async () => {
       const mod = await import('/lib/map3d/tile_loader3d.js');
       try {
-        // 富士山周辺の数百 km 矩形 (= z=14 で数千 tile 相当、 MAX_TILES=200 を超える)
+        // 富士山周辺の数百 km 矩形 (= z=15 で数千 tile 相当、 MAX_TILES=200 を超える)
         await mod.loadDemStitched({
           bounds: [136.0, 33.0, 141.0, 37.0],
-          gsiDirectBase: 'https://cyberjapandata.gsi.go.jp/xyz/dem',
+          gsiDirectBase: 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png',
         });
         return { caught: false };
       } catch (e) {
@@ -290,7 +290,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const den = Number(await page.locator('#loading-progress-den').textContent());
     expect(num, 'overlay の num 最終値 が den (= 全タイル数) と一致').toBe(den);
     // GSI DEM 経路の fetch のみ counter (= seamlessphoto / photo 等は別 layer)
-    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/'));
+    const demFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem5a_png/'));
     console.log(`[brief 35 真正性] num=${num} den=${den} GSI DEM fetch=${demFetches.length}`);
     // num と DEM fetch 数は ±1 で同期 (= onProgress が fetch 直後に発火、 たまに ±1 ずれる
     // race を許容)。 「進捗が動いた」 が実通信に裏打ちされていることを pin。
@@ -309,7 +309,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
       const el = document.getElementById('loading-indicator');
       return el && el.dataset.loadingState === 'done';
     }, { timeout: 60_000 });
-    const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/')).length;
+    const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem5a_png/')).length;
     expect(firstDemFetches, '1 回目は cache 空、 GSI DEM fetch が走る').toBeGreaterThan(0);
     // 2 回目: 再訪で cache hit。 b46 で起動シーンが一本道のため journey を再度踏む。
     await gotoViewMode(page);
@@ -318,7 +318,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
       const el = document.getElementById('loading-indicator');
       return el && el.dataset.loadingState === 'done';
     }, { timeout: 15_000 });
-    const totalDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/')).length;
+    const totalDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem5a_png/')).length;
     const secondDemFetches = totalDemFetches - firstDemFetches;
     console.log(`[brief 35 真正性] 1 回目 DEM fetch=${firstDemFetches} / 2 回目 DEM fetch=${secondDemFetches}`);
     expect(secondDemFetches, '2 回目は cache hit で GSI DEM fetch ゼロ (= 配布元への再アクセス回避)').toBe(0);
