@@ -63,6 +63,46 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude — b62 完了 (branch `b62-atmosphere-tuning-sliders`、base `ada555f`)。
+  b61 の大気散乱が白っぽすぎる件を是正。`atmosphere3d.js` の `ATMO_BETA_MIE` を
+  21e-6 → 5e-6 に下げ Rayleigh 優位に (= 白濁を脱し青い透明感)。散乱パラメータを機器設定
+  スライダー 4 本に露出 (`atmoMie` / `atmoG` / `atmoDensity` / `atmoSun`、`CONTROL_DEFS`)。
+  Rayleigh (青み) は空気分子由来の物理定数なのでスライダーにせず固定 ── 日々変わるのは
+  Mie (もや) なので調整つまみは Mie 側に絞った (user 指摘反映)。配線は viewer →
+  `index.js` facade (`setAtmosphereParams` / `getAtmosphereUniforms` を追加、pending 機構
+  対応) → `scene.js` → `atmosphere`。差し替え口契約のため `map_renderer.js` に no-op
+  スタブ 2 本 + `map3d_index.test.js` の `CONTRACT_METHODS` を 24 に更新。
+  `effectiveCoefficients` / `setParams` を betaMie 可変に拡張 (1 引数呼びは b61 と完全
+  一致の後方互換)。太陽方位は既存 `lightDir` が兼ねる (仰角は `sunElevationFromAzimuth`
+  SoT、新規スライダー無し)。7軸 audit を 2 round で CONVERGED (Round1 6軸 LOAD-BEARING
+  → 改訂で全 RESOLVED)。検証: vitest 1496/1496 green (atmosphere3d.test.js 拡張 +
+  atmosphere_control_defs.test.js 新規)、e2e `atmosphere_sliders.spec.js` 2/2 green、
+  実画面 `?cap=1` で atmoMie 上下のキャプチャ比較を目視 (Mie=40 で白濁・Mie=5/0 で
+  富士遠景が青く澄む・近景ディテール保持を確認)。注: `playwright.config.js` の webServer
+  に `env:{PYTHONPATH:'src'}` を追加 ── bridge の web 配信 root が fujihill パッケージ
+  `__file__` 相対で、editable install が元 repo を指すため git worktree から e2e を
+  回すと worktree の変更が配信されない問題を修正 (通常 checkout でも同 repo を指すので
+  無害)。注: e2e の terrain-loader / camera / tile_load_budget 系 spec 群は worktree に
+  tile cache fixture が無く GSI timing 依存で flaky ── base `ada555f` でも同 spec 群が
+  同様に fail し b62 起因ではない (別途 fixture 整備が要る別案件)。
+- 2026-05-22 Claude — b61 完了。富士遠景に物理ベース大気散乱 (aerial perspective) を
+  入れた。新規 `web/lib/map3d/atmosphere3d.js` ── 解析的単散乱 (Rayleigh ∝1/λ⁴ +
+  Mie Henyey-Greenstein) の純関数 (透過/散乱係数/内部散乱、THREE 非依存・vitest 対象)
+  と `createAtmosphere(THREE)` ファクトリ。地形 `MeshStandardMaterial` に
+  `onBeforeCompile` で `finalColor = objectColor·透過 + 内部散乱` を linear 空間へ注入、
+  距離フォグの擬似でなく実散乱式を解く。`scene.js` に ACES tone mapping をグローバル
+  有効化 (内部散乱の加算 HDR を最終段で 1 回畳む)、atmosphere 生成・`enableAtmosphere`・
+  太陽同期 (太陽 SoT は `sun_model.js` 一本)・毎フレーム camera pos 更新を配線、ACES 下で
+  沈むぶん空ドーム色/光を再調整。`index.js` は地形構築直後に `enableAtmosphere` 1 行。
+  7軸 audit CONVERGED (round 1 で 5 軸 LOAD-BEARING → round 2 全 RESOLVED)。検証:
+  vitest 1476 green (新規 atmosphere3d.test.js 38 件含む)、typecheck green、vite build
+  green、実画面目視 (太陽方位 3 枚: 既定135/西255/東95) で遠景の富士が霞み近景は
+  くっきり・太陽方位でハローの位置と色が変わる物理挙動を確認。注: e2e は本 worktree の
+  bridge (`python -m fujihill.bridge`) が bleak import で起動ハングするため最小代替
+  サーバ経由で実走、user_journey 13 件中 10 件 green ── 残 3 件は代替サーバの並行 DEM
+  タイル配信取りこぼしで viewer が GSI 直 fetch に fallback し b40 配布元監視が発火した
+  もので、b61 (描画層) とは無関係。`web/lib/map3d/` のみ改変、camera worker レーン
+  (`camera3d.js`・index.js の camera 生成/updateCamera 節) は非接触。
 - 2026-05-22 Claude (差配) — 全ワーカー通達を追加: 画面検証は `?cap=1` キャプチャ
   機構で実画面を観て批評すること (test green ≠ 画面確認)。各 brief の verify /
   PDCA ループに必須。詳細は上「全ワーカーへの通達」節。

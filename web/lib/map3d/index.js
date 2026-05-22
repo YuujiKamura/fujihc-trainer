@@ -145,7 +145,7 @@ export function createMapRenderer() {
   // boot / renderCourse 前に呼ばれた set 系の値を保留し、 部品生成時に流し込む。
   const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null,
                     riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null,
-                    riderShape: null };
+                    riderShape: null, atmoParams: null };
 
   function fireIdle() {
     if (idleFired) return;
@@ -345,6 +345,12 @@ export function createMapRenderer() {
           // 不自然なため、 受け手にしない (2026-05-21 指摘、 Three.js 既定 false)。
           // 自機の影はコースリボン上 (ribbon の receiveShadow) でのみ受ける。
           scene.add(terrainMesh);
+          // b61: 地形 material に物理ベース大気散乱 (aerial perspective) を注入する。
+          scene.enableAtmosphere(terrainMesh.material);
+          // b62: 機器設定パネルの atmosphere スライダーは boot より早く mount され、
+          // 起動時に localStorage 値由来の apply が走る。 scene 未生成のあいだに保留した
+          // 散乱パラメータを、 ここで一括反映する (= sunDir / sunStrength と同じ並び)。
+          if (pending.atmoParams) scene.setAtmosphereParams(pending.atmoParams);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);
@@ -580,6 +586,23 @@ export function createMapRenderer() {
     setSunlightStrength(exaggeration) {
       if (scene) scene.setSunlightStrength(exaggeration);
       else pending.sunStrength = exaggeration;
+    },
+
+    // b62: 大気散乱の調整パラメータ (density / betaMie / rayleighScale / mieG / sunScale)
+    // を流す。 scene 未生成 (= boot 前、 パネル mount 時) なら pending.atmoParams に
+    // キー単位でマージ保留し、 boot がまとめて反映する (= setRiderShape と同じマージ方式、
+    // 複数スライダー分の値が衝突せず貯まる)。
+    setAtmosphereParams(params) {
+      if (scene) {
+        scene.setAtmosphereParams(params);
+      } else {
+        pending.atmoParams = { ...(pending.atmoParams || {}), ...params };
+      }
+    },
+
+    // b62: 大気散乱の uniform を読む口 (= e2e の観測用)。 scene 未生成なら null。
+    getAtmosphereUniforms() {
+      return scene ? scene.getAtmosphereUniforms() : null;
     },
 
     // === 起点 / 終点マーカー ===

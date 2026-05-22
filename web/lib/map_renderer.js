@@ -570,5 +570,11 @@ export function createMapRenderer() {
         if (el) el.style.display = visible ? 'block' : 'none';
       }
     },
+
+    // b62: 大気散乱 (aerial perspective) は Three.js 版 (map3d) 専用の機能。 MapLibre 版
+    // には物理散乱が無いので差し替え口契約 (map3d/index.js と対称) を保つための no-op。
+    setAtmosphereParams() {},
+    // 同上 ── 大気散乱 uniform を持たないので null を返す (= map3d 版とシグネチャ対称)。
+    getAtmosphereUniforms() { return null; },
   };
 }

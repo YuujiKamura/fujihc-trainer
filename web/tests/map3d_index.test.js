@@ -8,7 +8,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/map3d/index.js';
 
-// map_renderer.js が定める意味メソッド (= b39 で setLandmarks を追加して 22 個)。
+// map_renderer.js が定める意味メソッド (= b39 で setLandmarks、 b62 で大気散乱の
+// setAtmosphereParams / getAtmosphereUniforms を追加して 24 個)。
 // Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
   'isBooted', 'boot', 'onceIdle',
@@ -21,17 +22,18 @@ const CONTRACT_METHODS = [
   'setRiderScale', 'setCourseWidth', 'setRoadHeight', 'setLabelHeight',
   'setRiderShape', 'setShadowBoardEnabled',
   'setLandmarks',  // b39 富士ヒル区間名標識 (= 7 件、 createLandmarks3d 経由)
+  'setAtmosphereParams', 'getAtmosphereUniforms',  // b62 大気散乱の調整 / 観測口
 ];
 
-describe('createMapRenderer — 差し替え口22メソッド', () => {
-  it('22個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口24メソッド', () => {
+  it('24個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (22個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (24個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
