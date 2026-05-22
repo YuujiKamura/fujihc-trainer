@@ -200,8 +200,7 @@ export function createMapRenderer() {
     let dragged = false;       // drag 中に実際に動いたか (= mouseup で保存するか判定)
     let wheelSaveTimer = null; // wheel 連打を 1 回の保存にまとめる debounce
     el.addEventListener('mousedown', (e) => {
-      if (e.button !== 0 && e.button !== 2) return;
-      drag = { x: e.clientX, y: e.clientY, button: e.button, ctrl: e.ctrlKey };
+      drag = { x: e.clientX, y: e.clientY };
       dragged = false;
       e.preventDefault();
     });
@@ -216,11 +215,8 @@ export function createMapRenderer() {
       drag.x = e.clientX; drag.y = e.clientY;
       if (dx || dy) dragged = true;
       
-      if (drag.button === 2 || (drag.button === 0 && drag.ctrl)) {
-        camera3d.onDrag(dx, dy);
-      } else if (drag.button === 0) {
-        camera3d.onPan(dx, dy);
-      }
+      // drag はボタン問わず orbit 回転 (左右の使い分けは 2026-05-22 取り下げ)。
+      camera3d.onDrag(dx, dy);
       
       camera3d.update(lastTarget || terrainCenter(), lastForward || { x: 0, y: 0, z: -1 });
     });

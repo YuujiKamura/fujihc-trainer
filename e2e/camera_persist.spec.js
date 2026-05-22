@@ -31,15 +31,15 @@ async function reachViewModeMap(page) {
 }
 
 // 地図中央を右ボタンで水平 dx px ドラッグして orbit (= bearing) を回す。
-// カメラ操作は左ドラッグ=パン / 右ドラッグ (or Ctrl+左)=オービット (map3d wireCameraInput)。
-async function dragMap(page, dx) {
+// カメラ操作はボタン問わず drag=orbit 回転 (map3d wireCameraInput、左右の使い分けは取り下げ)。
+async function dragMap(page, dx, button = 'right') {
   const box = await page.locator('#map').boundingBox();
   const cx = box.x + box.width * 0.4;   // 右上の区間パネルを避けて左寄り中央
   const cy = box.y + box.height * 0.5;
   await page.mouse.move(cx, cy);
-  await page.mouse.down({ button: 'right' });
+  await page.mouse.down({ button });
   await page.mouse.move(cx + dx, cy, { steps: 8 });
-  await page.mouse.up({ button: 'right' });
+  await page.mouse.up({ button });
 }
 
 const readOrbit = (page) => page.evaluate(() => {
@@ -88,4 +88,19 @@ test('b48: 保存した orbit 視点が reload を跨いで初期カメラに復
     360 - Math.abs(second.bearing - expected),
   );
   expect(diff, `復元後 bearing=${second.bearing} は first+50=${expected} に近いはず`).toBeLessThan(8);
+});
+
+test('左ドラッグでも orbit (bearing) が回る ── 左右ボタンの使い分けは無い', async ({ page }) => {
+  await page.route('https://cyberjapandata.gsi.go.jp/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: GSI_PNG }));
+  await reachViewModeMap(page);
+
+  expect(await readOrbit(page), 'drag 前は未保存').toBeNull();
+  await dragMap(page, 300, 'left');  // 左ボタンで水平ドラッグ
+
+  // 左ドラッグでも bearing が動く = onDrag (回転) が呼ばれた証拠。
+  // 左=パン (onPan) のままなら bearing は初期 0 から動かない。
+  const saved = await readOrbit(page);
+  expect(saved, '左 drag でも orbit が保存される').not.toBeNull();
+  expect(saved.bearing).toBeGreaterThan(10);
 });
