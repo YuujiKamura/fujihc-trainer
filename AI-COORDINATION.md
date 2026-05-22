@@ -63,6 +63,32 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-23 Claude — b67 完了 (commit `f9386c8` + `14b1e35`、 ブリーフ
+  `~/.agents/scratch/fujihc-trainer-project/b67-pages-terrain-static-direct.md`)。
+  3D 地形 (`loadDemStitched`) の DEM タイル取得を「IndexedDB タイルキャッシュ
+  → GSI 直」 の 2 段に統一 (`f9386c8`、 bridge 段撤去 + zoom 引数追加 +
+  `GSI_DEM_PNG_DIRECT_BASE` 新設)、 高精細 z15 dem5a メッシュの外側を z12
+  dem_png の広域低精細メッシュで覆って富士山体の全景を背景に敷く (`14b1e35`、
+  `WIDE_DEM_ZOOM=12` 定数 + `index.js boot()` に try/catch 非致命ブロック +
+  座標オフセット平行移動 + polygonOffset / renderOrder 二段で z-fighting 回避 +
+  `bootMap` の opts に `wideBounds: fujihill.dbBounds`)。 b67 brief を
+  `multi-axis-draft-audit` で 2 round 7軸 audit (Round 1 軸3/4 LOAD-BEARING →
+  値根拠表 + 既存テスト行番号+件数 表 + 新規 expect 4 件の具体記述 + negative
+  grep + error path test 追加で Round 2 RESOLVED)、 LOAD-BEARING=0 / COSMETIC=0
+  で CONVERGED。 検証: vitest 1528 passed (新規 4 件 b67 describe + 1 件
+  zoom_bounds + 3 件 viewer_url_audit)、 pytest 239 passed / 4 skipped、
+  bridge 無し `python -m http.server 8090 --directory web` + playwright で
+  実画面 2 枚キャプチャ目視 (= b67-shot-1-default.png / b67-shot-2-wide.png、
+  scratch/ 配下) → 完了条件 (a) z15 高精細 (b) 広域低精細メッシュ富士山体全景
+  (c) コース箱縁の「ぶつ切りの虚空」 不在 すべて PASS。 配布元配慮: GSI 通信は
+  不変 (消えるのは Pages オリジン宛の死んだ 404 のみ)、 広域メッシュ 12 タイル
+  追加分も IndexedDB 90日 TTL で 2 回目以降ゼロ。 注: 完了条件 (d)「コンソール
+  に /tiles/gsi_dem 404 なし」 は厳密 FAIL ── 起動 probe (terrain_phase.js /
+  terrain_loader.js) が同型の死んだ往復 `STATIC_TILE_BASE_URL/static/tiles/gsi_dem`
+  を 3 タイル probe して 404 を出すが、 これは本 brief §注意の「3D 地形
+  (`loadDemStitched` 経路) のみ」 scope 外、 viewer は GSI direct fallback で
+  正常起動。 同型問題なので別 brief b70 (仮称) で起動 probe にも同じ撤去を
+  適用するのが自然。 詳細は brief §実画面検証で発見した残課題。
 - 2026-05-23 Claude — b68 完了 (commit `1576e1e`)。完成済みブランチ `b62-atmosphere-tuning-sliders` を `b46-terrain-loader-screen` にマージし、富士遠景の物理ベース大気散乱 (b61) と散乱パラメータ調整スライダー 4 本 (`atmoMie` / `atmoG` / `atmoDensity` / `atmoSun`、b62) を現行ブランチへ復活 (新規実装でなくブランチ合流)。実コンフリクトは AI-COORDINATION.md の Worklog のみ ── b62 側 2 エントリと b46 側「全ワーカー通達」1 エントリを時系列順で両方残して解決。`viewer-maplibre.js` は auto-merge で b62 の atmosphere 4 def と b46 のパワー def が共存、`index.js` / `scene.js` / `map3d_index.test.js` は b46 が分岐点以降未 touch で b62 版がそのまま入る。7軸 audit 3 round で CONVERGED (LOAD-BEARING 0 / COSMETIC 1)。検証: vitest 1519 passed / 0 failed、pytest 239 passed / 4 skipped / 0 failed (test_fake_trainer はポート衝突で既知ハング、b59 と同じく --ignore)、e2e `atmosphere_sliders.spec.js` 2/2 passed、bridge 無し静的サーバ (python http.server 8090) で viewer を起動 → atmoMie デフォルト (5e-6) と 40e-6 で 2 枚キャプチャを比較、Mie 上昇で富士遠景が霞み Mie 低下で山体の輪郭が戻る挙動を目視確認、機器設定パネルに散乱スライダー 4 本が並ぶことも確認。
 - 2026-05-22 Claude — b62 完了 (branch `b62-atmosphere-tuning-sliders`、base `ada555f`)。
   b61 の大気散乱が白っぽすぎる件を是正。`atmosphere3d.js` の `ATMO_BETA_MIE` を
