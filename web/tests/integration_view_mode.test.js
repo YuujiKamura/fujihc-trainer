@@ -10,7 +10,7 @@
 //   1. body.mode-view が付くと観るモード ── addRide / getClientId guard が効く
 //      (= 走行ログ保存なし / Strava 非対応、 物理 guard)。
 //   2. section list 行クリック → rideState.startFrom(start_idx) で section 始点から ride.
-//   3. 「区間リストに戻る」で ride を end + section list 再表示。
+//   3. rideState は end 後に別区間で startFrom し直せる (= 別区間の選び直し)。
 //   4. viewer source: btnSetupGoView が body.mode-view を add、 観るモード判定が
 //      body.classList.contains('mode-view') 経由であること。
 //
@@ -143,7 +143,7 @@ describe('b46 integration: section list の区間選択 → rideState start_idx 
   });
 });
 
-describe('b46 integration: 「区間リストに戻る」 で ride end + section list 再表示', () => {
+describe('b46 integration: rideState は end 後に別区間で startFrom し直せる', () => {
   it('rideState.end → snapshot().active === false (= 別区間選び直し可能)', () => {
     const course = buildSimpleCourse();
     const rs = createRideState(course);

@@ -1079,18 +1079,14 @@ function hideConsentOverlay() {
     if (setup) setup.classList.add('visible');
   }
 }
-// brief 34 ε-8: 「観る」モード section-overlay 表示 / hide / list render.
+// brief 34 ε-8: 「観る」モード section-overlay の hide.
 // section-overlay は 10 区間のリストを表示、 行クリックで該当 section.start_idx を rideState に
-// inject して fake state ride を開始する。 ride 中の「区間リストに戻る」ボタンで再表示する。
-function showSectionOverlay() {
-  const ov = document.getElementById('section-overlay');
-  if (ov) ov.classList.add('visible');
-}
+// inject して fake state ride を開始する。 「閉じる」 button から hide する。
 function hideSectionOverlay() {
   const ov = document.getElementById('section-overlay');
   if (ov) ov.classList.remove('visible');
 }
-// section リストの DOM を course から再構築 (= 「コースを観る」初回 + 「区間リストに戻る」で呼ぶ).
+// section リストの DOM を course から再構築 (= 「コースを観る」で呼ぶ).
 // 各 li に role=button + data-start-idx + tabindex を付け、 click で onSelect を発火させる.
 function renderSectionList(courseArr, onSelect) {
   const list = document.getElementById('section-list');
@@ -1228,19 +1224,8 @@ if (typeof document !== 'undefined') {
     hideSectionOverlay();
     exitViewModeToSetup();
   });
-  // 「区間リストに戻る」 button (= ride 中 view mode 専用) の bind.
-  // ride を end して section-overlay を再表示、 別区間選び直しの導線。
-  const btnViewModeBackToList = document.getElementById('btnViewModeBackToList');
-  if (btnViewModeBackToList) btnViewModeBackToList.addEventListener('click', () => {
-    if (rideState) rideState.end();
-    setAppState('pairing');  // ride 状態を抜ける (= state-riding を外す)
-    document.body.classList.add('mode-view');  // mode-view class は維持
-    showSectionOverlay();
-  });
-
   // 2026-05-19: 観るモードの区間リストパネルから「最初の画面に戻る」 で走るモードへ戻る。
   // 観るモードに入ると右上パネルしか出ず、 走行モードへ戻る導線が無い trap を解消する。
-  // 走行中は CSS で hide (= ride 中の出口は「区間リストに戻る」一つに絞る)。
   // b46: 戻り先を intro overlay からトレーナー接続画面 (#setup-overlay) に変更
   //   (= 起動シーン一本道化に伴い、 走る/観る 選び直し UI が消えたため)。
   const btnViewModeExit = document.getElementById('btnViewModeExit');

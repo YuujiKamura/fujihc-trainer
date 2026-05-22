@@ -275,9 +275,6 @@
     background: #1a3322; color: #7fff00; border: 1px solid #7fff00; border-radius: 4px;
     font: inherit; cursor: pointer;
   }
-  /* 走行中は「最初の画面に戻る」を隠す ── ride 中の出口は「区間リストに戻る」一つに絞る. */
-  body.state-riding #section-list-panel #btnViewModeExit { display: none; }
-
   /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
      intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
      区間勾配を眺めるための UI。 Zwift Climb Portal 風 (= ただし trainer 不要 + ログ保存なし). */
@@ -310,9 +307,6 @@
   #section-list .sec-meta { color: #888; font-size: 11px; grid-column: 1; grid-row: 2; }
   #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
   #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
-  /* state-riding 中の view モード戻り button (= section list に戻るための導線). */
-  #btnViewModeBackToList { position: fixed; right: 1rem; top: 1rem; z-index: 1000; display: none; padding: 0.5rem 1rem; background: rgba(0, 0, 0, 0.8); color: #7fff00; border: 1px solid #7fff00; border-radius: 4px; font: 14px ui-monospace, monospace; cursor: pointer; }
-  body.state-riding.mode-view #btnViewModeBackToList { display: block; }
   /* view モード中は postride / strava 系を一切表示しない (= 観るモードは記録対象外). */
   body.mode-view #postride-overlay { display: none !important; }
 
@@ -945,8 +939,7 @@
 
 <!-- brief 34 ε-8: 「観る」モード用 section-overlay (= 10 区間リスト、 z-index 1470).
      intro で「コースを観る」を選んだあと表示、 各行クリックで該当区間の start_idx から
-     fake-state ride を開始する。 ride 中の「区間リストに戻る」button (= #btnViewModeBackToList) は
-     viewer 側で配置 + show/hide 制御する (= state-riding.mode-view CSS で表示制御). -->
+     fake-state ride を開始する。 -->
 <!-- 2026-05-15 fix: 観るモード ride 中、 右上に常時表示する区間リスト panel.
      行クリックでいつでも別区間にジャンプ可能 (= user 指摘「走行中に右上に区間リストが
      あって何時でも区間を選べる」反映). 全画面 section-overlay は撤去. -->
