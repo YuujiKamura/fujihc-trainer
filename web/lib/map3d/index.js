@@ -345,6 +345,8 @@ export function createMapRenderer() {
           // 不自然なため、 受け手にしない (2026-05-21 指摘、 Three.js 既定 false)。
           // 自機の影はコースリボン上 (ribbon の receiveShadow) でのみ受ける。
           scene.add(terrainMesh);
+          // b61: 地形 material に物理ベース大気散乱 (aerial perspective) を注入する。
+          scene.enableAtmosphere(terrainMesh.material);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);

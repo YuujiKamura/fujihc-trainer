@@ -16,13 +16,21 @@ import * as THREE from 'three';
 import {
   sunElevationFromAzimuth, shadowCameraConfig, SHADOW_CAM_BASE, SHADOW_LIGHT_DIST,
 } from './sun_model.js';
+import { createAtmosphere } from './atmosphere3d.js';
 
 // グラデーション青空の色 (= MapLibre 版 map_renderer.js の COMMON_SKY を Three.js に移植).
 // b12 Phase 4 の Three.js 化で MapLibre の sky レイヤが失われ、 背景が単色の暗色になっていた。
-const SKY_ZENITH = 0x3a7cc4;    // 天頂の青 (= COMMON_SKY の sky-color)
-const SKY_HORIZON = 0xe8f0f8;   // 地平線の青白 (= COMMON_SKY の horizon-color)
-// 遠景フォグの色 (= COMMON_SKY の fog-color)。 遠くの地形をこの色へ溶かして地平線の霞にする。
+// b61: ACES tone mapping をグローバル有効化したため、 ACES で中間調が沈むぶんを見越して
+// 旧値 (zenith 0x3a7cc4 / horizon 0xe8f0f8) より明るめ・やや濃いめに再調整した
+// (= ACES 下で旧来の見えに寄せる、 地表の物理散乱と地平線で色が連続するように)。
+const SKY_ZENITH = 0x5a9fd8;    // 天頂の青 (ACES 再調整値)
+const SKY_HORIZON = 0xeef4fb;   // 地平線の青白 (ACES 再調整値)
+// 遠景フォグの色 (= COMMON_SKY の fog-color)。 リボン / ラベル等の遠景をこの色へ溶かす。
+// b61: 地形メッシュは atmosphere3d.js の物理 aerial perspective に置き換わり、 この灰色
+// フォグは地形には効かない (= enableAtmosphere が地形 material の fog を false にする)。
 const FOG_COLOR = 0xd8d0c8;
+// b61: ACES tone mapping の露出。 1.0 だと ACES で全体が沈むので僅かに持ち上げる。
+const TONE_MAPPING_EXPOSURE = 1.15;
 // 空ドームの半径 = 地形 span の倍率。 カメラの near(1)〜far(span*6) の内側に必ず収まる値。
 const SKY_DOME_SPAN_FACTOR = 1.5;
 // 太陽の既定方位。 MapLibre の hillshade-illumination-direction 既定 135 に合わせる
@@ -122,7 +130,17 @@ export function createScene({ container, capture = false }) {
   // 影を shadow map で描く (= 自機の影を地形へ投影する)。 PCFSoft で影の縁を柔らかく。
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // b61: ACES tone mapping をグローバル有効化。 大気散乱の内部散乱は加算 HDR で 1 を
+  // 超えうるので、 linear HDR を最終段で 1 回 ACES で LDR に畳んで白飛びを防ぐ。
+  // atmosphere3d.js の注入点 (<tonemapping_fragment> 直前) が linear なのは保たれ、
+  // ACES は地表 (物理散乱) と空ドームを同じ tone curve に通して地平線の色連続を担保する。
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = TONE_MAPPING_EXPOSURE;
   container.appendChild(renderer.domElement);
+
+  // b61: 物理ベース大気散乱。 地形 material への注入は enableAtmosphere() 経由で行う
+  // (= 地形メッシュは index.js boot で後から構築されるため、 ここでは生成のみ)。
+  const atmosphere = createAtmosphere(THREE);
 
   // 太陽 (= 平行光源)。 位置は configureScale() / setSunlightDirection() で更新する。
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
@@ -145,8 +163,10 @@ export function createScene({ container, capture = false }) {
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun.target);  // target は focusShadowOn が動かすので scene グラフに乗せる
   // 環境光 + 半球光 (= 陰側が真っ黒に潰れないための底上げ、 強さは固定)。
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-  scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202820, 0.6));
+  // b61: ACES tone mapping で中間調が沈むぶんを見越し、 旧値 (ambient 0.35 / hemi 0.6)
+  // より持ち上げて ACES 下で旧来の明るさに寄せた。
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202820, 0.85));
 
   // 光源状態。 azimuth / strength はスライダー由来、 span は地形サイズ由来。
   let sunAzimuthDeg = DEFAULT_SUN_AZIMUTH_DEG;
@@ -162,7 +182,11 @@ export function createScene({ container, capture = false }) {
     // exaggeration 0..1 を光の強度 0..2 に線形マップ。 さらに太陽が地平線下 (夜) は
     // 平行光をほぼ消す ── 北回りの「ありえない方向」では陽が差さない。
     const daylight = elevation > 0 ? 1 : 0.18;
-    sun.intensity = Math.max(0, sunStrength) * 2.0 * daylight;
+    // b61: ACES tone mapping で中間調が沈むぶん、 旧基準 2.0 から 2.6 に持ち上げた。
+    sun.intensity = Math.max(0, sunStrength) * 2.6 * daylight;
+    // b61: 大気散乱の太陽を地表照明と同じ太陽へ同期する。 太陽の SoT は sunAzimuthDeg
+    // + sun_model.js の sunElevationFromAzimuth 一本 ── atmosphere は受け取るだけ。
+    atmosphere.setSun(sunAzimuthDeg, Math.max(elevation, 2), daylight);
   }
   applySun();
 
@@ -173,6 +197,14 @@ export function createScene({ container, capture = false }) {
     // 地形メッシュ / コースリボン / マーカー等を scene に足す (= 他部品の成果物を載せる)。
     add(obj) { scene.add(obj); },
     remove(obj) { scene.remove(obj); },
+
+    // b61: 地形 material に物理ベース大気散乱 (aerial perspective) を注入する。
+    // 地形メッシュは index.js boot で後から構築されるため、 boot がメッシュ構築直後に
+    // 一度だけ呼ぶ。 material.fog は false にされ、 灰色 scene.fog は地形では無効化されて
+    // 物理散乱に一本化する (= リボン / ラベルは従来どおり scene.fog のまま)。
+    enableAtmosphere(material) {
+      if (material) atmosphere.applyTo(material);
+    },
 
     // 影オルソカメラを自機 (pos) 中心へ寄せる。 太陽光の向き (= hillshade) は変えず、
     // light の position と target を pos 基準に平行移動するだけ ── 影カメラだけが自機を
@@ -205,6 +237,9 @@ export function createScene({ container, capture = false }) {
       // 空ドームをカメラへ追従させる ── カメラを常に球の中心に置くことで、 ドーム面が
       // 必ず near〜far の内側に収まり (= 半径は span 比例)、 視点移動でも空が破綻しない。
       skyDome.position.copy(camera.position);
+      // b61: 大気散乱の透過 / 内部散乱はカメラ→地表点の距離で決まる。 カメラ位置 uniform
+      // を毎フレーム更新する (= skyDome 追従と同型)。
+      atmosphere.setCameraPosition(camera.position);
       renderer.render(scene, camera);
     },
 

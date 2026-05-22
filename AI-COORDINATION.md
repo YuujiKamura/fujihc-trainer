@@ -46,6 +46,24 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude — b61 完了。富士遠景に物理ベース大気散乱 (aerial perspective) を
+  入れた。新規 `web/lib/map3d/atmosphere3d.js` ── 解析的単散乱 (Rayleigh ∝1/λ⁴ +
+  Mie Henyey-Greenstein) の純関数 (透過/散乱係数/内部散乱、THREE 非依存・vitest 対象)
+  と `createAtmosphere(THREE)` ファクトリ。地形 `MeshStandardMaterial` に
+  `onBeforeCompile` で `finalColor = objectColor·透過 + 内部散乱` を linear 空間へ注入、
+  距離フォグの擬似でなく実散乱式を解く。`scene.js` に ACES tone mapping をグローバル
+  有効化 (内部散乱の加算 HDR を最終段で 1 回畳む)、atmosphere 生成・`enableAtmosphere`・
+  太陽同期 (太陽 SoT は `sun_model.js` 一本)・毎フレーム camera pos 更新を配線、ACES 下で
+  沈むぶん空ドーム色/光を再調整。`index.js` は地形構築直後に `enableAtmosphere` 1 行。
+  7軸 audit CONVERGED (round 1 で 5 軸 LOAD-BEARING → round 2 全 RESOLVED)。検証:
+  vitest 1476 green (新規 atmosphere3d.test.js 38 件含む)、typecheck green、vite build
+  green、実画面目視 (太陽方位 3 枚: 既定135/西255/東95) で遠景の富士が霞み近景は
+  くっきり・太陽方位でハローの位置と色が変わる物理挙動を確認。注: e2e は本 worktree の
+  bridge (`python -m fujihill.bridge`) が bleak import で起動ハングするため最小代替
+  サーバ経由で実走、user_journey 13 件中 10 件 green ── 残 3 件は代替サーバの並行 DEM
+  タイル配信取りこぼしで viewer が GSI 直 fetch に fallback し b40 配布元監視が発火した
+  もので、b61 (描画層) とは無関係。`web/lib/map3d/` のみ改変、camera worker レーン
+  (`camera3d.js`・index.js の camera 生成/updateCamera 節) は非接触。
 - 2026-05-22 Claude — b56 完了。TypeScript toolchain を導入 (`typescript` devDep +
   `tsconfig.json` + `typecheck` script、`pretest` で `npm test` に接続し typecheck 赤=
   出荷不可)。viewer はブラウザが `.js` を直読みする静的配信で Vite ビルドを通らないため
