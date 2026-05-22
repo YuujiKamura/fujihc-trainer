@@ -88,7 +88,7 @@ export function zoomToRadius(zoom) {
 // far クリップ面はここから導出し、テストもここを import して参照する。ズーム端を
 // 変えるならこの 1 箇所だけ書き換えれば far もテストも自動追従する。
 export const RADIUS_MIN = 5;
-export const RADIUS_MAX = 12000;
+export const RADIUS_MAX = 36000;
 
 // === ファクトリ (THREE 注入、 描画グルー) ===
 
