@@ -33,10 +33,20 @@ import { openTileCache } from '../tile_cache.js';
 // b31: GSI dem direct base は terrain_loader.js 側で定義 (= literal を本体に書かない、
 // viewer_url_audit.test.js が viewer-maplibre.js 単体 scan する scope と整合させる用 ── 本 file は
 // scan 対象外だが、 source-of-truth を 1 箇所に集約しておくことで dead URL constant の散在を避ける)。
-import { GSI_DEM_DIRECT_BASE } from '../terrain_loader.js';
+// b67: GSI_DEM_PNG_DIRECT_BASE は広域低精細メッシュ (= dbBounds 22km四方を z12 で覆う背景) 用、
+// 同じく terrain_loader.js が SoT。
+import { GSI_DEM_DIRECT_BASE, GSI_DEM_PNG_DIRECT_BASE } from '../terrain_loader.js';
 
 // 緯度 1 度あたりのメートル (= terrain3d.js と同値)。
 const M_PER_DEG_LAT = 111320;
+
+// b67: 広域低精細メッシュの取得 zoom。 値は 12 ── dbBounds (22km四方) を z12 なら 12 タイルで
+// 覆える (実測 `tileRangeForBounds(fujihill.dbBounds, 12).count === 12`、 zoom_bounds.test.js
+// で pin)。 z15 で 437 タイル MAX_TILES 超過、 z14=120、 z13=35 と比べて z12=12 が最少。
+// 1 タイルが約 4 倍の面積を覆い、 GSI_FETCH_LIMIT=6 並列で 2 wave、 配布元負荷最小。 値を
+// 1 行定数にしてあるので将来 zoom を変えるのは値 1 つの変更で済む (配布元配慮上、 上げる
+// 方向の変更は慎重に ── 1 段上げると枚数が約 4 倍に増える)。
+const WIDE_DEM_ZOOM = 12;
 
 /**
  * curIdx と実測 lat/lon から、 コース始点からの走行距離 (m) を求める純関数.
@@ -307,6 +317,8 @@ export function createMapRenderer() {
           THREE = await import('three');
           const { createScene } = await import('./scene.js');
           const { buildTerrainMesh } = await import('./terrain_mesh3d.js');
+          // b67: 広域低精細メッシュも buildTerrainMesh / loadDemStitched / loadPhotoCanvas を
+          // 同じ 2 段経路で再利用する。 動的 import 1 度だけ取得して下で参照。
 
           scene = createScene({ container, capture: captureEnabled() });
 
@@ -383,6 +395,56 @@ export function createMapRenderer() {
           fireOnLoaded();
           // ?cap=1 のとき画面送信ループを開始する (= 開発時に実画面を観るための入口)。
           if (captureEnabled()) startFrameCapture();
+
+          // b67: 広域低精細メッシュ (= 富士山体の全景を背景に敷く). コース外接 demBounds の
+          // 高精細メッシュだけだと外側が虚空になり「箱の縁でぶつ切り」 ── その外側を
+          // dbBounds 22km四方の z12 dem_png で粗く埋めて遠景を埋める。
+          //
+          // try/catch で完全に非致命にする ── 広域メッシュは背景の付加機能で、 構築に失敗
+          // しても warn だけ出して握りつぶす。 高精細メッシュ (= 本体) と viewer 起動は既に
+          // fireOnLoaded() で完了済、 失敗時の劣化は本 brief 着手前の状態 (外側虚空) に
+          // ロールバックされるだけで新規 regression は生じない。 onLoaded gate も圧迫しない。
+          if (isValidBounds(opts.wideBounds) && !opts.skipTerrain) {
+            try {
+              console.time('[map3d] wideDem build');
+              const wideDem = await loadDemStitched({
+                bounds: opts.wideBounds, tileCache,
+                gsiDirectBase: GSI_DEM_PNG_DIRECT_BASE, zoom: WIDE_DEM_ZOOM,
+              });
+              // 広域メッシュは下地一色 (= 航空写真の配布元取得ゼロ)。 skipFetch:true で
+              // tile_loader3d.js が GSI を叩かず #3b424c の canvas を返す。
+              const widePhoto = await loadPhotoCanvas({
+                range: wideDem.range, tileCache, skipFetch: true,
+              });
+              const wideBuilt = buildTerrainMesh({
+                stitched: wideDem.stitched, range: wideDem.range, photoCanvas: widePhoto,
+              });
+              // 座標原点を高精細メッシュに揃える ── 広域メッシュは自分の dbBounds 中心を
+              // 原点に組まれるが、 シーン全体は高精細 demBounds 中心 (= geoMeta) が原点なので、
+              // その差分を world メートルに直して平行移動。 M_PER_DEG_LAT は本 file の既存
+              // 定数 (= terrain3d.js の同名定数と同値、 WGS84 平均緯度 1 度 = 111320 m)。
+              const dLon = wideBuilt.geo.centerLon - geoMeta.centerLon;
+              const dLat = wideBuilt.geo.centerLat - geoMeta.centerLat;
+              const mPerDegLon = M_PER_DEG_LAT * Math.cos((geoMeta.centerLat * Math.PI) / 180);
+              wideBuilt.mesh.position.x = dLon * mPerDegLon;
+              wideBuilt.mesh.position.z = -dLat * M_PER_DEG_LAT;
+              // z-fighting 回避: 広域メッシュは demBounds 域で高精細メッシュと重なる。
+              // polygonOffset の値 1/1 は Three.js Material.polygonOffset の標準値で、
+              // 典型 24bit depth buffer の 1 ulp 相当 ── 安定的に高精細を手前にする。
+              // renderOrder=-1 で同距離での描画順も広域 → 高精細に固定 (二段構え)。
+              const wideMat = wideBuilt.mesh.material;
+              wideMat.polygonOffset = true;
+              wideMat.polygonOffsetFactor = 1;
+              wideMat.polygonOffsetUnits = 1;
+              wideBuilt.mesh.renderOrder = -1;
+              // 広域メッシュは大気散乱を共有 (= 高精細と同じ aerial perspective で遠景が霞む)。
+              scene.enableAtmosphere(wideMat);
+              scene.add(wideBuilt.mesh);
+              console.timeEnd('[map3d] wideDem build');
+            } catch (e) {
+              console.warn('[map3d] 広域低精細メッシュの構築に失敗 (= 背景のみ欠落、 viewer 続行):', e);
+            }
+          }
         } catch (e) {
           // 例外時も viewer をロード画面で止めないよう onLoaded は呼ぶ。 terrainReady は
           // false のまま ── idle 発火・renderCourse の gate は地形が本当に組めたかを見る。

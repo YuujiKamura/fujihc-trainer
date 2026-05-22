@@ -179,4 +179,19 @@ describe('b59: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲)'
     // z15 で 437 枚 → MAX_TILES 超過 → 地形が組めない。
     expect(VIEWER).toMatch(/dbBounds:\s*fujihill\.demBounds/);
   });
+
+  // b67: 広域低精細メッシュ用 bbox。 高精細 demBounds の外側を dbBounds 22km四方の
+  // z12 dem_png で 12 タイルだけで覆う ── 富士山体の全景を背景に敷くため。
+  it('dbBounds (= 広域メッシュ用 22km四方) の z12 タイル数は 12 で MAX_TILES (200) 以下', () => {
+    // b67: WIDE_DEM_ZOOM=12 の値根拠 pin。 値が 12 でなくなったら map3d/index.js の
+    // 広域メッシュ構築が壊れる、 ブリーフの根拠表も嘘になる ── 12 厳密一致で固定。
+    expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBe(12);
+    expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBeLessThanOrEqual(MAX_TILES);
+  });
+
+  it('viewer-maplibre.js の bootMap は wideBounds に fujihill.dbBounds を渡す (= 広域メッシュ用)', () => {
+    // b67: 広域低精細メッシュは map3d/index.js boot 内で opts.wideBounds を読む。
+    // viewer 側 bootMap は course 定義 fujihill.dbBounds をそのまま渡すだけで literal は持たない。
+    expect(VIEWER).toMatch(/wideBounds:\s*fujihill\.dbBounds/);
+  });
 });

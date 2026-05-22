@@ -157,6 +157,10 @@ function bootMap(env) {
     // 作業中レーンで触れないため。 dbBounds 全域 (22km四方) を z15 で渡すと 437 tiles
     // で MAX_TILES 超過 → 地形が組めない。
     dbBounds: fujihill.demBounds,
+    // b67: 広域低精細メッシュ (= 富士山体の全景を背景に敷く) 用の bbox。 高精細
+    // (demBounds, z15) の外側を覆う dbBounds (22km四方) を z12 dem_png で 12 tiles
+    // に抑えて配布元負荷最小。 詳細は map3d/index.js の WIDE_DEM_ZOOM 注記参照。
+    wideBounds: fujihill.dbBounds,
     dbCenter: fujihill.dbCenter,
     onLoaded: onMapLoaded,
     onProgress: updateLoadingProgress,
