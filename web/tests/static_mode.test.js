@@ -106,40 +106,52 @@ describe('brief 31 commit β: bootCheckSetupStatus が env.mode で static / bri
   });
 });
 
-describe('brief 34 ε-2: introConsented guard で起動分岐 2 箇所を制御', () => {
-  it('module top dispatch は introConsented() guard 内でのみ initMapMode / initTestMode / initBleMode / bootCheckSetupStatus を呼ぶ', () => {
-    // 旧 `if (MAP_MODE) initMapMode(); else if (TEST_MODE) ...` の literal は
-    // `dispatchAfterIntro` 関数内に格納、 module top では introConsented() で gate.
-    expect(viewer).toMatch(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]*?if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
-    expect(viewer).toMatch(/if\s*\(\s*introConsented\(\)\s*\)\s*\{\s*\n\s*dispatchAfterIntro\(\)/);
-  });
-
-  it('introConsented 未通過なら showIntroOverlay を呼んで init 群を物理 skip', () => {
-    // module top dispatch の else 節で showIntroOverlay を呼ぶ
-    const m = viewer.match(/if\s*\(\s*introConsented\(\)\s*\)\s*\{[\s\S]*?\}\s*else\s*\{[\s\S]*?\}/);
+// b46: 旧「brief 34 ε-2: introConsented guard」 describe を全面改訂。
+//   起動シーンを地形データローダー画面の一本道に作り変え、 intro consent guard
+//   (= introConsented / CONSENT_DEV_BYPASS / showIntroOverlay) を撤去した。
+//   新しい起動経路 (= 地形データローダー画面 → 「開始」 → dispatchAfterIntro) を pin する。
+describe('b46: 起動シーンの一本道化 (= 地形データローダー画面 → 「開始」 → dispatchAfterIntro)', () => {
+  it('dispatchAfterIntro は MAP_MODE / TEST_MODE / BRIDGE_MODE / default=initBleMode で分岐', () => {
+    const m = viewer.match(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    const ifElse = m[0];
-    expect(ifElse).toMatch(/showIntroOverlay\(\)/);
+    const body = m[0];
+    expect(body).toMatch(/if\s*\(\s*MAP_MODE\s*\)\s*initMapMode\(\)/);
+    expect(body).toMatch(/else\s+if\s*\(\s*TEST_MODE\s*\)\s*initTestMode\(\)/);
+    expect(body).toMatch(/else\s+if\s*\(\s*BRIDGE_MODE\s*\)\s*bootCheckSetupStatus\(\)/);
+    expect(body).toMatch(/else\s+initBleMode\(\)/);
   });
 
-  it('bootCheckSetupStatus も内部で introConsented() を check (= 二重 gate)', () => {
+  it('defaultDispatch は URL 引数 (MAP/TEST/BLE/BRIDGE) なら dispatchAfterIntro、 それ以外は showTerrainLoader', () => {
+    // b46: 一般訪問者は地形データローダー画面 (= showTerrainLoader) を経由し、
+    //   開発者用 URL 引数経路のみ地形ローダー画面を介さず即 dispatchAfterIntro。
+    const m = viewer.match(/function\s+defaultDispatch\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    const body = m[0];
+    expect(body).toMatch(/MAP_MODE\s*\|\|\s*TEST_MODE\s*\|\|\s*BLE_MODE\s*\|\|\s*BRIDGE_MODE/);
+    expect(body).toMatch(/dispatchAfterIntro\(\)/);
+    expect(body).toMatch(/showTerrainLoader\(\)/);
+  });
+
+  it('bootCheckSetupStatus は intro consent guard を持たない (= b46 撤去)', () => {
     const m = viewer.match(/function\s+bootCheckSetupStatus\s*\(\s*\)[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    expect(body).toMatch(/introConsented\(\)/);
-    expect(body).toMatch(/showIntroOverlay\(/);
+    expect(body).not.toMatch(/introConsented\(/);
+    expect(body).not.toMatch(/showIntroOverlay\(/);
   });
 
-  it('CONSENT_DEV_BYPASS は ?consent=dev のみ true、 ?map=1 単独では bypass しない', () => {
-    // brief 32: hostname gate 追加。 localhost / 127.0.0.1 のみ bypass 有効、 Pages origin (= `*.github.io`) で
-    // `?consent=dev` を URL に付けても bypass されない (= 配布元規律違反 / GSI 大量アクセス自粛違反リスクを物理 disable).
-    expect(viewer).toMatch(/CONSENT_DEV_BYPASS\s*=\s*\([\s\S]*?location\.hostname\s*===\s*['"]localhost['"][\s\S]*?location\.hostname\s*===\s*['"]127\.0\.0\.1['"][\s\S]*?new\s+URLSearchParams\(location\.search\)\.get\(['"]consent['"]\)\s*===\s*['"]dev['"]/);
+  it('viewer source に intro consent guard 関数 / 定数が残っていない (= b46 撤去の物理 pin)', () => {
+    expect(viewer).not.toMatch(/function\s+introConsented\s*\(/);
+    expect(viewer).not.toMatch(/CONSENT_DEV_BYPASS/);
+    expect(viewer).not.toMatch(/function\s+showIntroOverlay\s*\(/);
   });
 
-  it('consent.js を import (= getIntroConsent / setIntroConsent / getRideConsent / setRideConsent)', () => {
+  it('consent.js を import (= ride consent の getRideConsent / setRideConsent、 intro consent は撤去済)', () => {
     expect(viewer).toMatch(/from\s+['"]\.\/lib\/consent\.js['"]/);
-    expect(viewer).toMatch(/getIntroConsent/);
-    expect(viewer).toMatch(/setIntroConsent/);
+    expect(viewer).toMatch(/getRideConsent/);
+    expect(viewer).toMatch(/setRideConsent/);
+    // intro consent の import は撤去済
+    expect(viewer).not.toMatch(/import\s+\{[^}]*getIntroConsent[^}]*\}\s+from\s+['"]\.\/lib\/consent\.js['"]/);
   });
 });
 

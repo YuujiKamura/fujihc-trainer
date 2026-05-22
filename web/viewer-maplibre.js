@@ -46,18 +46,15 @@ import { bindPostRideButtons } from './lib/postride_buttons.js';
 import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
 import { appendHistoryRow } from './lib/history_row.js';
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
-// brief 34 ε: 公開ガードレール (= intro / consent 同意管理).
+// brief 34 ε / b46: 公開ガードレール (= ride consent 同意管理).
+// b46: intro consent (= getIntroConsent / setIntroConsent / clearIntroConsent) は撤去。
+//   起動シーンを地形データローダー画面の一本道に作り変えたため不要 (= 観るモード判定は
+//   body.mode-view class へ移行)。
 import {
-  getIntroConsent, setIntroConsent, clearIntroConsent,
   getRideConsent, setRideConsent, clearRideConsent,
 } from './lib/consent.js';
 // brief 34 ε-5: 「全データ削除」UI 用の IndexedDB + localStorage 一括 clear.
 import { clearAllLocalData, clearServiceWorkerCache } from './lib/clear_local_data.js';
-// task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタンの純ロジック (= URL 引数変換 + 文言定数).
-import {
-  buildToggledSearch,
-  MODE_LABEL_TEST, MODE_LABEL_PROD, SWITCH_BTN_TO_PROD, SWITCH_BTN_TO_TEST,
-} from './lib/mode_toggle.js';
 // preflight + save_summary + autosave (= ride 開始前 validation / 保存予定 summary / 走行中保護).
 import { runPreflight } from './lib/preflight_check.js';
 import { renderPreflightPanel, hidePreflight } from './lib/preflight_panel.js';
@@ -998,30 +995,59 @@ function showAttributionWarning(detail) {
   }
 }
 
-// brief 34 ε-2 (= 2026-05-15 user 方向修正反映): 公開ガードレール intro-overlay 表示 / ボタン bind.
-// 「閉じる」= 何もしない (= overlay は閉じるが consent は保存しない、 reload 時に再表示)。
-// 「自分の trainer で走る」= setIntroConsent({mode:'ride'}) 保存 + overlay 隠す + dispatchAfterIntro。
-//   default 経路 (= 無 URL 引数) では bootCheckSetupStatus 経由で initBleMode に向かう
-//   (= Web Bluetooth で trainer 直接接続、 brief 32 で landed 済の経路を流用)。
-// brief 34 ε-8: 「コースを観る」= setIntroConsent({mode:'view'}) 保存 + initViewMode に向かう
-//   (= trainer 不要、 区間選択で fake state ride、 走行ログ保存なし)。
-//   ?map=1 / ?test=1 / ?ble=1 等の URL 引数経由は開発者本人の動作確認用 path、
-//   一般訪問者は intro 通過後の default 経路 (= ride or view) のみに到達する。
-function showIntroOverlay() {
+// b46: 起動シーンの第一段「地形データローダー画面」の show / hide。
+// 旧 intro overlay (= 走る/観る/閉じる の 3 択) を作り変えた画面で、 DOM id は
+// #intro-overlay のまま (= 既存 z-index CSS / grep test との衝突を最小化)。
+// 起動で showTerrainLoader → 「開始」 ボタン押下で地形ロード → 完了で hideTerrainLoader
+// → initBleMode (= トレーナー接続) の一本道。
+// data-intro-state 属性は state 遷移の e2e pin 用に維持する。
+function showTerrainLoader() {
   const ov = document.getElementById('intro-overlay');
   if (ov) {
     ov.classList.add('visible');
-    // brief 32: internal state を data-intro-state 属性に expose (= e2e は state 遷移を toHaveAttribute で pin、
-    // 文言 grep だけの misleading test を回避)。
     ov.dataset.introState = 'visible';
   }
 }
-function hideIntroOverlay() {
+function hideTerrainLoader() {
   const ov = document.getElementById('intro-overlay');
   if (ov) {
     ov.classList.remove('visible');
     ov.dataset.introState = 'hidden';
   }
+}
+// b46: 地形ロード完了時の遷移。 地形ローダー画面を hide してトレーナー接続画面
+// (= initBleMode 経由で #setup-overlay) へ進む。 起動シーンの一本道の終端。
+function onTerrainLoaderDone() {
+  hideTerrainLoader();
+  dispatchAfterIntro();
+}
+// b46: 観るモードから走るモード (= トレーナー接続画面) へ戻る共通処理。
+// body.mode-view を外し、 ride を抜け、 #setup-overlay を表示する。
+// 起動シーン一本道化で intro overlay が地形ローダー画面に変わったため、
+// 観るモードからの「閉じる」/「最初の画面に戻る」 の戻り先をここに集約した。
+function exitViewModeToSetup() {
+  if (rideState) rideState.end();
+  document.body.classList.remove('mode-view');
+  setAppState('pairing');
+  if (typeof updatePostrideButtonVisibility === 'function') {
+    updatePostrideButtonVisibility();
+  }
+  document.getElementById('setup-overlay')?.classList.add('visible');
+}
+// b46: 地形ロード失敗時のエラー表示。 地形ローダー画面に留まり、 エラー文言 +
+// 「再試行」 ボタンを出す (= 訪問者がもう一度読み込みを試せる)。
+function showTerrainLoaderError(message) {
+  const ov = document.getElementById('intro-overlay');
+  if (ov) ov.dataset.introState = 'failed';
+  const errorEl = document.getElementById('terrain-loader-error');
+  if (errorEl) {
+    errorEl.textContent = message || '地形データの読み込みに失敗しました。';
+    errorEl.hidden = false;
+  }
+  const statusEl = document.getElementById('terrain-loader-status');
+  if (statusEl) statusEl.textContent = '';
+  const retryBtn = document.getElementById('btnTerrainLoaderRetry');
+  if (retryBtn) retryBtn.hidden = false;
 }
 // brief 34 ε-3: 公開ガードレール consent-overlay 表示 / ボタン bind.
 // 「同意して ride 開始」= setRideConsent({history, strava, asked: true}) を保存 +
@@ -1123,78 +1149,84 @@ function renderSectionList(courseArr, onSelect) {
 // 起動時に 1 回 bind (= multiple click でも 1 度しか発火しない、 addEventListener 性質).
 // document が無い test 環境 (= 直 import) では skip。
 if (typeof document !== 'undefined') {
-  // brief 34 ε-1 (= 2026-05-15 user 方向修正反映): btnIntroStart = 「自分の trainer で走る」.
-  // デモ走行ボタンは撤去、 trainer 無し試触者は default 想定外。
-  // brief 34 ε-8: btnIntroView = 「コースを観る」 (= trainer 不要、 区間勾配を眺める).
-  const btnIntroStart = document.getElementById('btnIntroStart');
-  const btnIntroView = document.getElementById('btnIntroView');
-  const btnIntroClose = document.getElementById('btnIntroClose');
-  if (btnIntroStart) btnIntroStart.addEventListener('click', () => {
-    // brief 34 ε-9: 地形 load 未完なら何もしない (= disabled 属性の二重 gate、 keyboard activation 経由でも block).
-    if (!terrainReady) return;
-    // brief 32: Web Bluetooth 未対応ブラウザ (= Firefox / Safari 等) なら overlay 内の未対応 message を
-    // visible 化 + ride ボタン disable + early-return。 user は btnIntroView 経由で view モードに誘導される
-    // (= btnIntroView は active 維持)。 BLE 未対応判定は ble_client.js の `isWebBluetoothSupported` 経由で行い、
-    // Web Bluetooth API の直叩きを viewer 側に書かない (= ble_responsibility_grep.test.js の規律遵守、 SoT は ble_client.js)。
-    if (!isWebBluetoothSupported()) {
-      const ov = document.getElementById('intro-overlay');
-      if (ov) ov.dataset.introState = 'ble-unsupported';
-      const unsupportedMsg = document.getElementById('intro-ble-unsupported');
-      if (unsupportedMsg) unsupportedMsg.hidden = false;
-      btnIntroStart.disabled = true;
+  // b46: 地形データローダー画面の「開始」 ボタン bind。
+  // 起動シーンの第一段。 押下で地形ロード (terrain_phase.start()) を開始し、 進捗を
+  // この画面に表示、 完了でトレーナー接続画面 (#setup-overlay) へ遷移する。
+  // 旧 intro 3 ボタン (btnIntroStart / btnIntroView / btnIntroClose) は撤去 ── 走る/観る/
+  // 閉じる の選択を廃止し、 起動は常に走るモードの一本道にした (= 観るモードは
+  // トレーナー接続画面の「コースを観る」 ボタンから入る)。
+  // 「開始」 ボタン押下が GSI/OSM への地形タイル取得の起点 ── これにより配布元への
+  // アクセスがユーザーの明示操作の後だけになる (= b46 の同意ゲート実体化)。
+  const btnTerrainLoaderStart = document.getElementById('btnTerrainLoaderStart');
+  const btnTerrainLoaderRetry = document.getElementById('btnTerrainLoaderRetry');
+
+  // 地形ロードを起動する共通処理 (= 「開始」 / 「再試行」 の両方から呼ぶ)。
+  function runTerrainLoaderPhase() {
+    const ov = document.getElementById('intro-overlay');
+    if (ov) ov.dataset.introState = 'loading';
+    // 押下後 UI: 「開始」 ボタンを隠し、 進捗表示を出す。 エラー表示はリセット。
+    if (btnTerrainLoaderStart) btnTerrainLoaderStart.hidden = true;
+    if (btnTerrainLoaderRetry) btnTerrainLoaderRetry.hidden = true;
+    const progress = document.getElementById('terrain-loader-progress');
+    if (progress) progress.hidden = false;
+    const errorEl = document.getElementById('terrain-loader-error');
+    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+    const statusEl = document.getElementById('terrain-loader-status');
+    if (statusEl) statusEl.textContent = '地形データを読み込んでいます…';
+    // brief 35: ロード overlay (= #loading-indicator、 z=2000) を visible 化して
+    // 進捗「N / M」 + バーを地形ローダー画面の上に重ねて見せる。 SKIP_TERRAIN
+    // (= ?noterrain) のとき showLoadingOverlay は自前で early-return する。
+    try { showLoadingOverlay('idle'); } catch (e) { /* document 不在等 silent */ }
+    // 地形ロードを起動 (= module-top 自動起動を撤去し、 ここを唯一の起点にした)。
+    // _terrainPhase は startTerrainPhase() 内で subscribe 配線され、 進捗は
+    // setTerrainStatusUI / updateLoadingProgress 経由で表示される。 done / failed は
+    // 下記 subscribe で地形ローダー画面の遷移 / エラー表示に bind する。
+    try {
+      _terrainPhase = startTerrainPhase();
+    } catch (e) {
+      console.warn('[fujihill] terrain phase init failed:', e);
+      showTerrainLoaderError('地形データの読み込みを開始できませんでした。');
       return;
     }
-    // brief 32: internal state を data-intro-state="ride-selected" に立てて遷移直前を expose。
-    const ov = document.getElementById('intro-overlay');
-    if (ov) ov.dataset.introState = 'ride-selected';
-    // brief 34 ε-8: 'ride' mode を明示保存 (= default だが view 切替時に区別するため).
-    setIntroConsent({ mode: 'ride' });
-    // 2026-05-19: 観るモードから「最初の画面に戻る」経由で走るを選んだ場合の後始末。
-    // (a) body.mode-view を外す ── 外さないと走行後画面が観るモード扱いで隠れたまま。
-    // (b) updatePostrideButtonVisibility を呼び直す ── consent が view→ride に変わったので
-    //     「履歴に保存」ボタンの hidden 判定を更新する。 これを怠ると走行後に保存ボタンが
-    //     隠れたままで履歴が残らない。 初回 ride 選択時は mode-view が無く実害なし。
-    document.body.classList.remove('mode-view');
-    refreshModeDisplay();  // 観る → 走る に戻った ── モード表示を「走る」に更新する
-    if (typeof updatePostrideButtonVisibility === 'function') {
-      updatePostrideButtonVisibility();
+    if (_terrainPhase) {
+      _terrainPhase.subscribe((snap) => {
+        if (snap.phase === 'done') {
+          onTerrainLoaderDone();
+        } else if (snap.phase === 'failed') {
+          showTerrainLoaderError(snap.error
+            ? `地形データの読み込みに失敗しました (${snap.error})。`
+            : '地形データの読み込みに失敗しました。');
+        }
+      });
     }
-    hideIntroOverlay();
-    dispatchAfterIntro();
+  }
+
+  if (btnTerrainLoaderStart) btnTerrainLoaderStart.addEventListener('click', () => {
+    runTerrainLoaderPhase();
   });
-  if (btnIntroView) btnIntroView.addEventListener('click', () => {
-    // brief 34 ε-9: 地形 load 未完なら何もしない.
-    if (!terrainReady) return;
-    // brief 32: internal state を data-intro-state="view-selected" に立てて遷移直前を expose。
-    const ov = document.getElementById('intro-overlay');
-    if (ov) ov.dataset.introState = 'view-selected';
-    // brief 34 ε-8: 'view' mode で consent 保存 → dispatchAfterIntro で initViewMode に分岐.
-    setIntroConsent({ mode: 'view' });
-    hideIntroOverlay();
-    dispatchAfterIntro();
+  if (btnTerrainLoaderRetry) btnTerrainLoaderRetry.addEventListener('click', () => {
+    runTerrainLoaderPhase();
   });
-  // 2026-05-15 fix: setup-overlay からも「コースを観る」に切替できるボタン (= user 指摘
-  // 「コースを観るボタンが消えた」反映、 intro skip 後でも走る ↔ 観る を切替可能).
+
+  // 2026-05-15 fix: setup-overlay (= トレーナー接続画面) の「コースを観る」 ボタン。
+  // b46: 観るモードの唯一の入口に集約。 旧 intro consent への保存をやめ、
+  //   body.mode-view class を明示的に add する (= 観るモード判定の唯一の signal)。
   const btnSetupGoView = document.getElementById('btnSetupGoView');
   if (btnSetupGoView) btnSetupGoView.addEventListener('click', () => {
     if (!isActionableNow()) return;
-    setIntroConsent({ mode: 'view' });
+    document.body.classList.add('mode-view');
     document.getElementById('setup-overlay')?.classList.remove('visible');
     initViewMode();
   });
-  if (btnIntroClose) btnIntroClose.addEventListener('click', () => {
-    // 「閉じる」は consent を保存しない (= reload 時に再表示).
-    // ride / map fetch は走らせない (= 帯域消費ゼロ).
-    hideIntroOverlay();
-  });
 
-  // brief 34 ε-8: section-overlay の bind (= 「閉じる (= intro に戻る)」 button).
-  // 行クリックは renderSectionList 内で onSelect callback として inject (= initViewMode 経路).
+  // brief 34 ε-8: section-overlay の bind (= 「閉じる」 button).
+  // b46: 旧「intro overlay に戻る」 (= 走る/観る 選び直し) は撤去。 起動シーンが一本道に
+  //   なり intro overlay は地形ローダー画面に変わったため、 観るモードから「閉じる」 で
+  //   戻る先はトレーナー接続画面 (#setup-overlay)。 body.mode-view を外して走るモードへ。
   const btnSectionClose = document.getElementById('btnSectionClose');
   if (btnSectionClose) btnSectionClose.addEventListener('click', () => {
     hideSectionOverlay();
-    // intro overlay に戻る (= mode 選び直し)、 view mode の consent は残すが intro は再表示.
-    showIntroOverlay();
+    exitViewModeToSetup();
   });
   // 「区間リストに戻る」 button (= ride 中 view mode 専用) の bind.
   // ride を end して section-overlay を再表示、 別区間選び直しの導線。
@@ -1206,13 +1238,14 @@ if (typeof document !== 'undefined') {
     showSectionOverlay();
   });
 
-  // 2026-05-19: 観るモードの区間リストパネルから「最初の画面に戻る」── イントロ overlay を
-  // 再表示して走る/観るを選び直せるようにする。 観るモードに入ると右上パネルしか出ず、
-  // 走行モードへ戻る導線が無い trap を解消する。 走行中は CSS で hide (= ride 中の出口は
-  // 「区間リストに戻る」一つに絞る)。
+  // 2026-05-19: 観るモードの区間リストパネルから「最初の画面に戻る」 で走るモードへ戻る。
+  // 観るモードに入ると右上パネルしか出ず、 走行モードへ戻る導線が無い trap を解消する。
+  // 走行中は CSS で hide (= ride 中の出口は「区間リストに戻る」一つに絞る)。
+  // b46: 戻り先を intro overlay からトレーナー接続画面 (#setup-overlay) に変更
+  //   (= 起動シーン一本道化に伴い、 走る/観る 選び直し UI が消えたため)。
   const btnViewModeExit = document.getElementById('btnViewModeExit');
   if (btnViewModeExit) btnViewModeExit.addEventListener('click', () => {
-    showIntroOverlay();
+    exitViewModeToSetup();
   });
 
   // brief 34 ε-3: consent-overlay の bind. accept で flag を保存 + ride 再発火、
@@ -1241,39 +1274,6 @@ if (typeof document !== 'undefined') {
     // 何も保存しない、 ride 開始もしない (= setup 画面に戻る).
   });
 
-  // task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン (#mode-toggle) の配線。
-  // TEST_MODE は ?test の有無で起動時に決まる定数。 画面に切替入口が無く、 本番モード
-  // (= initBleMode、 実機トレーナーの BLE 接続) に移るには URL を手書きするしかなかった。
-  // 切替方式は reload 固定 ── TEST_MODE 定数はそのまま、 URL の test 引数を付け外して
-  // 再読込する (= 起動経路を最初から組み直す、 ランタイム切替の init 二重走を構造的に回避)。
-  const modeToggleBtn = document.getElementById('mode-toggle-btn');
-  // モード表示 (ラベル / ボタン文言) は画面の実モードから出す ── refreshModeDisplay が一元管理。
-  refreshModeDisplay();
-  if (modeToggleBtn) {
-    modeToggleBtn.addEventListener('click', () => {
-      // 走行中ガード: 本番モードで実走中 (= body.state-riding) は未保存の走行ログ (trkpt)
-      // がありうるため、 reload で失う旨を confirm する。 テストモードの「走行」は fake
-      // state で失う実データが無いため confirm しない (= 非対称ガード)。
-      if (!TEST_MODE && document.body.classList.contains('state-riding')) {
-        if (!window.confirm('走行中です。 モードを切り替えると現在の走行内容は失われます。 続けますか?')) {
-          return;
-        }
-      }
-      // view consent 短絡を塞ぐ: dispatchAfterIntro は getIntroConsent().mode === 'view'
-      // を TEST_MODE 判定より前に見て initViewMode へ短絡する。 localStorage に view
-      // consent が残っていると reload しても本番モード / テストモードに到達しないため、
-      // view のときだけ ride に正規化する (= 切替ボタンを押す行為はトレーナー経路の明示
-      // 選択であり、 intro gate ロジック自体は変更しない ── consent が null や ride の
-      // ときは何もしない)。
-      const ic = getIntroConsent();
-      if (ic && ic.mode === 'view') {
-        setIntroConsent({ mode: 'ride' });
-      }
-      // test 引数だけを付け外し、 他の引数 (consent=dev / debug / bridge 等) は保持して
-      // reload。 location.search への代入で再読込が走る。
-      location.search = buildToggledSearch(location.search, !TEST_MODE);
-    });
-  }
 }
 
 // brief 26b: 起動時の DB 充足度チェック → 不足なら dbinit overlay、 ready なら従来 BLE.
@@ -1282,22 +1282,14 @@ if (typeof document !== 'undefined') {
 // brief 31: bridge 不在 (= s.bridgeReachable === false) なら static mode 確定、
 // dbinit-overlay は出さず initMapMode() に直行 (= 視覚デモ完結)。
 //
-// brief 34 ε-2: 公開ガードレール introConsented guard.
-// intro 未通過 (= getIntroConsent() === null) なら static / bridge 経路どちらも
-// 走らせない (= 訪問者が「閉じる」を選んだ時に pmtiles / GSI PNG fetch を完全停止)。
-// 開発者 bypass (= ?consent=dev) は module top の CONSENT_DEV_BYPASS で吸収済、
-// この関数は dispatchAfterIntro 経由でのみ呼ばれるため、 ここでの guard は冗長 defense。
-//
 // brief 34 ε-2 (= 2026-05-15 user 方向修正反映): static mode (= GitHub Pages 公開サイト) では
 // 旧 initMapMode (= 自動 ride デモ) ではなく initBleMode に向かう。 一般訪問者は trainer
 // 持参の前提、 Web Bluetooth で自分の trainer を直接 pair する設計。
+//
+// b46: 旧 introConsented guard を撤去。 地形ロードがボタン起点になり、 配布元への
+//   タイル取得はユーザーの「開始」 押下後にしか走らないため、 この関数まで到達した
+//   時点で同意ゲートは既に通過済 ── 関数内 guard は不要になった。
 function bootCheckSetupStatus() {
-  // brief 34 ε-2: intro 未通過なら何もしない (= 二重 gate、 dispatchAfterIntro 経由で
-  // 通常呼ばれないが、 外部から直呼びされても fetch を発生させない物理 gate).
-  if (!introConsented()) {
-    showIntroOverlay();
-    return;
-  }
   // brief 31 commit β: bootEnv() で ENV (= freeze 済 immutable env) を確定してから分岐。
   // 旧 `bootMap(false)` / `bootMap(true)` の bool 直渡しを廃止、 全部 env 経由で統一。
   bootEnv().then((env) => {
@@ -1338,36 +1330,16 @@ function bootCheckSetupStatus() {
 // その結果から bootMap(bridgeReachable) を 1 回だけ呼ぶ。 map 生成は initMapMode /
 // initTestMode の入口で `if (!map) ...` 経由 (= 既存 dispatch 行のリテラルを保持)。
 //
-// brief 34 ε-2: 公開ガードレール introConsented guard.
-// `?consent=dev` のみ intro を物理 skip (= 開発者本人 bypass)、 単純な
-// `?map=1` / `?test=1` / `?ble=1` も intro 必須。 default 経路も同じ guard.
-// guard 未通過なら initMapMode / initTestMode / initBleMode / bootCheckSetupStatus を
-// 呼ばず、 intro-overlay を表示して user の click を待つ (= 「閉じる」/「試走デモ」).
-// brief 32: hostname gate 追加。 Pages origin (= `*.github.io`) で `?consent=dev` を付けても
-// bypass されないように物理 gate。 dev bypass は localhost / 127.0.0.1 でのみ有効、 production で
-// 訪問者が intro skip → consent なしで viewer → GSI/OSM タイル fetch (= 配布元規律違反) を防ぐ。
-const CONSENT_DEV_BYPASS = (
-  (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
-  new URLSearchParams(location.search).get('consent') === 'dev'
-);
-function introConsented() {
-  if (CONSENT_DEV_BYPASS) return true;
-  return getIntroConsent() !== null;
-}
-// dispatch を関数化: introConsented なら mode 別に init、 未通過なら showIntroOverlay。
-// brief 34 ε-8: getIntroConsent().mode === 'view' なら initViewMode に分岐 (= 観るモード).
-//   URL 引数 (MAP_MODE/TEST_MODE/BLE_MODE) より intro の mode 選択を優先。 そうしないと
-//   ?map=1 等を URL に残したまま「コースを観る」を選んだら view mode に入れない。
+// b46: 地形ロード完了後の起動分岐。
+// 地形データローダー画面の「開始」 押下 → 地形ロード完了 → onTerrainLoaderDone が
+// この関数を呼ぶ。 URL 引数経路 (MAP_MODE / TEST_MODE / BRIDGE_MODE = 開発者用) は維持、
+// それ以外は default 経路の initBleMode (= Web Bluetooth でトレーナー接続) へ。
+//
+// b46: 旧 intro consent (= consent.js の intro 同意記憶 / dev bypass / introConsented) と
+//   観るモード短絡 (= intro mode が view なら initViewMode へ短絡) を撤去。
+//   起動シーンは常に走るモードの一本道にした ── 観るモードはトレーナー接続画面の
+//   「コースを観る」 ボタン (#btnSetupGoView) から入る。
 function dispatchAfterIntro() {
-  // 観るモード優先 (= intro の明示選択を URL 引数より上に置く).
-  // 2026-05-15 fix: ?consent=dev で起動した時は localStorage の前回 consent (= 過去 session で
-  // 選んだ mode='view' 等) を無視、 default (= ride) で走る。 dev session で毎回 setup-overlay に
-  // 到達したい開発者の意図を満たす (= 過去訂正「最初の画面から始まらない」反映).
-  const ic = CONSENT_DEV_BYPASS ? null : getIntroConsent();
-  if (ic && ic.mode === 'view') {
-    initViewMode();
-    return;
-  }
   if (MAP_MODE) initMapMode();
   else if (TEST_MODE) initTestMode();
   // 2026-05-15 fix: default 経路を bootCheckSetupStatus (= bridge mode、 python BLE) から
@@ -1382,22 +1354,10 @@ function dispatchAfterIntro() {
 // trainer / bridge / Web Bluetooth 不要、 区間 list を表示して user の選択を待つ。
 // section 選択 → rideState.startFrom(start_idx) で fake state ride を開始、
 // 走行ログは保存しない (= IndexedDB / Strava upload を物理 disable は body.mode-view CSS + flag 経由).
-// モード表示 (#mode-toggle のラベル / ボタン文言) を画面の実モードから一元更新する。
-// 観る = ?test あり (= テスト用の裏口) もしくは観るモード起動中 (body.mode-view)。 走る = それ以外。
-// ?test の有無「だけ」を見ていた旧実装が、 観るモードを走る扱いする食い違いの原因だった。
-function refreshModeDisplay() {
-  const isView = TEST_MODE || document.body.classList.contains('mode-view');
-  const label = document.getElementById('mode-toggle-label');
-  const btn = document.getElementById('mode-toggle-btn');
-  if (label) label.textContent = isView ? MODE_LABEL_TEST : MODE_LABEL_PROD;
-  if (btn) btn.textContent = isView ? SWITCH_BTN_TO_PROD : SWITCH_BTN_TO_TEST;
-}
-
 function initViewMode() {
   if (!mapRenderer.isBooted()) { ensureMapBooted().then(() => initViewMode()); return; }
   status('VIEW MODE: 観るモード (= trainer 不要、 区間勾配を眺める)');
   document.body.classList.add('mode-view');
-  refreshModeDisplay();  // 観るモード確定 → モード表示を「観る」に更新
   // 全 overlay を hide してから section-overlay を出す (= 視覚的に他 UI を排他).
   hideDbinit();
   document.getElementById('setup-overlay')?.classList.remove('visible');
@@ -1446,15 +1406,16 @@ function initViewMode() {
 // (= intro overlay は terrain 未完でも表示してよい、 ボタンだけ disabled で「クリック不可」 を見せる).
 //
 // 監視対象ボタン (= terrainReady===false の間 disabled):
-//   - btnIntroStart   (intro 「自分の trainer で走る」)
-//   - btnIntroView    (intro 「コースを観る」)
-//   - btnTrainerScan  (= #btnScan、 setup-overlay)
-//   - btnHrmScan      (= #btnScanHrm)
-//   - btnSkip         (= 「trainer なしでデモ走行」)
+//   - btnSetupGoView  (= トレーナー接続画面の「コースを観る」)
 //   - btnRideStart    (= ride 開始、 pair 完了とも AND)
 //   - section-list の各 li (= 観るモードの区間選択)
-//   - btn-ble-trainer / btn-ble-hrm (= BLE 直接接続)
-//   - btnIntroClose は disable しない (= 単に閉じるだけは terrain 不要、 UX 配慮)
+//
+// b46: 旧 btnIntroStart / btnIntroView の terrain gate は撤去。 起動シーンを地形
+//   データローダー画面に作り変え、 地形ロードは「開始」 ボタン (btnTerrainLoaderStart)
+//   押下が起点になった ── 「開始」 ボタンを terrain gate で disable したら地形ロード
+//   自体を起動できなくなるため、 このボタンは gate 対象にしない。 トレーナー接続画面
+//   到達後の btnSetupGoView / btnRideStart / section-list は地形ロード完了済前提なので
+//   gate は残すが、 実質常に enabled (= この画面に来た時点で terrainReady===true)。
 //
 // terrainReady の保存ボタン状態 (= ride 開始は pair 完了でないと disabled の既存挙動) は維持、
 // 本 gate は AND 結合 (= terrainReady === false で問答無用 disable、 true で「他の不変条件が許せば enable」).
@@ -1485,29 +1446,15 @@ function setRideStartEnabled(enabled) {
 }
 
 function updateActionButtonsForTerrain() {
-  // intro
-  const introStart = typeof document !== 'undefined' ? document.getElementById('btnIntroStart') : null;
-  const introView = typeof document !== 'undefined' ? document.getElementById('btnIntroView') : null;
-  if (introStart) introStart.disabled = !isActionableNow();
-  if (introView) introView.disabled = !isActionableNow();
-  // 2026-05-15 fix: setup-overlay の「コースを観る」ボタンも intro view と同じ
-  // 地形 gate に乗せる (= user 指摘「観るボタンを地形 Data が揃うまで押せないようにしろ」反映).
+  // b46: 地形データローダー画面の「開始」 ボタンは地形ロードの起点なので terrain gate
+  //   しない (= disable したら起動不能になる)。 ここでは触らない。
+  // 2026-05-15 fix: トレーナー接続画面の「コースを観る」 ボタンは地形 gate に乗せる
+  //   (= user 指摘「観るボタンを地形 Data が揃うまで押せないようにしろ」反映).
   const setupGoView = typeof document !== 'undefined' ? document.getElementById('btnSetupGoView') : null;
   if (setupGoView) setupGoView.disabled = !isActionableNow();
-  // setup
-  const btnScan = typeof document !== 'undefined' ? document.getElementById('btnScan') : null;
-  const btnScanHrm = typeof document !== 'undefined' ? document.getElementById('btnScanHrm') : null;
-  const btnSkip = typeof document !== 'undefined' ? document.getElementById('btnSkip') : null;
-  // 2026-05-15 fix (user 怒り): scan 系は地形と無関係、 disabled 制御から外す。
+  // 2026-05-15 fix (user 怒り): scan / BLE 系は地形と無関係、 disabled 制御から外す。
   // trainer / 心拍計 pair は走行と独立した話、 地形 load 完了を待たせる理由がない。
-  // 「trainer なしでデモ走行」だけ走行系なので地形必須維持。
-  if (btnSkip) btnSkip.disabled = !isActionableNow();
-  // btnScan / btnScanHrm は元の挙動に戻す (= HTML default、 viewer が他の経路で制御).
-  // BLE
-  const btnBleTrainer = typeof document !== 'undefined' ? document.getElementById('btn-ble-trainer') : null;
-  const btnBleHrm = typeof document !== 'undefined' ? document.getElementById('btn-ble-hrm') : null;
-  // 2026-05-15 fix: BLE 系も scan 同様、 trainer pair 自体は地形と無関係、 disabled 解除。
-  // (元の HTML default state に任せる、 viewer 内の他経路で必要時に制御)
+  // btnScan / btnScanHrm / btn-ble-* は HTML default に任せる (= viewer が他経路で制御).
   // ride start: terrainReady === false なら強制 disable、 true なら pair 通過済の場合のみ enable.
   // ride start: terrainReady && mapFullyLoaded && pair 完了 が揃った時だけ enable。
   // どの条件が欠けても disabled (= actionable だが pair 未完なら disabled のまま、 既存挙動と等価:
@@ -1594,30 +1541,38 @@ function startTerrainPhase() {
   });
   return phase;
 }
-// 起動直後 1 回. test 環境 (= window 不在 / fetch 不在) では try/catch で silent skip.
+// b46: 地形ロードの起点を module-top 自動起動から「開始」 ボタン押下へ移した。
+// 旧コードは module 評価時に startTerrainPhase() を呼び、 ユーザー操作と無関係に
+// GSI / pmtiles を叩いていた (= intro 表示中に既に配布元へアクセス済)。
+// 新コードでは地形データローダー画面の「開始」 ボタン click handler
+// (= runTerrainLoaderPhase) からのみ startTerrainPhase() を呼ぶ ── 配布元への
+// タイル取得がユーザーの明示操作の後だけになる (= b46 の同意ゲート実体化)。
+// _terrainPhase は runTerrainLoaderPhase 内で代入される (= startTerrainPhase の結果)。
 let _terrainPhase = null;
-if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
-  // brief 35: terrain phase の起動と同時にロード overlay を visible 化、 intro overlay 表示中の
-  // 沈黙期間にも「動いている」 を訪問者に見せる。 showLoadingOverlay は SKIP_TERRAIN (= ?noterrain)
-  // のとき自前で early-return するため、 skip 経路では overlay は出ない (= 配布元を叩かない経路と
-  // overlay 非表示が一致)。
-  try { showLoadingOverlay('idle'); } catch (e) { /* document 不在等 silent */ }
-  try { _terrainPhase = startTerrainPhase(); } catch (e) { console.warn('[fujihill] terrain phase init failed:', e); }
-}
 
 // 起動時の未完了 ride 復元 dialog。
 // 2026-05-18 (ユーザー指示): 復元機能は中身が未完成で実質機能していないため、 起動時に
 // dialog を出さない。 checkRestoreThenDispatch は復元チェックを skip し、 通常起動
-// (= defaultDispatch → dispatchAfterIntro → トレーナー接続 pairing 画面) に直行する。
+// (= defaultDispatch → 地形データローダー画面) に直行する。
 // 下の autosave 検査コード・showRestoreDialog・applyPendingRestore は、 復元機能が
 // 完成した時に再有効化するため削除せず残す (= SKIP_RESTORE を false に戻せば復活)。
 // 復元有効時の旧条件: new URLSearchParams(location.search).get('nopreflight') === '1'
 const SKIP_RESTORE = true;
+// b46: 起動シーンの第一段。 地形データローダー画面を表示してユーザーの「開始」 押下を
+//   待つ。 旧コードは introConsented() を見て consent 済なら dispatchAfterIntro へ直行
+//   していたが、 起動シーンを一本道にした (= 同意記憶による分岐を撤去)。
+//   開発者用 URL 引数経路 (?map / ?test / ?ble / ?bridge) は地形ローダー画面を介さず
+//   即起動するため、 地形ロードもここで起動してから dispatchAfterIntro へ ──
+//   本人の動作確認 path を保つ (= 一般訪問者は「開始」 ボタン経由のみ)。
 function defaultDispatch() {
-  if (introConsented()) {
+  if (MAP_MODE || TEST_MODE || BLE_MODE || BRIDGE_MODE) {
+    if (typeof window !== 'undefined' && typeof globalThis.fetch === 'function') {
+      try { showLoadingOverlay('idle'); } catch (e) { /* document 不在等 silent */ }
+      try { _terrainPhase = startTerrainPhase(); } catch (e) { console.warn('[fujihill] terrain phase init failed:', e); }
+    }
     dispatchAfterIntro();
   } else {
-    showIntroOverlay();
+    showTerrainLoader();
   }
 }
 async function checkRestoreThenDispatch() {
@@ -1826,13 +1781,14 @@ function proceedFromDbinit() {
 }
 
 function closeDbinit() {
-  // dbinit overlay を閉じる + intro overlay を再表示 (= 「もうやめる、 最初に戻る」)。
-  // setIntroConsent は cleared、 user は intro から走る / 観る / 閉じる を再選択できる。
+  // dbinit overlay を閉じる (= 「もうやめる」)。
+  // b46: 旧「intro overlay を再表示」 は撤去。 起動シーン一本道化で intro overlay は
+  //   地形ローダー画面 (= 地形ロード前の画面) に変わり、 地形ロード済の dbinit から
+  //   そこへ戻すのは不整合。 戻り先はトレーナー接続画面 (#setup-overlay)。
   _advancedFromDbinit = false;
   hideDbinit();
-  setAppState('checking');
-  // intro を出して訪問者が選び直せる状態に戻す。
-  showIntroOverlay();
+  setAppState('pairing');
+  document.getElementById('setup-overlay')?.classList.add('visible');
 }
 
 // === コース読み込み ===
@@ -2653,16 +2609,16 @@ bindPostRideButtons({
   getTrkpts: () => (rideState ? rideState.getTrkpts() : []),
   getSummary: () => buildRideSummary(rideState, []),
   getCourseName: () => 'fujihill',
-  // brief 34 ε-3: IndexedDB 書込を consent flag で guard (= history consent off なら no-op).
-  // brief 34 ε-8: 「観る」モード (= intro consent mode === 'view') も二重 guard (= 観るは記録対象外).
+  // brief 34 ε-3: IndexedDB 書込を guard (= 観るモードは記録対象外なら no-op).
+  // b46: 観るモード判定を intro consent (= 旧 intro mode === 'view') から
+  //   body.classList.contains('mode-view') へ移行。 観るモードの唯一の判定 signal。
   // 2026-05-15 fix: 保存できなかった時は false を返して caller (= postride_buttons.js) 側で
   // 「履歴に保存しました」の overwrite を抑止する (= 旧 実装は silent skip でも success 文言
   // を上書きしてしまい、 user が「保存できたつもり」になる bug があった).
   // 2026-05-15 fix: 履歴同意 gate を廃止。 観るモードだけは記録対象外で残す
   // (= 区間勾配を眺めるための仮想 ride、 走行記録ではない).
   addRide: async (rec) => {
-    const ic = getIntroConsent();
-    if (ic && ic.mode === 'view') {
+    if (document.body.classList.contains('mode-view')) {
       setPostrideStatus('観るモードは記録対象外です (= 走行ログ保存なし).');
       return false;
     }
@@ -2670,14 +2626,13 @@ bindPostRideButtons({
     await rideDbAdd(db, rec);
     return true;
   },
-  // brief 34 ε-3: Strava 機能を consent flag で guard (= strava consent off なら client_id を返さない).
-  // brief 34 ε-8: 「観る」モードも上書きで disable (= 観るは Strava upload 対象外).
+  // brief 34 ε-3: Strava 機能を guard (= 観るモードは client_id を返さない).
+  // b46: 観るモード判定を body.classList.contains('mode-view') へ移行 (= 上記 addRide と同様)。
   // getClientId が null を返せば postride_buttons.js 側で「client_id 未設定」の status が出る。
   // 2026-05-15 fix: Strava 同意 gate を廃止。 観るモードだけは Strava 非対応で残す。
   // user が「Strava にアップロード」 button を押した事自体が意思表示。
   getClientId: () => {
-    const ic = getIntroConsent();
-    if (ic && ic.mode === 'view') return null;
+    if (document.body.classList.contains('mode-view')) return null;
     return getStravaClientId();
   },
   getRedirectUri: getStravaRedirectUri,
@@ -2685,14 +2640,12 @@ bindPostRideButtons({
   onStatus: setPostrideStatus,
 });
 
-// brief 34 ε-3: Strava upload / save history button を consent flag で表示制御 (= 視覚的にも明示).
-// 2026-05-19 fix: addRide guard が「観るモードのみ block」に簡略化済 (2026-05-15) なのに、
-// ここだけ getRideConsent('history') を見ていた不整合を修正。
+// brief 34 ε-3: Strava upload / save history button を表示制御 (= 視覚的にも明示).
+// b46: 観るモード判定を intro consent から body.classList.contains('mode-view') へ移行。
 // btnSaveHistory は view mode のみ hide (= 走行記録は view モード対象外)。
 // btnStravaUpload は strava consent (= OAuth client_id 設定) が前提なので変更なし。
 function updatePostrideButtonVisibility() {
-  const ic = getIntroConsent();
-  const isViewMode = !!(ic && ic.mode === 'view');
+  const isViewMode = document.body.classList.contains('mode-view');
   const stravaOk = getRideConsent('strava');
   const btnSave = document.getElementById('btnSaveHistory');
   const btnStrava = document.getElementById('btnStravaUpload');
@@ -2886,14 +2839,15 @@ if (btnClearConfirm) btnClearConfirm.addEventListener('click', async () => {
 const btnClearDoneOk = document.getElementById('btnClearDoneOk');
 if (btnClearDoneOk) btnClearDoneOk.addEventListener('click', () => {
   hideClearDone();
-  // intro overlay からやり直し (= consent が削除済なので introConsented() === false).
-  // 全 overlay を hide + setAppState('checking') + showIntroOverlay.
+  // b46: 全データ削除後は起動シーンの第一段 (= 地形データローダー画面) からやり直す。
+  //   全 overlay を hide + setAppState('checking') + showTerrainLoader。
   document.getElementById('setup-overlay')?.classList.remove('visible');
   document.getElementById('postride-overlay')?.classList.remove('visible');
   document.getElementById('consent-overlay')?.classList.remove('visible');
+  document.body.classList.remove('mode-view');  // 観るモード状態もリセット
   hideConsentOverlay();
   setAppState('checking');
-  showIntroOverlay();
+  showTerrainLoader();
 });
 
 // oauth-callback.html から postMessage で完了通知が来る (= 別 tab 経路).

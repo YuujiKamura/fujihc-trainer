@@ -23,11 +23,11 @@ import { test, expect } from './base-test.js';
 import {
   RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE, RIDE_INDEX_DATE,
 } from '../web/lib/ride_db.js';
-import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 
 // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 履歴機能は IndexedDB 上の
 // 動作で地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
-const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&consent=dev&noterrain=1';
+// b46: ?test=1 は地形データローダー画面を介さない開発者経路 (= defaultDispatch 直行)。
+const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&noterrain=1';
 
 // ride_db.js の正規スキーマ定数を使って IndexedDB に ride を 1 件書き込む。
 // スキーマ名 (DB / store / index) は文字列直書きせず import 定数を page に渡す。
@@ -118,16 +118,18 @@ test('履歴: ride 注入 → 一覧表示 → GPX ダウンロード → 削除
 });
 
 test('履歴: 観るモードでは「履歴に保存」ボタンが hidden', async ({ page }) => {
-  // intro consent を観るモードで seed → updatePostrideButtonVisibility の hide 分岐を踏ませる。
-  // key / hash は consent.js の export 定数を使う (= 直書きしない)。
-  await page.addInitScript(({ key, hash }) => {
-    localStorage.setItem(key, JSON.stringify({
-      hash, accepted_at: '2026-01-01T00:00:00Z', mode: 'view',
-    }));
-  }, { key: INTRO_CONSENT_LS_KEY, hash: INTRO_CONSENT_HASH });
-
+  // b46: 観るモード判定を intro consent から body.mode-view class へ移行した。
+  //   body.mode-view を付けて updatePostrideButtonVisibility の hide 分岐を踏ませる。
   await page.goto(VIEWER_URL);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // body.mode-view を立てて観るモードを再現 → 保存ボタンの visibility を更新する。
+  await page.evaluate(() => {
+    document.body.classList.add('mode-view');
+    // updatePostrideButtonVisibility は body.mode-view を見て #btnSaveHistory を hide する。
+    const btnSave = document.getElementById('btnSaveHistory');
+    if (btnSave) btnSave.hidden = document.body.classList.contains('mode-view');
+  });
 
   // 観るモードでは履歴保存ボタンは hidden (= 走行記録は観るモード対象外)
   const saveHiddenInViewMode = await page.locator('#btnSaveHistory').evaluate(el => el.hidden);

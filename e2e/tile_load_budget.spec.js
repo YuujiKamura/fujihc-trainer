@@ -17,7 +17,6 @@
 // として読む。
 
 import { test, expect } from './base-test.js';
-import { INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY } from '../web/lib/consent.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/';
 const GSI_ORIGIN = 'https://cyberjapandata.gsi.go.jp';
@@ -74,13 +73,21 @@ async function setupOsmIntercept(page) {
   return { get fetchedUrls() { return fetchedUrls; } };
 }
 
-// view モード consent を localStorage に seed (= 観るモードに直行、 BLE 系を経由しない)。
-async function seedViewMode(page) {
-  await page.addInitScript(({ key, hash }) => {
-    localStorage.setItem(key, JSON.stringify({
-      hash, accepted_at: '2026-01-01T00:00:00Z', mode: 'view',
-    }));
-  }, { key: INTRO_CONSENT_LS_KEY, hash: INTRO_CONSENT_HASH });
+// b46: 観るモードへ入る共通ジャーニー。 旧コードは intro consent (mode='view') を
+//   localStorage に seed して観るモードへ直行していたが、 b46 で起動シーンを地形
+//   データローダー画面の一本道に作り変え、 観るモードはトレーナー接続画面の
+//   「コースを観る」 ボタンからのみ入る。 本関数は VIEWER_URL を開いて
+//   地形ローダー画面の「開始」 → 地形ロード完了 → トレーナー接続画面 →
+//   「コースを観る」 を踏み、 body.mode-view に到達するまでを担う。
+async function gotoViewMode(page) {
+  await page.goto(VIEWER_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  // 「開始」 押下で地形ロード起動 → 完了でトレーナー接続画面 (#setup-overlay) へ。
+  await page.locator('#btnTerrainLoaderStart').click();
+  await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 60_000 });
+  // トレーナー接続画面の「コースを観る」 で観るモードへ入る。
+  await expect(page.locator('#btnSetupGoView')).toBeEnabled({ timeout: 30_000 });
+  await page.locator('#btnSetupGoView').click();
 }
 
 // IndexedDB の TileCache (= fujihc-tile-cache) を test 開始時に空にする。
@@ -119,8 +126,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     // 観るモード state まで到達 = 地形 probe + viewer 起動が完了している証拠
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     // 地形メッシュ load 完了まで余裕を持って待つ (= loadDemStitched + loadPhotoCanvas の取得分)
@@ -137,8 +143,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForTimeout(5000);
     console.log(`[b31-budget] GSI concurrent max = ${gsi.concurrentMax}`);
@@ -150,17 +155,17 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
     // 1 回目 = TileCache 空、 GSI から取得して IndexedDB に保存
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForTimeout(5000);
     const firstFetchCount = gsi.fetchedUrls.length;
     expect(firstFetchCount).toBeGreaterThan(0);
 
-    // 2 回目 = page.reload (= 同 origin、 IndexedDB は永続)
+    // 2 回目 = 同 origin に再訪 (= IndexedDB は永続)。 b46 で起動シーンが一本道に
+    // なったため reload では地形ローダー画面に戻る ── 観るモードへは journey を再度踏む。
     // 再 fetch がゼロなら TTL 内 cache hit が効いている (= 配布元への再アクセスなし)
-    await page.reload();
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForTimeout(5000);
     const totalAfterReload = gsi.fetchedUrls.length;
@@ -173,8 +178,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForTimeout(5000);
     const banned = gsi.fetchedUrls.filter((u) =>
@@ -191,8 +195,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     await simulatePagesNoBridge(page);
     const osm = await setupOsmIntercept(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForTimeout(5000);
     console.log(`[b31-budget] OSM direct fetches = ${osm.fetchedUrls.length}`);
@@ -203,8 +206,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     // task-g Round 2 で landed の `#attrib` 要素、 z-index 2001 で全 overlay より上、
     // 全 state で常時可視。 view モード state でも visible を維持する。
@@ -261,8 +263,7 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     // overlay が done state に到達 (= 全タイル取得完了 + map.idle or 8s fallback)
     await page.waitForFunction(() => {
@@ -285,9 +286,8 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     const gsi = await setupGsiIntercept(page);
     await simulatePagesNoBridge(page);
     await clearTileCacheOnce(page);
-    await seedViewMode(page);
     // 1 回目: cache 充填
-    await page.goto(VIEWER_URL);
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForFunction(() => {
       const el = document.getElementById('loading-indicator');
@@ -295,8 +295,8 @@ test.describe('b31: 配布元負荷の実走テスト', () => {
     }, { timeout: 60_000 });
     const firstDemFetches = gsi.fetchedUrls.filter((u) => u.includes('/xyz/dem_png/')).length;
     expect(firstDemFetches, '1 回目は cache 空、 GSI DEM fetch が走る').toBeGreaterThan(0);
-    // 2 回目: reload で cache hit
-    await page.reload();
+    // 2 回目: 再訪で cache hit。 b46 で起動シーンが一本道のため journey を再度踏む。
+    await gotoViewMode(page);
     await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 30_000 });
     await page.waitForFunction(() => {
       const el = document.getElementById('loading-indicator');

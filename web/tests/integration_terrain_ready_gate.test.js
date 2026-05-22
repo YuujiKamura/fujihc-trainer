@@ -196,20 +196,26 @@ describe('brief 34 ε-9 integration: viewer source 構造', () => {
     const m = viewer.match(/function\s+updateActionButtonsForTerrain\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    expect(body).toMatch(/btnIntroStart/);
-    expect(body).toMatch(/btnIntroView/);
-    expect(body).toMatch(/btnScan['"]/);
-    expect(body).toMatch(/btnScanHrm/);
-    expect(body).toMatch(/btnSkip/);
+    // b46: 旧 btnIntroStart / btnIntroView の terrain gate は撤去 (= 起動シーンを地形
+    //   データローダー画面に作り変え、 「開始」 ボタンは地形ロードの起点なので gate しない)。
+    //   トレーナー接続画面の「コースを観る」 ボタン (btnSetupGoView) の gate は残る。
+    expect(body).toMatch(/btnSetupGoView/);
+    expect(body).not.toMatch(/btnIntroStart/);
     // ride start は単一窓口 setRideStartEnabled に集約 (= btnRideStart.disabled + hint 同期).
     expect(body).toMatch(/setRideStartEnabled/);
     expect(body).toMatch(/\.disabled\s*=/);
   });
 
-  it('btnIntroStart / btnIntroView の click handler に terrainReady === false 短絡', () => {
-    // btnIntroStart の click 内に「if (!terrainReady) return」がある
-    expect(viewer).toMatch(/btnIntroStart\.addEventListener\(['"]click['"][\s\S]{0,200}if\s*\(\s*!terrainReady\s*\)\s*return/);
-    expect(viewer).toMatch(/btnIntroView\.addEventListener\(['"]click['"][\s\S]{0,200}if\s*\(\s*!terrainReady\s*\)\s*return/);
+  it('地形データローダー画面の「開始」 ボタン (btnTerrainLoaderStart) は terrain gate されない (= b46、 地形ロードの起点)', () => {
+    // 「開始」 ボタンを terrain gate で disable したら地形ロードを起動できなくなる。
+    // updateActionButtonsForTerrain が btnTerrainLoaderStart を disabled 操作しないこと。
+    const m = viewer.match(/function\s+updateActionButtonsForTerrain\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
+    expect(m).not.toBeNull();
+    expect(m[0]).not.toMatch(/btnTerrainLoaderStart/);
+  });
+
+  it('btnTerrainLoaderStart の click handler が runTerrainLoaderPhase を呼ぶ (= b46、 地形ロード起点)', () => {
+    expect(viewer).toMatch(/btnTerrainLoaderStart\.addEventListener\(['"]click['"][\s\S]{0,120}runTerrainLoaderPhase\(\)/);
   });
 
   it('走行系 (btnRideStart) の handler に地形 gate 短絡 (2026-05-15 narrow: scan 系は地形と無関係で gate 不要、 btnSkip は撤去済)', () => {

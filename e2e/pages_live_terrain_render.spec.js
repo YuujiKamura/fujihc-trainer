@@ -41,11 +41,14 @@ test('Pages live: 「コースを観る」 click 後に view モードに到達�
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await page.screenshot({ path: `${OUTDIR}/01-intro-overlay.png`, fullPage: false });
 
-  // terrain probe done で button enable まで待つ
-  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 30_000 });
-  await page.screenshot({ path: `${OUTDIR}/02-button-enabled.png`, fullPage: false });
+  // b46: 「開始」 押下で地形ロード起動 → 完了でトレーナー接続画面 (#setup-overlay) へ。
+  await page.locator('#btnTerrainLoaderStart').click();
+  await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 60_000 });
+  await page.screenshot({ path: `${OUTDIR}/02-setup-overlay.png`, fullPage: false });
 
-  await page.locator('#btnIntroView').click();
+  // トレーナー接続画面の「コースを観る」 で観るモードへ入る (= 地形 mesh 描画を観る)。
+  await expect(page.locator('#btnSetupGoView')).toBeEnabled({ timeout: 30_000 });
+  await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 10_000 });
   await page.waitForTimeout(8000);  // map.idle + mesh build までの猶予
   await page.screenshot({ path: `${OUTDIR}/03-after-view-click.png`, fullPage: false });
@@ -94,9 +97,12 @@ test('Pages live: 初回 fresh load (= cache 全 clear) で地形 mesh が canva
   // 再度 navigate で fresh state を確定 (= SW unregister 後の clean load)。
   await page.goto(`${PAGES_URL}?_fresh=${Date.now()}`);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
-  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 60_000 });
-  await page.screenshot({ path: `${OUTDIR}/fresh-01-button-enabled.png` });
-  await page.locator('#btnIntroView').click();
+  // b46: 「開始」 押下で地形ロード → 完了でトレーナー接続画面 → 「コースを観る」 で観るモード。
+  await page.locator('#btnTerrainLoaderStart').click();
+  await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 90_000 });
+  await page.screenshot({ path: `${OUTDIR}/fresh-01-setup-overlay.png` });
+  await expect(page.locator('#btnSetupGoView')).toBeEnabled({ timeout: 30_000 });
+  await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 10_000 });
   await page.waitForTimeout(10_000);
   await page.screenshot({ path: `${OUTDIR}/fresh-02-after-view-click.png` });
@@ -108,8 +114,11 @@ test('Pages live: 初回 fresh load (= cache 全 clear) で地形 mesh が canva
 test('Pages live: 再訪 (= cache hit) でも地形 mesh が canvas に描画される', async ({ page }) => {
   // 1 回目: cache 充填まで走らせる
   await page.goto(PAGES_URL);
-  await expect(page.locator('#btnIntroView')).toBeEnabled({ timeout: 60_000 });
-  await page.locator('#btnIntroView').click();
+  // b46: 「開始」 → 地形ロード → トレーナー接続画面 → 「コースを観る」 で観るモード。
+  await page.locator('#btnTerrainLoaderStart').click();
+  await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 90_000 });
+  await expect(page.locator('#btnSetupGoView')).toBeEnabled({ timeout: 30_000 });
+  await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 10_000 });
   await page.waitForTimeout(8_000);
   await page.screenshot({ path: `${OUTDIR}/cache-01-first-visit-rendered.png` });
@@ -117,8 +126,13 @@ test('Pages live: 再訪 (= cache hit) でも地形 mesh が canvas に描画さ
   console.log(`[cache 1st] viewport screenshot bytes = ${firstBytes.length}`);
   expect(firstBytes.length, '1 回目で地形描画').toBeGreaterThan(RENDERED_SIZE_THRESHOLD);
 
-  // 2 回目: reload で IndexedDB cache hit、 即時描画
-  await page.reload();
+  // 2 回目: 再訪で IndexedDB cache hit。 b46 で起動シーンが一本道のため journey を再度踏む。
+  await page.goto(PAGES_URL);
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await page.locator('#btnTerrainLoaderStart').click();
+  await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 60_000 });
+  await expect(page.locator('#btnSetupGoView')).toBeEnabled({ timeout: 30_000 });
+  await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 20_000 });
   await page.waitForTimeout(5_000);
   await page.screenshot({ path: `${OUTDIR}/cache-02-second-visit-rendered.png` });

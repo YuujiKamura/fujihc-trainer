@@ -61,12 +61,12 @@ test('地図タイルの帰属表示 (#attrib) が riding 画面で可視、 GSI
   await expect(attrib.locator('a[href*="maps.gsi.go.jp/development/ichiran.html"]')).toHaveCount(1);
 });
 
-test('brief 32: 帰属表示 (#attrib) が intro overlay 表示中も可視 (= overlay z-index 1450 < attrib z-index 2001)', async ({ page }) => {
-  // consent skip 無しで goto → intro overlay が表示される state-checking 状態 → #attrib が
-  // overlay の下に隠れないことを pin (= GSI 利用規約「出典クレジット必須」 + brief 32 軸 7 要件、
-  // overlay 表示中も配布元出典は visible である規律の物理化)。
+test('brief 32 / b46: 帰属表示 (#attrib) が地形データローダー画面表示中も可視 (= overlay z-index 1450 < attrib z-index 2001)', async ({ page }) => {
+  // b46: 起動シーンの第一段は地形データローダー画面 (= #intro-overlay の DOM 枠を再利用)。
+  //   この画面表示中も #attrib が overlay の下に隠れないことを pin (= GSI 利用規約
+  //   「出典クレジット必須」 + brief 32 軸 7 要件)。
   // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 #attrib の可視性は
-  // intro overlay 表示中も地形と無関係なので、 地形ゼロでこのテストは成立する。
+  //   地形データローダー画面表示中も地形と無関係なので、 地形ゼロでこのテストは成立する。
   await page.goto('http://127.0.0.1:8000/?noterrain=1');
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
 

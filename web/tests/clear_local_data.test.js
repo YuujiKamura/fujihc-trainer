@@ -154,8 +154,9 @@ describe('brief 34 ε-5 viewer source: 確認 dialog 必須 + 完了 dialog + in
     expect(body).not.toMatch(/clearAllLocalData\(/);
   });
 
-  it('btnClearDoneOk click で intro overlay からやり直し (= showIntroOverlay 呼出)', () => {
-    expect(viewer).toMatch(/btnClearDoneOk\.addEventListener[\s\S]{0,800}setAppState\(['"]checking['"]\)[\s\S]{0,300}showIntroOverlay\(/);
+  it('btnClearDoneOk click で地形データローダー画面からやり直し (= b46、 showTerrainLoader 呼出)', () => {
+    // b46: 全データ削除後の「やり直し」 先を intro overlay から地形データローダー画面へ。
+    expect(viewer).toMatch(/btnClearDoneOk\.addEventListener[\s\S]{0,800}setAppState\(['"]checking['"]\)[\s\S]{0,300}showTerrainLoader\(/);
   });
 
   it('index.html に「全データを削除」セクション + 2 確認 overlay が存在', () => {
@@ -179,25 +180,36 @@ describe('brief 34 ε-5 viewer source: 確認 dialog 必須 + 完了 dialog + in
   });
 });
 
-describe('brief 34 ε-5 integration: 削除完了後の intro やり直し state', () => {
+describe('brief 34 ε-5 / b46 integration: 削除完了後のやり直し state', () => {
   it('cancel パスで data 保持 (= behavioral test、 B 軸 7 (c) 対策)', async () => {
     const ls = memStorage();
-    ls.setItem('fujihill.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
+    ls.setItem('fujihill.consent.ride.v1', JSON.stringify({ hash: 'v1', history: true }));
     // cancel 経路は viewer の btnClearCancel handler 内で clearAllLocalData を呼ばない設計.
     // → ls はそのまま、 IndexedDB も touch されない.
-    // (実装は別 fixture なので、 ここは「呼ばれない」を viewer source 上で pin 済 = 上記 grep test)
     expect(ls._size()).toBe(1);
-    expect(ls._has('fujihill.consent.intro.v1')).toBe(true);
+    expect(ls._has('fujihill.consent.ride.v1')).toBe(true);
   });
 
-  it('削除実行後、 getIntroConsent は null を返す (= intro やり直しの前提条件)', async () => {
+  it('削除実行後、 ride consent も含め localStorage が空になる (= やり直しの前提条件)', async () => {
+    // b46: intro consent は consent.js から撤去済。 削除後の state は ride consent で pin。
+    //   旧ユーザの死にキー 'fujihill.consent.intro.v1' も clear() / 既知 key 列挙で掃除される。
     const ls = memStorage();
+    ls.setItem('fujihill.consent.ride.v1', JSON.stringify({ hash: 'v1', history: true }));
     ls.setItem('fujihill.consent.intro.v1', JSON.stringify({ hash: 'v1', accepted_at: 'x' }));
-    const { getIntroConsent } = await import('../lib/consent.js');
-    expect(getIntroConsent({ storage: ls })).toBe(null);  // hash 'v1' は CURRENT INTRO_CONSENT_HASH と不一致
-    // 一致 hash で再保存しても、 clear 後は消えてる前提
+    expect(ls._size()).toBe(2);
     await clearAllLocalData({ storage: ls });
-    expect(getIntroConsent({ storage: ls })).toBe(null);
+    expect(ls._size()).toBe(0);
+    const { getRideConsent } = await import('../lib/consent.js');
+    expect(getRideConsent('history', { storage: ls })).toBe(false);
+  });
+
+  it('clear_local_data.js の purge list に旧 intro key が残る (= b46、 死にキー掃除のため意図的に維持)', async () => {
+    // b46: consent.js から intro consent を撤去した後も、 旧ユーザの localStorage に
+    //   残る 'fujihill.consent.intro.v1' を掃除し続けられるよう purge list に残す。
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'lib', 'clear_local_data.js'), 'utf8');
+    expect(src).toMatch(/'fujihill\.consent\.intro\.v1'/);
   });
 });
 

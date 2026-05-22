@@ -63,18 +63,21 @@ test('Pages live: GSI direct DEM タイルが 200 + PNG で返る (= 訪問者�
   }
 });
 
-test('Pages live: viewer 起動でイントロ overlay が表示される', async ({ page }) => {
+test('Pages live: viewer 起動で地形データローダー画面が表示される', async ({ page }) => {
+  // b46: 起動シーンの第一段は地形データローダー画面 (= #intro-overlay の DOM 枠を再利用)。
   await page.goto(PAGES_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await expect(page.locator('#intro-overlay')).toContainText('どこでも富士ヒル');
-  await expect(page.locator('#intro-overlay')).toContainText('.github.io');
+  await expect(page.locator('#btnTerrainLoaderStart')).toBeVisible();
 });
 
-test('Pages live: b35 ロード overlay が click 前の terrain probe 中に visible 化する (= 2026-05-20 fix の物理 verify)', async ({ page }) => {
+test('Pages live: 「開始」 押下で terrain probe が走りロード overlay が visible 化する', async ({ page }) => {
+  // b46: 地形ロードの起点を module-top 自動起動から「開始」 ボタン押下へ移した。
+  //   「開始」 を押すと startTerrainPhase が走り → showLoadingOverlay 発火 →
+  //   #loading-indicator が visible class を獲得する (= 配布元への取得がユーザー操作の後)。
   await page.goto(PAGES_URL);
-  // intro overlay 表示と並行に、 module top で startTerrainProbe が走る → showLoadingOverlay 発火 →
-  // #loading-indicator が visible class を獲得する。 訪問者は intro panel と進捗 overlay を同時に
-  // 見ることになる (= 「動いている」 signal、 brief 35 R3 完了条件の核)。
+  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
+  await page.locator('#btnTerrainLoaderStart').click();
   await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 15_000 });
   await expect(page.locator('#loading-indicator')).toContainText('地形タイルを取得中');
 });

@@ -482,10 +482,12 @@ describe('_site/ 配信物の規律 (= brief 33)', () => {
     expect(policy).toMatch(/base-uri 'self'/);             // base tag 改竄防止
   });
 
-  it('_site/sw.js の CACHE_NAME が bump 済 (= 軸 6 NG-R2-1 fix、 v13 → v14)', () => {
+  it('_site/sw.js の CACHE_NAME が bump 済 (= 軸 6 NG-R2-1、 b46 で v19)', () => {
+    // b46: index.html / viewer-maplibre.js を改変したので sw.js の CACHE_NAME を bump。
+    //   _site/sw.js は scripts/build_pages.py が web/sw.js から再生成する build artifact。
     const sw = readFileSync(resolve(SITE_DIR, 'sw.js'), 'utf8');
-    expect(sw).toMatch(/CACHE_NAME = 'fujihill-v14'/);
-    expect(sw).not.toMatch(/CACHE_NAME = 'fujihill-v13'/);
+    expect(sw).toMatch(/CACHE_NAME = 'fujihill-v19'/);
+    expect(sw).not.toMatch(/CACHE_NAME = 'fujihill-v18'/);
   });
 
   it('残すもの = Web Bluetooth consent が _site/index.html に保持されている (= 過削除防止)', () => {

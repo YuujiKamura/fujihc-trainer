@@ -1,11 +1,13 @@
-// brief 34 atom ε: consent module の unit test (= localStorage mock).
-// 3 経路 (= hash 一致 / hash 不一致 / 不在) + intro/ride 両方を pin.
+// brief 34 atom ε / b46: consent module の unit test (= localStorage mock).
+// 3 経路 (= hash 一致 / hash 不一致 / 不在) を ride consent で pin。
+// b46: intro consent (= getIntroConsent / setIntroConsent / clearIntroConsent) は
+//   consent.js から撤去された (= 起動シーンを地形データローダー画面の一本道に
+//   作り変え、 「説明を見た」 を localStorage に版管理する仕組みが不要になった)。
+//   intro consent の unit test と HTML grep gate の intro 部分はこの test から削除。
 
 import { describe, it, expect } from 'vitest';
 import {
-  INTRO_CONSENT_HASH, INTRO_CONSENT_LS_KEY,
   RIDE_CONSENT_HASH, RIDE_CONSENT_LS_KEY,
-  getIntroConsent, setIntroConsent, clearIntroConsent,
   getRideConsent, setRideConsent, clearRideConsent,
 } from '../lib/consent.js';
 
@@ -18,48 +20,6 @@ function memStorage() {
     _dump() { return [...m.entries()]; },
   };
 }
-
-describe('brief 34 ε-1: intro consent (= hash 版管理)', () => {
-  it('未設定なら getIntroConsent は null (= 不在経路)', () => {
-    const ls = memStorage();
-    expect(getIntroConsent({ storage: ls })).toBe(null);
-  });
-
-  it('setIntroConsent → getIntroConsent で hash 一致値が返る (= 一致経路)', () => {
-    const ls = memStorage();
-    const now = () => new Date('2026-05-15T10:00:00Z');
-    setIntroConsent({ storage: ls, now });
-    const v = getIntroConsent({ storage: ls });
-    expect(v).not.toBeNull();
-    expect(v.hash).toBe(INTRO_CONSENT_HASH);
-    expect(v.accepted_at).toBe('2026-05-15T10:00:00.000Z');
-  });
-
-  it('hash 不一致 (= 旧版 / 改竄) なら getIntroConsent は null (= 不一致経路)', () => {
-    const ls = memStorage();
-    ls.setItem(INTRO_CONSENT_LS_KEY, JSON.stringify({
-      hash: 'older-or-tampered-hash',
-      accepted_at: '2026-05-01T00:00:00.000Z',
-    }));
-    expect(getIntroConsent({ storage: ls })).toBe(null);
-  });
-
-  it('壊れた JSON / 非 object なら getIntroConsent は null (= 防御)', () => {
-    const ls = memStorage();
-    ls.setItem(INTRO_CONSENT_LS_KEY, '{not-json');
-    expect(getIntroConsent({ storage: ls })).toBe(null);
-    ls.setItem(INTRO_CONSENT_LS_KEY, '"just-a-string"');
-    expect(getIntroConsent({ storage: ls })).toBe(null);
-  });
-
-  it('clearIntroConsent で削除される', () => {
-    const ls = memStorage();
-    setIntroConsent({ storage: ls });
-    expect(getIntroConsent({ storage: ls })).not.toBeNull();
-    clearIntroConsent({ storage: ls });
-    expect(getIntroConsent({ storage: ls })).toBe(null);
-  });
-});
 
 describe('brief 34 ε-3: ride consent (= field 別 opt-in、 default OFF)', () => {
   it('未設定なら全 field false (= default OFF)', () => {
@@ -115,21 +75,14 @@ describe('brief 34 ε-3: ride consent (= field 別 opt-in、 default OFF)', () =
   });
 });
 
-describe('brief 34 ε-1: HTML / CSS grep gate (= intro/consent overlay が index.html に存在)', () => {
+describe('brief 34 ε-3 / b46: HTML / CSS grep gate (= ride consent overlay が index.html に存在)', () => {
   // viewer-maplibre.js 側の grep gate と並んで index.html 側を独立に pin.
-  // 既存 static_mode.test.js / viewer_url_audit.test.js とは独立。
+  // b46: intro overlay は地形データローダー画面に作り変えた ── intro 文言 / btnIntro*
+  //   ボタンの grep は撤去。 ride consent overlay (= consent-overlay) の grep は残す。
   const fs = require('fs');
   const path = require('path');
   const INDEX_PATH = path.resolve(__dirname, '..', 'index.html');
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-
-  it('index.html に <div id="intro-overlay"> がある', () => {
-    expect(html).toMatch(/<div\s+id="intro-overlay"/);
-  });
-
-  it('index.html に z-index 1450 (= intro-overlay) の CSS が定義済', () => {
-    expect(html).toMatch(/#intro-overlay\s*\{[^}]*z-index:\s*1450/);
-  });
 
   it('index.html に <div id="consent-overlay"> がある', () => {
     expect(html).toMatch(/<div\s+id="consent-overlay"/);
@@ -139,30 +92,13 @@ describe('brief 34 ε-1: HTML / CSS grep gate (= intro/consent overlay が index
     expect(html).toMatch(/#consent-overlay\s*\{[^}]*z-index:\s*1460/);
   });
 
-  it('intro 文言: 「練習補助シミュレータ」「公式認定なし」「GPS データで誤差」「サーバ送信なし」の 4 軸が揃う', () => {
-    expect(html).toMatch(/練習補助シミュレータ/);
-    expect(html).toMatch(/公式が認定\s*\/\s*後援するアプリではなく/);
-    expect(html).toMatch(/GPS データで.*誤差/);
-    expect(html).toMatch(/サーバ送信なし/);
-  });
-
   it('consent overlay には「履歴に保存」「Strava にアップロード」の opt-in 2 つ', () => {
     expect(html).toMatch(/id="chkConsentHistory"/);
     expect(html).toMatch(/id="chkConsentStrava"/);
   });
 
-  it('intro/consent overlay に accept/cancel 2 button (= 不可視 default deny を構造化)', () => {
-    // brief 34 ε-1 (= 2026-05-15 user 方向修正): btnIntroDemo (= 試走デモ) を撤去、
-    // btnIntroStart (= 自分の trainer で走る) に置換。 デモ走行 button は提供しない。
-    expect(html).toMatch(/id="btnIntroClose"/);
-    expect(html).toMatch(/id="btnIntroStart"/);
-    expect(html).not.toMatch(/id="btnIntroDemo"/);
+  it('consent overlay に accept/cancel 2 button (= 不可視 default deny を構造化)', () => {
     expect(html).toMatch(/id="btnConsentAccept"/);
     expect(html).toMatch(/id="btnConsentCancel"/);
-  });
-
-  it('intro overlay の文言: 「自分の trainer で走る」/「閉じる」の 2 ボタン (= デモ走行は提供しない)', () => {
-    expect(html).toMatch(/自分の trainer で走る/);
-    expect(html).not.toMatch(/試走デモを見る/);
   });
 });

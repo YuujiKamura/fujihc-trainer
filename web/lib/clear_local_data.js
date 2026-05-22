@@ -63,6 +63,10 @@ export function clearAllLocalStorage(opts = {}) {
       ls.clear();
     } else {
       // 既知 key を網羅的に list (= 将来 key 追加時はここに足す).
+      // b46: 'fujihill.consent.intro.v1' は consent.js から intro consent を撤去した後も
+      //   purge list に意図的に残す ── 旧ユーザの localStorage に残る死にキーを
+      //   「全データ削除」 が掃除し続けられるようにするため。 新コードはこのキーを
+      //   read しないので残留しても無害だが、 掃除対象としては残す。
       const knownKeys = [
         'fujihill.consent.intro.v1',
         'fujihill.consent.ride.v1',

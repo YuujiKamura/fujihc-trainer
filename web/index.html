@@ -134,24 +134,6 @@
     padding: 5px 10px; border-radius: 6px;
   }
   #attrib a { color: #58a6ff; }
-  /* task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン.
-     ?test の有無で起動時に決まる TEST_MODE を画面から切り替える入口。
-     位置: 画面下端中央 ── #hud (左下) / #controls (右下) / #attrib (右下隅) /
-     #minimap-container (左上) / #status (右上) が埋まっており、 空きは下端中央帯のみ。
-     z-index 2001: #attrib と同じく全 overlay より上、 全 state で常時可視。 */
-  #mode-toggle {
-    position: fixed; left: 50%; bottom: 2.5rem; transform: translateX(-50%); z-index: 2001;
-    display: flex; align-items: center; gap: 0.5rem;
-    font: 12px/1.4 ui-monospace, monospace; color: #e6edf3;
-    background: rgba(13, 17, 23, 0.92); border: 1px solid #30363d;
-    padding: 5px 10px; border-radius: 6px;
-  }
-  #mode-toggle-label { font-weight: bold; }
-  #mode-toggle-btn {
-    font: inherit; cursor: pointer; padding: 4px 10px; min-height: 28px;
-    background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px;
-  }
-  #mode-toggle-btn:hover { background: #30363d; }
   /* brief 29: minimap 上半分を旧 OSM 直叩き方式 (= canvas + loadOsmTile + drawImage)
      に rollback。 brief 28 の MapLibre 2nd instance は撤回、 上下 2 canvas 構造は維持。
      上半分: course bbox を覆う z=11 周辺 9-16 OSM タイルを起動時 1-shot fetch、
@@ -247,12 +229,18 @@
   #intro-panel p.intro-disclaimer { color: #ffd54a; font-weight: bold; background: #221a08; border-left: 3px solid #ffd54a; padding: 0.6rem 0.8rem; }
   #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
   #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
-  #intro-panel .actions button#btnIntroStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  /* b46: 地形データローダー画面の「開始」 ボタン (= 起動シーンの主アクション). */
+  #intro-panel .actions button#btnTerrainLoaderStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #intro-panel .actions button#btnTerrainLoaderRetry { background: #221a08; color: #ffd54a; border-color: #ffd54a; }
+  /* b46: 地形ロード進捗 (= 「開始」 押下後に表示). */
+  #terrain-loader-lead { color: #aaa; font-size: 13px; }
+  #terrain-loader-progress { margin-top: 0.6rem; }
+  #terrain-loader-progress #terrain-loader-status { color: #7fff00; font-weight: bold; }
+  #terrain-loader-error { color: #ff9966; font-weight: bold; }
   /* 2026-05-15 fix: 走行系 button (= 地形 load 完了まで disabled) のグレーアウト表現を強制.
      btnSetupGoView は inline style で色 hardcode してたので :disabled 擬似クラスが効かなかった、
      ここで `button:disabled` を high-specificity で上書きして disabled 時は灰色 + not-allowed cursor. */
-  button#btnIntroStart:disabled,
-  button#btnIntroView:disabled,
+  button#btnTerrainLoaderStart:disabled,
   button#btnSetupGoView:disabled,
   button#btnScan:disabled,
   button#btnScanHrm:disabled,
@@ -265,7 +253,6 @@
     cursor: not-allowed !important;
     opacity: 0.55;
   }
-  #intro-panel .actions button#btnIntroClose { background: #14141a; color: #aaa; }
 
   /* 2026-05-15 fix: 観るモード ride 中に右上常時表示する区間リスト panel.
      全画面 section-overlay は撤去、 走行中いつでも区間を選び直せる UX に変更. */
@@ -930,30 +917,30 @@
   </div>
 </div>
 
-<!-- brief 34 ε-1 (= 2026-05-15 user 方向修正反映) + ε-8 (= 2026-05-15 「観る」モード追加):
-     公開ガードレール intro-overlay。 ボタンは 3 つ:
-       - btnIntroStart = 「自分の trainer で走る」 (= FTMS trainer 必要、 走行ログ保存可)
-       - btnIntroView  = 「コースを観る」 (= trainer 不要、 区間勾配を眺める、 記録なし、 brief 34 ε-8)
-       - btnIntroClose = 「閉じる」 (= 何もしない、 次回再表示)
-     default は何もしない。 開発者本人の動作確認用 bypass は URL 引数 (?consent=dev) 経由のみ。 -->
+<!-- b46: 起動シーンの第一段「地形データローダー画面」。
+     intro overlay (= 旧 走る/観る/閉じる の 3 択) を作り変え、 起動を一本道にした:
+       起動 → この画面 (アプリ説明 + 注意書き + 「開始」 ボタン)
+            → 「開始」 押下で地形ロード開始 (= 進捗をこの画面に表示)
+            → 完了でトレーナー接続画面 (#setup-overlay) へ
+     DOM id は #intro-overlay のまま (= 既存 grep test / z-index CSS との衝突を最小化)。
+     「開始」 ボタン押下が GSI/OSM への地形タイル取得の起点 ── 配布元へのアクセスを
+     ユーザーの明示操作の後だけにする同意ゲートを実体化する (= b46 の狙い)。 -->
 <div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" data-intro-state="hidden">
   <div id="intro-panel">
     <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
     <p class="intro-lead"><strong>どこでも富士ヒル</strong> ── Zwift にない任意 GPX コース再現</p>
-    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。</p>
-    <p>コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。</p>
-    <p>富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
-    <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 公道は車両以外通行制限があり、 第三者が検証する手段が事実上ありません。 この不確実性を許容してご利用ください。</p>
-    <p>データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし、 browser を消すと履歴も消えます)。</p>
-    <p>2 つのモードがあります:</p>
-    <p style="margin-left:1rem;"><strong style="color:#7fff00;">走る</strong> ── FTMS 対応 trainer (= 室内ローラー) と Chrome / Edge があれば、 Web Bluetooth で直接繋いで負荷連動で走れます。 走行ログを残せます。</p>
-    <p style="margin-left:1rem;"><strong style="color:#7fff00;">観る</strong> ── trainer なしでも、 コース全 24km を 10 区間に分け、 各区間の平均勾配を表示、 選んだ区間を rider が一定速度で走る様子を任意視点で眺められます (Zwift Climb Portal と同じ発想、 ただし trainer 不要、 ログ保存なし)。</p>
-    <p class="intro-origin-check">「走る」を押すと <strong>Web Bluetooth</strong> の機器選択ダイアログがブラウザから出ます。 開く前に <strong>ブラウザの URL バーが <code>*.github.io</code> ドメイン (= 本家配布元) で始まっている</strong>ことを確認してから許可してください (= 別オリジンの spoof サイト経由で誤って trainer に接続されるのを防ぐ確認です)。</p>
-    <p id="intro-ble-unsupported" class="intro-ble-unsupported" hidden>お使いのブラウザは Web Bluetooth 未対応です (Firefox / Safari など)。 「観る」モードはご利用いただけます。</p>
+    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。 コース起伏は富士ヒルクライム公式が一般公開している GPX を派生変換して使っています。 データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用、 device 跨ぎなし)。</p>
+    <p class="intro-disclaimer">富士ヒルクライム公式が認定 / 後援するアプリではなく、 大会の公式記録にも使えません。</p>
+    <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 この不確実性を許容してご利用ください。</p>
+    <p id="terrain-loader-lead" class="terrain-loader-lead">「開始」 を押すと地形データ (国土地理院 / OpenStreetMap タイル) の読み込みを始めます。 読み込み完了後にトレーナー接続画面へ進みます。</p>
+    <!-- 「開始」 押下後に表示する地形ロード進捗。 押下前は hidden。 -->
+    <div id="terrain-loader-progress" class="terrain-loader-progress" hidden>
+      <p id="terrain-loader-status">地形データを読み込んでいます…</p>
+      <p id="terrain-loader-error" class="terrain-loader-error" hidden></p>
+    </div>
     <div class="actions">
-      <button id="btnIntroClose" type="button">閉じる</button>
-      <button id="btnIntroView" type="button" disabled>コースを観る</button>
-      <button id="btnIntroStart" type="button" disabled>自分の trainer で走る</button>
+      <button id="btnTerrainLoaderStart" type="button">地形データを読み込んで開始</button>
+      <button id="btnTerrainLoaderRetry" type="button" hidden>再試行</button>
     </div>
   </div>
 </div>
@@ -1088,15 +1075,6 @@
      静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
 <div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
 
-<!-- task-testmode-toggle: テストモード ⇄ 本番モード 切替ボタン。
-     静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。
-     文言は viewer-maplibre.js が起動時に mode_toggle.js の定数で textContent 設定し、
-     #mode-toggle-btn の click を配線する。 -->
-<div id="mode-toggle">
-  <span id="mode-toggle-label">モード</span>
-  <button id="mode-toggle-btn" type="button">切替</button>
-</div>
-
-<script type="module" src="viewer-maplibre.js?v=44"></script>
+<script type="module" src="viewer-maplibre.js?v=45"></script>
 </body>
 </html>

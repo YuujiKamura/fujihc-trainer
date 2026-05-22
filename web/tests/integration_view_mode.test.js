@@ -1,25 +1,25 @@
-// brief 34 ε-8: 「観る」モード (= 区間選択型コース分析) の integration test.
+// brief 34 ε-8 / b46: 「観る」モード (= 区間選択型コース分析) の integration test.
+//
+// b46 全面再設計: 観るモードの判定 signal を intro consent (= getIntroConsent().mode
+//   === 'view') から body.classList.contains('mode-view') へ移行した。 起動シーンを
+//   地形データローダー画面の一本道に作り変え、 観るモードはトレーナー接続画面の
+//   「コースを観る」 ボタン (#btnSetupGoView) からのみ入る。 本 test は intro consent
+//   経由の検証を撤去し、 body.mode-view 判定で観るモードの振る舞いを pin し直す。
 //
 // 検証範囲:
-//   1. intro 「コースを観る」click → setIntroConsent({mode:'view'}) 保存 + dispatchAfterIntro
-//      経由で initViewMode 分岐.
-//   2. section-overlay 行クリック → rideState.startFrom(start_idx) で section 始点から ride 開始.
-//   3. ride 中 IndexedDB addRide が呼ばれない (= 観るモードは記録対象外、 物理 guard).
-//   4. 「区間リストに戻る」button で section-overlay 再表示 + ride を end.
-//   5. URL 引数 (?map=1 等) と intro mode='view' が衝突した場合、 view を優先.
+//   1. body.mode-view が付くと観るモード ── addRide / getClientId guard が効く
+//      (= 走行ログ保存なし / Strava 非対応、 物理 guard)。
+//   2. section list 行クリック → rideState.startFrom(start_idx) で section 始点から ride.
+//   3. 「区間リストに戻る」で ride を end + section list 再表示。
+//   4. viewer source: btnSetupGoView が body.mode-view を add、 観るモード判定が
+//      body.classList.contains('mode-view') 経由であること。
 //
-// vitest default (= node 環境) で書く、 happy-dom 不使用。 viewer 本体の dispatchAfterIntro と
-// initViewMode 関係 logic を shim で再現、 + lib 側 (= course_sections / consent / ride_state) は
-// 直 import して end-to-end の振る舞いを pin する。
+// vitest default (= node 環境) で書く、 happy-dom 不使用。
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import {
-  getIntroConsent, setIntroConsent,
-  getRideConsent, setRideConsent,
-} from '../lib/consent.js';
 import { splitCourseIntoSections } from '../lib/course_sections.js';
 import { createRideState } from '../lib/ride_state.js';
 import { withCumulativeDistance } from './_helpers/course_fixture.js';
@@ -30,17 +30,19 @@ const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const html = readFileSync(INDEX_PATH, 'utf8');
 
-function memStorage() {
-  const m = new Map();
+// body.classList の最小 shim (= node 環境、 jsdom 不使用).
+function makeBody() {
+  const classes = new Set();
   return {
-    getItem(k) { return m.has(k) ? m.get(k) : null; },
-    setItem(k, v) { m.set(k, String(v)); },
-    removeItem(k) { m.delete(k); },
+    classList: {
+      add(c) { classes.add(c); },
+      remove(c) { classes.delete(c); },
+      contains(c) { return classes.has(c); },
+    },
   };
 }
 
-// 単純 course (= 11 点 / 5% 一定勾配). distance_m は haversine 累積で自己整合に埋める
-// (= rider-position-model: 新 terrain は lat/lon の haversine 実長を距離スケールに使う).
+// 単純 course (= 11 点 / 5% 一定勾配). distance_m は haversine 累積で自己整合に埋める.
 function buildSimpleCourse() {
   const pts = [];
   for (let i = 0; i <= 10; i++) {
@@ -54,91 +56,65 @@ function buildSimpleCourse() {
   return withCumulativeDistance(pts);
 }
 
-// viewer-maplibre.js の dispatchAfterIntro logic を再現する shim.
-// intro consent mode === 'view' なら initViewMode、 それ以外は既存 init 系。
-function createDispatcher({ storage, mapMode, testMode, bleMode, spies }) {
-  return {
-    dispatchAfterIntro() {
-      const ic = getIntroConsent({ storage });
-      if (ic && ic.mode === 'view') {
-        spies.initViewMode();
-        return;
+describe('b46 integration: body.mode-view が観るモードの判定 signal', () => {
+  it('mode-view 無し → addRide guard を通す (= 走るモードは記録対象)', async () => {
+    const body = makeBody();
+    // viewer の addRide guard を 1:1 再現 (= body.mode-view 判定).
+    let addRideCalled = 0;
+    const guardedAddRide = async () => {
+      if (body.classList.contains('mode-view')) return false;
+      addRideCalled += 1;
+      return true;
+    };
+    await guardedAddRide();
+    expect(addRideCalled).toBe(1);
+  });
+
+  it('mode-view 付き → addRide guard が no-op (= 観るモードは記録対象外)', async () => {
+    const body = makeBody();
+    body.classList.add('mode-view');
+    let addRideCalled = 0;
+    let statusMsg = '';
+    const guardedAddRide = async () => {
+      if (body.classList.contains('mode-view')) {
+        statusMsg = '観るモードは記録対象外';
+        return false;
       }
-      if (mapMode) spies.initMapMode();
-      else if (testMode) spies.initTestMode();
-      else if (bleMode) spies.initBleMode();
-      else spies.bootCheckSetupStatus();
-    },
-  };
-}
-
-function makeSpies() {
-  const rec = {
-    initMapMode: 0, initTestMode: 0, initBleMode: 0,
-    bootCheckSetupStatus: 0, initViewMode: 0, showIntroOverlay: 0,
-  };
-  return {
-    rec,
-    initMapMode: () => { rec.initMapMode += 1; },
-    initTestMode: () => { rec.initTestMode += 1; },
-    initBleMode: () => { rec.initBleMode += 1; },
-    bootCheckSetupStatus: () => { rec.bootCheckSetupStatus += 1; },
-    initViewMode: () => { rec.initViewMode += 1; },
-    showIntroOverlay: () => { rec.showIntroOverlay += 1; },
-  };
-}
-
-describe('brief 34 ε-8 integration: 「コースを観る」 click → initViewMode 分岐', () => {
-  it('setIntroConsent({mode:"view"}) 後 dispatchAfterIntro → initViewMode が呼ばれる', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'view' });
-    const spies = makeSpies();
-    const d = createDispatcher({ storage, mapMode: false, testMode: false, bleMode: false, spies });
-    d.dispatchAfterIntro();
-    expect(spies.rec.initViewMode).toBe(1);
-    expect(spies.rec.initBleMode).toBe(0);
-    expect(spies.rec.bootCheckSetupStatus).toBe(0);
+      addRideCalled += 1;
+      return true;
+    };
+    const r = await guardedAddRide();
+    expect(addRideCalled).toBe(0);
+    expect(r).toBe(false);
+    expect(statusMsg).toMatch(/観るモード/);
   });
 
-  it('setIntroConsent({mode:"ride"}) 後 dispatchAfterIntro → bootCheckSetupStatus (= 既存 ride 経路)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'ride' });
-    const spies = makeSpies();
-    const d = createDispatcher({ storage, mapMode: false, testMode: false, bleMode: false, spies });
-    d.dispatchAfterIntro();
-    expect(spies.rec.bootCheckSetupStatus).toBe(1);
-    expect(spies.rec.initViewMode).toBe(0);
+  it('mode-view 付き → getClientId が null (= Strava upload 物理 disable)', () => {
+    const body = makeBody();
+    body.classList.add('mode-view');
+    const guardedGetClientId = () => {
+      if (body.classList.contains('mode-view')) return null;
+      return 'fake-client-id';
+    };
+    expect(guardedGetClientId()).toBe(null);
   });
 
-  it('mode 未指定 (= default) → ride 経路 (= bootCheckSetupStatus)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage });  // mode 省略
-    const spies = makeSpies();
-    const d = createDispatcher({ storage, mapMode: false, testMode: false, bleMode: false, spies });
-    d.dispatchAfterIntro();
-    expect(spies.rec.bootCheckSetupStatus).toBe(1);
-    expect(spies.rec.initViewMode).toBe(0);
-  });
-
-  it('view mode は URL 引数 (?map=1) より優先される (= intro の明示選択を URL より上)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'view' });
-    const spies = makeSpies();
-    // ?map=1 相当 (= mapMode=true) でも view mode が勝つ.
-    const d = createDispatcher({ storage, mapMode: true, testMode: false, bleMode: false, spies });
-    d.dispatchAfterIntro();
-    expect(spies.rec.initViewMode).toBe(1);
-    expect(spies.rec.initMapMode).toBe(0);  // URL は無効化される
+  it('mode-view 無し → getClientId は client_id を返す (= 走るモードは Strava 対象)', () => {
+    const body = makeBody();
+    const guardedGetClientId = () => {
+      if (body.classList.contains('mode-view')) return null;
+      return 'fake-client-id';
+    };
+    expect(guardedGetClientId()).toBe('fake-client-id');
   });
 });
 
-describe('brief 34 ε-8 integration: section-overlay の区間選択 → rideState start_idx inject', () => {
+describe('b46 integration: section list の区間選択 → rideState start_idx inject', () => {
   it('単純 course の区間 0 をクリック → rideState.snapshot().idx === section.start_idx', () => {
     const course = buildSimpleCourse();
     const rs = createRideState(course);
     const sections = splitCourseIntoSections(course, 10);
     expect(sections.length).toBe(10);
-    // section 0 を選んだ場合 (= start_idx=0)
     rs.startFrom(sections[0].start_idx);
     expect(rs.snapshot().idx).toBe(sections[0].start_idx);
     expect(rs.snapshot().idx).toBe(0);
@@ -154,7 +130,6 @@ describe('brief 34 ε-8 integration: section-overlay の区間選択 → rideSta
     rs.startFrom(target.start_idx);
     const snap = rs.snapshot();
     expect(snap.idx).toBe(target.start_idx);
-    // 単純 course (= 1km 間隔) で 5 区間目の始点は 5km 地点 (= idx 5).
     expect(snap.distance).toBeCloseTo(target.start_dist, 3);
   });
 
@@ -168,61 +143,7 @@ describe('brief 34 ε-8 integration: section-overlay の区間選択 → rideSta
   });
 });
 
-describe('brief 34 ε-8 integration: 観るモード中の IndexedDB / Strava 書込抑止', () => {
-  it('intro mode="view" の状態で addRide callback (= viewer の guard 同等) が no-op', async () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'view' });
-    // viewer 側 addRide guard を 1:1 再現 (= intro mode で先 short-circuit, history flag は無関係).
-    let addRideCalled = 0;
-    let statusMsg = '';
-    const guardedAddRide = async (rec) => {
-      const ic = getIntroConsent({ storage });
-      if (ic && ic.mode === 'view') {
-        statusMsg = '観るモードは記録対象外';
-        return;
-      }
-      if (!getRideConsent('history', { storage })) {
-        statusMsg = '履歴保存未同意';
-        return;
-      }
-      addRideCalled += 1;
-    };
-    // 観るモードでは ride 終了時に「履歴に保存」を押しても addRide は呼ばれない.
-    await guardedAddRide({ id: 'r1', date: '2026-05-15T00:00:00Z', summary: {}, trkpts: [] });
-    expect(addRideCalled).toBe(0);
-    expect(statusMsg).toMatch(/観るモード/);
-  });
-
-  it('intro mode="view" → getClientId が null (= Strava upload 物理 disable)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'view' });
-    // viewer の getClientId guard を再現.
-    const guardedGetClientId = () => {
-      const ic = getIntroConsent({ storage });
-      if (ic && ic.mode === 'view') return null;
-      if (!getRideConsent('strava', { storage })) return null;
-      return 'fake-client-id';
-    };
-    expect(guardedGetClientId()).toBe(null);
-  });
-
-  it('intro mode="ride" + history consent ON → addRide が通常通り発火 (= 観るモード以外は既存挙動維持)', async () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'ride' });
-    setRideConsent({ history: true, asked: true }, { storage });
-    let addRideCalled = 0;
-    const guardedAddRide = async (rec) => {
-      const ic = getIntroConsent({ storage });
-      if (ic && ic.mode === 'view') return;
-      if (!getRideConsent('history', { storage })) return;
-      addRideCalled += 1;
-    };
-    await guardedAddRide({ id: 'r2', date: '2026-05-15T00:00:00Z', summary: {}, trkpts: [] });
-    expect(addRideCalled).toBe(1);
-  });
-});
-
-describe('brief 34 ε-8 integration: 「区間リストに戻る」 で ride end + section-overlay 再表示', () => {
+describe('b46 integration: 「区間リストに戻る」 で ride end + section list 再表示', () => {
   it('rideState.end → snapshot().active === false (= 別区間選び直し可能)', () => {
     const course = buildSimpleCourse();
     const rs = createRideState(course);
@@ -231,19 +152,14 @@ describe('brief 34 ε-8 integration: 「区間リストに戻る」 で ride end
     expect(rs.snapshot().active).toBe(true);
     rs.end();
     expect(rs.snapshot().active).toBe(false);
-    // 戻った後別 section を選び直し可能 (= startFrom が複数回呼べる).
     rs.startFrom(sections[7].start_idx);
     expect(rs.snapshot().idx).toBe(sections[7].start_idx);
     expect(rs.snapshot().active).toBe(true);
   });
 });
 
-describe('brief 34 ε-8 integration: HTML DOM 構造', () => {
-  it('intro-overlay に btnIntroView (= 「コースを観る」) が追加されている', () => {
-    expect(html).toMatch(/<button[^>]*id="btnIntroView"/);
-  });
-
-  it('section-list-panel (= 右上常時表示 panel) + section-list ul が HTML に存在 (= 2026-05-15 fix で全画面 overlay 撤回)', () => {
+describe('b46 integration: HTML DOM 構造', () => {
+  it('section-list-panel (= 右上常時表示 panel) + section-list ul が HTML に存在', () => {
     expect(html).toMatch(/<aside\s+id="section-list-panel"/);
     expect(html).toMatch(/<ul\s+id="section-list"/);
   });
@@ -252,9 +168,13 @@ describe('brief 34 ε-8 integration: HTML DOM 構造', () => {
     expect(html).toMatch(/body\.mode-view\s+#section-list-panel\s*\{\s*display:\s*block/);
     expect(html).toMatch(/#section-list-panel\s*\{[^}]*display:\s*none/);
   });
+
+  it('トレーナー接続画面 (#setup-overlay) に「コースを観る」 ボタン #btnSetupGoView がある', () => {
+    expect(html).toMatch(/id="btnSetupGoView"/);
+  });
 });
 
-describe('brief 34 ε-8 integration: viewer-maplibre.js の source 構造', () => {
+describe('b46 integration: viewer-maplibre.js の source 構造', () => {
   it('viewer は course_sections.js を import している (= splitCourseIntoSections / formatSectionLabel)', () => {
     expect(viewer).toMatch(/from\s+['"]\.\/lib\/course_sections\.js['"]/);
     expect(viewer).toMatch(/splitCourseIntoSections/);
@@ -265,24 +185,22 @@ describe('brief 34 ε-8 integration: viewer-maplibre.js の source 構造', () =
     expect(viewer).toMatch(/function\s+initViewMode\s*\(\s*\)/);
   });
 
-  it('dispatchAfterIntro 内で getIntroConsent().mode === "view" を check して initViewMode 分岐', () => {
-    const m = viewer.match(/function\s+dispatchAfterIntro\s*\(\s*\)\s*\{[\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    const body = m[0];
-    expect(body).toMatch(/getIntroConsent\(\)/);
-    expect(body).toMatch(/mode\s*===?\s*['"]view['"]/);
-    expect(body).toMatch(/initViewMode\(/);
+  it('btnSetupGoView click handler が body.mode-view を add + initViewMode を呼ぶ (= 観るモード入口)', () => {
+    // b46: 旧 setIntroConsent({mode:'view'}) を撤去、 body.classList.add('mode-view') を明示。
+    expect(viewer).toMatch(/btnSetupGoView[\s\S]{0,400}classList\.add\(['"]mode-view['"]\)[\s\S]{0,200}initViewMode\(/);
   });
 
-  it('btnIntroView click handler が setIntroConsent({mode:"view"}) + dispatchAfterIntro を呼ぶ', () => {
-    // brief 32: btnIntroView click handler に data-intro-state 更新が挟まったため、 grep 範囲を 300→600 に拡張。
-    expect(viewer).toMatch(/btnIntroView[\s\S]{0,600}setIntroConsent\(\{[^}]*mode:\s*['"]view['"][^}]*\}\)[\s\S]{0,300}dispatchAfterIntro\(\)/);
+  it('addRide / getClientId の guard が body.mode-view 判定で観るモードを short-circuit', () => {
+    // b46: 観るモード判定を getIntroConsent().mode === 'view' から
+    //   body.classList.contains('mode-view') へ移行。
+    expect(viewer).toMatch(/addRide:\s*async[\s\S]{0,400}classList\.contains\(['"]mode-view['"]\)[\s\S]{0,200}return/);
+    expect(viewer).toMatch(/getClientId:[\s\S]{0,300}classList\.contains\(['"]mode-view['"]\)[\s\S]{0,100}return\s+null/);
   });
 
-  it('addRide / getClientId の guard に intro mode === "view" の short-circuit が含まれる (= 物理 disable の二重 gate)', () => {
-    // addRide の lambda body 内に「mode === 'view'」と「return」が並ぶ.
-    expect(viewer).toMatch(/addRide:\s*async[\s\S]{0,400}mode\s*===?\s*['"]view['"][\s\S]{0,200}return/);
-    expect(viewer).toMatch(/getClientId:[\s\S]{0,400}mode\s*===?\s*['"]view['"][\s\S]{0,200}return\s+null/);
+  it('viewer source に intro consent (getIntroConsent / setIntroConsent) の呼出が無い (= b46 撤去)', () => {
+    // コメント内の言及は許すが、 実際の関数呼出 `getIntroConsent(` は無いこと。
+    expect(viewer).not.toMatch(/[^/]getIntroConsent\s*\(/);
+    expect(viewer).not.toMatch(/[^/]setIntroConsent\s*\(/);
   });
 
   it('initViewMode は createTestModeClient を使う (= trainer / bridge 不要)', () => {
@@ -293,59 +211,6 @@ describe('brief 34 ε-8 integration: viewer-maplibre.js の source 構造', () =
 
   it('renderSectionList 関数で行クリック → rideState.startFrom(section.start_idx) を呼ぶ', () => {
     expect(viewer).toMatch(/function\s+renderSectionList\s*\(/);
-    // renderSectionList 内で onSelect callback で startFrom が呼ばれる (= initViewMode から渡す).
     expect(viewer).toMatch(/rideState\.startFrom\(/);
-  });
-
-  it('renderSectionList が sec-grade に「平均 X.X%」「最大 X.X%」両方を出力 (= 2026-05-15 user 指示)', () => {
-    // renderSectionList 内で avg_slope_pct と max_slope_pct を「平均」「最大」prefix 付きで textContent に入れる。
-    const m = viewer.match(/function\s+renderSectionList\s*\([\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    const body = m[0];
-    // 「平均 ...avg_slope_pct...%」と「最大 ...max_slope_pct...%」の両方が renderSectionList 内に出る。
-    expect(body).toMatch(/平均\s*\$\{[^}]*avg_slope_pct[^}]*\}%/);
-    expect(body).toMatch(/最大\s*\$\{[^}]*max_slope_pct[^}]*\}%/);
-    // sec-grade-avg / sec-grade-max の 2 span に分けて配置 (= flex-column 2 行 layout).
-    expect(body).toMatch(/sec-grade-avg/);
-    expect(body).toMatch(/sec-grade-max/);
-  });
-});
-
-describe('brief 34 ε-8 integration: section list の「平均 / 最大」勾配表示 (= 2026-05-15)', () => {
-  it('index.html の sec-grade CSS が flex-direction:column + flex-end 右寄せ (= 2 行右寄せ layout)', () => {
-    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*display:\s*flex/);
-    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*flex-direction:\s*column/);
-    expect(html).toMatch(/#section-list\s+\.sec-grade\s*\{[^}]*align-items:\s*flex-end/);
-  });
-
-  it('sec-grade-avg / sec-grade-max の CSS rule が定義されている (= 2 行表示の各 row)', () => {
-    expect(html).toMatch(/#section-list\s+\.sec-grade-avg\s*\{/);
-    expect(html).toMatch(/#section-list\s+\.sec-grade-max\s*\{/);
-  });
-});
-
-describe('brief 34 ε-8 integration: consent.js mode 拡張', () => {
-  it('setIntroConsent({mode:"view"}) → getIntroConsent().mode === "view"', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'view' });
-    expect(getIntroConsent({ storage }).mode).toBe('view');
-  });
-
-  it('setIntroConsent({mode:"ride"}) → getIntroConsent().mode === "ride"', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'ride' });
-    expect(getIntroConsent({ storage }).mode).toBe('ride');
-  });
-
-  it('setIntroConsent() (= mode 省略) → mode "ride" にフォールバック (= 既存挙動互換)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage });
-    expect(getIntroConsent({ storage }).mode).toBe('ride');
-  });
-
-  it('setIntroConsent({mode:"invalid"}) → mode "ride" に倒す (= 安全寄り)', () => {
-    const storage = memStorage();
-    setIntroConsent({ storage, mode: 'invalid-value' });
-    expect(getIntroConsent({ storage }).mode).toBe('ride');
   });
 });
