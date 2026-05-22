@@ -26,7 +26,7 @@ test('ペアリング完了 → ライド開始 → state-riding に遷移する
 
   // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 ペアリング → ライド開始の
   // 導線は地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
-  await page.goto('http://127.0.0.1:8000/index-dom.html?test=1&consent=dev&noterrain=1');
+  await page.goto('http://127.0.0.1:8000/index.html?test=1&consent=dev&noterrain=1');
 
   // initTestMode が 500ms タイマー + ride_status:started → setAppState('riding') を経由して
   // body に state-riding を付与するまで待つ。
@@ -52,7 +52,7 @@ test('ペアリング完了 → ライド開始 → state-riding に遷移する
 test('setup 画面でデータとキャッシュ管理を開くと「アプリを最新版に更新」 ボタンが出る', async ({ page }) => {
   // ?ble=1&consent=dev: intro を bypass し Web Bluetooth ペアリング画面 (setup-overlay) を出す。
   // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。
-  await page.goto('http://127.0.0.1:8000/index-dom.html?ble=1&consent=dev&noterrain=1');
+  await page.goto('http://127.0.0.1:8000/index.html?ble=1&consent=dev&noterrain=1');
   // b44: #clear-data-section は <details> でデフォルト閉じ。 summary をクリックして開く。
   const fold = page.locator('#clear-data-section');
   await expect(fold).toBeAttached({ timeout: 20_000 });

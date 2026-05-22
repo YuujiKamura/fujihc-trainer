@@ -18,7 +18,7 @@
 
 import { test, expect } from './base-test.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
+const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 const GSI_ORIGIN = 'https://cyberjapandata.gsi.go.jp';
 const OSM_ORIGIN = 'https://tile.openstreetmap.org';
 

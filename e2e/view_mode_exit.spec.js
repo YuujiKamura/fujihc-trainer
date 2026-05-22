@@ -8,7 +8,7 @@
 // 経由にした。 この test は観る→走る遷移が 1 回で mode-view を外すことを pin する。
 import { test, expect } from './base-test.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
+const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 
 // 地形タイルを偽 PNG で intercept (= 配布元 GSI を実際には叩かない)。
 const GSI_PNG = Buffer.from(

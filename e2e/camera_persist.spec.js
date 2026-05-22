@@ -6,7 +6,7 @@
 // 跨いで復元されることを確認する。
 import { test, expect } from './base-test.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
+const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 const GSI_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
   'base64',

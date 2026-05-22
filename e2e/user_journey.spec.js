@@ -19,7 +19,7 @@
 import { test, expect } from './base-test.js';
 import { RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE } from '../web/lib/ride_db.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
+const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 
 test('初回訪問: 地形データローダー画面が出て「開始」 ボタンが押せる', async ({ page }) => {
   // 起動 → 地形データローダー画面 (= #intro-overlay の DOM 枠を再利用) が表示される

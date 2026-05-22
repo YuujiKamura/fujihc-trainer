@@ -21,6 +21,10 @@
 - `package.json` の `vitest` が `^1.0.0` → `^4.1.7` に上がっている (Gemini)。`npm install`
   済で現在 vitest 4 が動作中。Claude のリファクタは vitest 1448 passed / 0 fail を
   安全網にしている ── これ以上のメジャー変更は Worklog で予告すること。
+- `e2e/debug_capture.spec.js` はレーン表で Claude 除外と書かれているが、衝突復旧
+  (e5bcae9) と b52 で `index-dom.html`↔`index.html` の参照書き換えのため Claude が
+  既に touch 済 ── レーン表の除外記述が現実と乖離している。page URL の追従 (主エントリ
+  リネームへの retarget) は Claude 管理、Svelte 検証ロジックを足す場合のみ要調整。
 
 ## タスク (engine リファクタ / Claude レーン)
 
@@ -31,6 +35,7 @@
 | b50 | loadCourse の純粋部を `course_loader.js` に抽出 | **done** (8cb70c0) | Claude |
 | b51 | minimap を `web/lib/minimap.js` に抽出 | **done** | Claude |
 | 衝突復旧 | DOM 版を `index-dom.html` に保存 / e2e を index-dom.html へ retarget / camera_persist を右ドラッグ=orbit に追従 | **done** | Claude |
+| 衝突復旧2 | 主エントリ `index.html` を動く DOM 版に戻す / Svelte 殻を `index-svelte.html` へ分離 / `index-dom.html` 削除 / e2e を index.html へ retarget (brief: `b52-restore-index-dom-primary`) | **done** | Claude |
 | b52 | autosave/restore の `_pendingRestore` global を整理 | todo | Claude |
 | b53 | tick ループを `viewer_loop.js` に抽出 | todo | Claude |
 | b54 | viewer 状態 (module global 50+ / setAppState / mode-view) を `viewer_state.js` に一元化 | todo | Claude |
@@ -41,6 +46,13 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude — 衝突復旧2 (brief `b52-restore-index-dom-primary`)。主エントリ
+  `index.html` を engine 未配線の Svelte 殻から動く DOM 版に戻し、Svelte 殻を
+  `index-svelte.html` へ分離、`index-dom.html` 削除。e2e 8 spec を index.html へ、
+  `svelte_map.spec.js` を index-svelte.html へ retarget。ファイル move + 参照書換のみ、
+  挙動不変。7軸 impl audit CONVERGED (LOAD-BEARING 0)。注: brief 名の b52 はタスク表の
+  b52 (`_pendingRestore` 整理、todo のまま) と番号衝突、本作業は別タスクなので
+  タスク表では「衝突復旧2」として記録した。
 - 2026-05-22 Claude — b51 完了 + 衝突復旧。minimap を `web/lib/minimap.js` に抽出。
   Gemini が `index.html` の #intro-overlay を Svelte 用に置換したため、DOM 版を
   `web/index-dom.html` に保存して並行運用に。e2e を index-dom.html へ retarget、
