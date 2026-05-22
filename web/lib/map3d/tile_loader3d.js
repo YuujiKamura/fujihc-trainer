@@ -9,15 +9,18 @@
 // fetch / Image といったブラウザ API は module 評価時には触らず、 関数の実行時にのみ
 // 参照する (= top-level に location.origin を書くと node import で即死するため)。
 //
-// 取得経路 (b12 Phase3 設計メモ §3 tile_loader3d / fujihc CLAUDE.md GSI 配慮):
-//   - DEM: bridge のローカル DB `${origin}/tiles/gsi_dem/{z}/{x}/{y}.png` 一本。
-//     bridge が gsi_dem source を持つので GSI online への外部 fallback は持たない。
-//     bridge 配信の DEM は GSI dem_png 形式そのままなので decodeGsiHeightGrid が通る。
-//   - 航空写真 (seamlessphoto): bridge は seamlessphoto を配信しない (tile_server.py の
-//     VALID_SOURCES は osm / gsi_dem / osm_raster のみ)。 よって GSI online から取得する。
-//     GSI 利用規約の許容範囲を守る ── コース外接矩形を覆う数十枚のみ、 同時接続を
-//     GSI_FETCH_LIMIT 本に絞り、 取得結果を IndexedDB (openTileCache) に persist して
-//     TTL 内は再取得しない。 自動再取得・ループ取得はしない。
+// 取得経路 (b67 で確定方針へ統一、 fujihc CLAUDE.md GSI 配慮):
+//   - DEM: IndexedDB タイルキャッシュ → GSI 直 (`dem5a_png` / `dem_png`) の 2 段。
+//     タイルは IndexedDB にのみ保持し、 bridge ローカル DB や `web/static/tiles/`
+//     への静的同梱には依存しない。 静的同梱は `.gitignore` 済 (配布元データ同梱
+//     再配布禁止) で Pages にデプロイされず、 bridge 段は静的配信モードで全タイル
+//     404 を返す死んだ経路だった ── b67 で撤去。 IndexedDB hit なら GSI 通信ゼロ、
+//     miss のみ GSI 直で取得して TTL 内 (90 日) は再利用。
+//   - 航空写真 (seamlessphoto): GSI online から取得 (bridge は seamlessphoto を
+//     配信しない)。 GSI 利用規約の許容範囲を守る ── コース外接矩形を覆う数十枚
+//     のみ、 同時接続を GSI_FETCH_LIMIT 本に絞り、 取得結果を IndexedDB
+//     (openTileCache) に persist して TTL 内は再取得しない。 自動再取得・ループ
+//     取得はしない。
 
 import { tileRangeForBounds, stitchHeightGrid, decodeGsiHeightGrid } from '../terrain3d.js';
 
@@ -33,11 +36,6 @@ export const MAX_TILES = 200;
 
 // 航空写真タイルの取得元 (= GSI online、 seamlessphoto 固定。 std/relief/hybrid 追加禁止)。
 const GSI_SEAMLESSPHOTO_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto';
-
-// DEM タイルの取得元 (= bridge のローカル DB)。 location は実行時にのみ参照する。
-function demBaseUrl() {
-  return `${location.origin}/tiles/gsi_dem`;
-}
 
 /**
  * タイル矩形範囲を 1 枚ずつの {tx, ty} 配列に展開する.
@@ -113,20 +111,26 @@ function imageToHeightGrid(img) {
 }
 
 /**
- * コース外接 bbox から DEM タイル群を取得し、 範囲全体の連続標高グリッドを返す.
+ * 指定 bbox + zoom から DEM タイル群を取得し、 範囲全体の連続標高グリッドを返す.
  *
- * b31: seamlessphoto と同パターンに揃え、 bridge mode (= demBaseUrl) → GSI direct fallback
- * → TileCache hit/miss/set の chain を経由するように拡張。 既存呼出 (= tileCache / gsiDirectBase
- * 未指定) は bridge fetch 1 回の挙動を維持 (= backward compat)。
+ * b67: 取得経路を IndexedDB タイルキャッシュ → GSI 直 (`gsiDirectBase`) の 2 段に統一。
+ * 旧 bridge 段 (= Pages オリジン宛の死んだ往復) は撤去 ── 静的同梱は `.gitignore` 済で
+ * Pages に存在せず、 bridge mode でも実体は GSI 由来 cache、 つまり死んだ往復だった。
+ * IndexedDB hit なら配布元 (GSI) 通信ゼロ、 miss のみ GSI 直で取得し TTL 内は再利用。
+ *
+ * b67: zoom 引数を追加 ── 高精細 (z15 dem5a_png) と広域低精細 (z12 dem_png) の両用途で
+ * 同じ取得経路を再利用するため。 未指定なら DEM_ZOOM (= 15) を既定値。
  *
  * range.count が MAX_TILES を超えたら地形を組まずに RangeError を投げる (= 規約配慮の gate)。
  *
  * @param {object} args
- * @param {[number,number,number,number]} args.bounds - [west, south, east, north] (度)。 courseBounds() の戻り値を渡す。
- * @param {object|null} [args.tileCache] - b31: TileCache instance (= openTileCache() の戻り)。
- *                                          null/undefined なら hit/set を skip (= 既存挙動)。
- * @param {string} [args.gsiDirectBase] - b31: GSI direct base (= 'https://cyberjapandata.gsi.go.jp/xyz/dem')。
- *                                         未指定なら bridge fetch のみ (= 既存挙動)。
+ * @param {[number,number,number,number]} args.bounds - [west, south, east, north] (度)。
+ * @param {object|null} [args.tileCache] - TileCache instance (= openTileCache() の戻り)。
+ *                                          null/undefined なら hit/set を skip。
+ * @param {string} args.gsiDirectBase - **必須**: GSI 直 base URL (例 `https://cyberjapandata.gsi.go.jp/xyz/dem5a_png`
+ *                                       / `dem_png`)。 b67 で必須化 ── 未指定は異常呼び出し
+ *                                       (旧 bridge fallback は撤去済) なので早期エラー。
+ * @param {number} [args.zoom] - DEM 取得 zoom。 未指定なら DEM_ZOOM (= 15)。
  * @param {(done:number,total:number)=>void} [args.onProgress]
  * @param {boolean} [args.skipFetch] - b41: true なら配布元 (GSI) を一切叩かず、 標高ゼロの
  *                                      平坦グリッドを合成して返す。 地形を検証しない e2e が
@@ -134,8 +138,14 @@ function imageToHeightGrid(img) {
  * @returns {Promise<{stitched:{grid:Float32Array,width:number,height:number},
  *                     range:object, missing:number}>}
  */
-export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProgress, skipFetch }) {
-  const range = tileRangeForBounds(bounds, DEM_ZOOM);
+export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, zoom, onProgress, skipFetch }) {
+  // b67: gsiDirectBase 必須化。 旧 bridge fallback を撤去した結果、 未指定で呼ぶと
+  // IndexedDB のみ・取得経路なし = 異常呼び出し。 silent fallback で隠さず即エラー。
+  if (!gsiDirectBase && !skipFetch) {
+    throw new Error('loadDemStitched: gsiDirectBase は必須引数です (b67 で bridge fallback 撤去済)');
+  }
+  const z = (typeof zoom === 'number' && Number.isFinite(zoom)) ? zoom : DEM_ZOOM;
+  const range = tileRangeForBounds(bounds, z);
   if (range.count > MAX_TILES) {
     throw new RangeError(
       `DEM タイルが ${range.count} 枚で上限 ${MAX_TILES} 超過 (= 取得を中止)`);
@@ -148,12 +158,11 @@ export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProg
     return { stitched: { grid: new Float32Array(width * height), width, height }, range, missing: 0 };
   }
   const coords = tileCoordsForRange(range);
-  const bridgeBase = demBaseUrl();
   const grids = await mapLimit(coords, GSI_FETCH_LIMIT, async ({ tx, ty }) => {
-    // 1. TileCache hit → Bitmap decode → grid (= GSI / bridge への通信ゼロ)
+    // 1. TileCache hit → Bitmap decode → grid (= GSI への通信ゼロ)
     if (tileCache) {
       try {
-        const bytes = await tileCache.get('dem_png', DEM_ZOOM, tx, ty);
+        const bytes = await tileCache.get('dem_png', z, tx, ty);
         if (bytes) {
           const bitmap = await bytesToBitmap(bytes);
           if (bitmap) {
@@ -162,25 +171,15 @@ export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, onProg
             return { tx, ty, grid };
           }
         }
-      } catch { /* cache 失敗は silent skip、 fetch chain にfall back */ }
+      } catch { /* cache 失敗は silent skip、 GSI 直 fetch にfall back */ }
     }
-    // 2. bridge fetch (= demBaseUrl = `${origin}/tiles/gsi_dem`)
-    const bridgeResult = await tryFetchDemTile(`${bridgeBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
-    if (bridgeResult.grid) {
-      if (tileCache && bridgeResult.bytes) {
-        try { await tileCache.set('dem_png', DEM_ZOOM, tx, ty, bridgeResult.bytes); } catch {}
+    // 2. GSI 直 fetch (= b67 で唯一の取得経路、 bridge 段は撤去済)
+    const directResult = await tryFetchDemTile(`${gsiDirectBase}/${z}/${tx}/${ty}.png`);
+    if (directResult.grid) {
+      if (tileCache && directResult.bytes) {
+        try { await tileCache.set('dem_png', z, tx, ty, directResult.bytes); } catch {}
       }
-      return { tx, ty, grid: bridgeResult.grid };
-    }
-    // 3. GSI direct fetch (= static mode、 Pages 環境)
-    if (gsiDirectBase) {
-      const directResult = await tryFetchDemTile(`${gsiDirectBase}/${DEM_ZOOM}/${tx}/${ty}.png`);
-      if (directResult.grid) {
-        if (tileCache && directResult.bytes) {
-          try { await tileCache.set('dem_png', DEM_ZOOM, tx, ty, directResult.bytes); } catch {}
-        }
-        return { tx, ty, grid: directResult.grid };
-      }
+      return { tx, ty, grid: directResult.grid };
     }
     return { tx, ty, grid: null };
   }, onProgress);

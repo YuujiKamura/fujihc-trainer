@@ -34,6 +34,16 @@ import { fujihill } from '../courses/fujihill.js';
 // ため dem_png (z1-14) から dem5a_png (z15) へ。 両者は同一の標高 PNG エンコード。
 export const GSI_DEM_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem5a_png';
 
+// b67: GSI dem_png 公式 endpoint (= z0-14 配信)。 広域低精細メッシュ (b67 §直すこと 4) で
+// 使う ── コース外接 (demBounds) は z15 dem5a_png で高精細、 その外周 (dbBounds 22km四方)
+// を z12 dem_png で粗く埋めて富士山体の全景を背景にする。 dem_png と dem5a_png は同一の
+// 標高 PNG エンコード (= decodeGsiHeightGrid 共通)、 違うのは zoom range のみ:
+//   dem5a_png: z9-15 (5m メッシュ)、 z15 で 96 tiles / demBounds
+//   dem_png  : z0-14 (10m メッシュ相当)、 z12 で 12 tiles / dbBounds
+// SoT を terrain_loader.js に集約することで viewer 本体・map3d/index.js には GSI URL literal
+// が出現せず、 viewer_url_audit.test.js の「本体 source に GSI URL ゼロ」 方針が維持される。
+export const GSI_DEM_PNG_DIRECT_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/dem_png';
+
 // 経度・緯度 → z=14 タイル座標 (= 整数). EPSG:3857 Web Mercator.
 // tile_math.js と同等、 ただし z=14 固定でも汎用に z を受け取る.
 function lonToTileX(lon, z) {

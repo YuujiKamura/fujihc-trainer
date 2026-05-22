@@ -390,6 +390,22 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*tileCache[^}]*\}/);
     expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*gsiDirectBase[^}]*\}/);
   });
+
+  // b67: bridge 段撤去 + 広域低精細メッシュ用 dem_png endpoint の SoT。
+  it('b67: terrain_loader.js が GSI_DEM_PNG_DIRECT_BASE を export (= dem_png 系統 SoT、 dem5a と独立)', () => {
+    expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_PNG_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem_png['"]/);
+  });
+
+  it('b67: tile_loader3d.js から demBaseUrl 関数 / bridgeBase literal / /tiles/gsi_dem prefix が消えている (= bridge 段撤去 negative grep)', () => {
+    // bridge 経路の死んだ往復は撤去済。 旧コードを誰かが復活させた瞬間 fail。
+    expect(tileLoader3d).not.toMatch(/function\s+demBaseUrl/);
+    expect(tileLoader3d).not.toMatch(/bridgeBase/);
+    expect(tileLoader3d).not.toMatch(/\/tiles\/gsi_dem/);
+  });
+
+  it('b67: loadDemStitched が zoom 引数を受ける (= 広域低精細メッシュ z12 と高精細 z15 で再利用)', () => {
+    expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*zoom[^}]*\}/);
+  });
 });
 
 // brief 31: GitHub Pages 静的サイト化に伴う外部 URL gate の拡張。

@@ -5,9 +5,9 @@
 // ここでは対象外 ── 取得経路の正しさは Phase 4 の画面確認で見る。 本テストは Three にも
 // DOM にも触れない 2 つの配管関数と、 GSI 配慮の定数を pin する。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  tileCoordsForRange, mapLimit,
+  tileCoordsForRange, mapLimit, loadDemStitched,
   DEM_ZOOM, TILE_PX, GSI_FETCH_LIMIT, MAX_TILES,
 } from '../lib/map3d/tile_loader3d.js';
 
@@ -88,5 +88,57 @@ describe('GSI 配慮の定数 (fujihc CLAUDE.md ── 変更禁止の pin)', ()
     // GSI_FETCH_LIMIT / MAX_TILES は配布元配慮の上限で変更禁止のまま。
     expect(DEM_ZOOM).toBe(15);
     expect(TILE_PX).toBe(256);
+  });
+});
+
+// b67: 取得経路を IndexedDB → GSI 直の 2 段に統一 (bridge 段撤去) + zoom 引数追加。
+// fetch を vi.fn() で差し替えて呼び出された URL を捕捉、 経路と zoom を pin する。
+// 全 fetch を 404 にすれば bitmap decode 経路に入らないので DOM 非依存で完走する
+// (= 「DEM タイルが 1 枚も取得できませんでした」 で reject されるので rejects.toThrow で受ける)。
+describe('loadDemStitched (b67: bridge 段撤去 + zoom 引数)', () => {
+  const SMALL_BBOX = [138.7, 35.4, 138.71, 35.41];  // 小 bbox (= z15 で数枚)
+  const ORIGINAL_FETCH = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = ORIGINAL_FETCH;
+    vi.restoreAllMocks();
+  });
+
+  it('bridge fetch 段撤去後、 fetch URL は gsiDirectBase 始まりのみ、 /tiles/gsi_dem は 1 件も出ない', async () => {
+    const seen = [];
+    globalThis.fetch = vi.fn(async (url) => { seen.push(url); return { ok: false, status: 404 }; });
+    await expect(loadDemStitched({
+      bounds: SMALL_BBOX, tileCache: null, gsiDirectBase: 'https://example.test/dem',
+    })).rejects.toThrow(/1 枚も取得できません/);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.filter((u) => u.includes('/tiles/gsi_dem'))).toHaveLength(0);
+    expect(seen.every((u) => u.startsWith('https://example.test/dem'))).toBe(true);
+  });
+
+  it('zoom: 12 を渡すと URL に /12/ が出る (= 広域低精細メッシュ用)', async () => {
+    const seen = [];
+    globalThis.fetch = vi.fn(async (url) => { seen.push(url); return { ok: false, status: 404 }; });
+    await expect(loadDemStitched({
+      bounds: SMALL_BBOX, tileCache: null,
+      gsiDirectBase: 'https://example.test/dem', zoom: 12,
+    })).rejects.toThrow();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((u) => /\/12\//.test(u))).toBe(true);
+  });
+
+  it('zoom 未指定で DEM_ZOOM (= 15) が使われる (= 既定値の後方互換)', async () => {
+    const seen = [];
+    globalThis.fetch = vi.fn(async (url) => { seen.push(url); return { ok: false, status: 404 }; });
+    await expect(loadDemStitched({
+      bounds: SMALL_BBOX, tileCache: null,
+      gsiDirectBase: 'https://example.test/dem',
+    })).rejects.toThrow();
+    expect(seen.every((u) => /\/15\//.test(u))).toBe(true);
+  });
+
+  it('gsiDirectBase 未指定で呼ぶと早期エラー (= 異常呼び出しを silent fallback しない)', async () => {
+    await expect(loadDemStitched({
+      bounds: SMALL_BBOX, tileCache: null,
+    })).rejects.toThrow(/gsiDirectBase/);
   });
 });
