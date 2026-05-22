@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rayleighPhase, henyeyGreenstein, transmittance, scatteringCoefficient,
   inScatter, sunDirection, effectiveCoefficients, createAtmosphere,
-  ATMO_BETA_RAYLEIGH, ATMO_MIE_G, ATMO_DENSITY,
+  ATMO_BETA_RAYLEIGH, ATMO_BETA_MIE, ATMO_MIE_G, ATMO_DENSITY, ATMO_SUN_COLOR,
 } from '../lib/map3d/atmosphere3d.js';
 
 describe('rayleighPhase — Rayleigh 位相関数 3/(16π)·(1+cos²θ)', () => {
@@ -324,5 +324,112 @@ describe('createAtmosphere.applyTo — シェーダ注入契約 (silent fail 防
     const shader = makeFakeShader();
     shader.fragmentShader = 'void main() { gl_FragColor = vec4(1.0); }';  // マーカー欠落
     expect(() => material.onBeforeCompile(shader)).toThrow(/tonemapping_fragment/);
+  });
+});
+
+// === b62: 散乱パラメータのランタイム可変化 (調整スライダー接続) ===
+
+describe('effectiveCoefficients — b62: 第 2 引数 opts で betaMie 可変', () => {
+  it('1 引数呼び出しは b61 と完全一致 (後方互換)', () => {
+    const e = effectiveCoefficients(2);
+    for (let i = 0; i < 3; i += 1) {
+      expect(e.betaRayleigh[i]).toBeCloseTo(ATMO_BETA_RAYLEIGH[i] * 2, 12);
+      expect(e.betaMie[i]).toBeCloseTo(ATMO_BETA_MIE * 2, 12);
+    }
+  });
+
+  it('opts.betaMie が betaMie に反映される (const ATMO_BETA_MIE を上書き)', () => {
+    const e = effectiveCoefficients(1, { betaMie: 9e-6 });
+    expect(e.betaMie[0]).toBeCloseTo(9e-6, 12);
+    expect(e.betaMie[1]).toBe(e.betaMie[2]);  // 3 成分 broadcast 維持
+  });
+
+  it('opts.betaMie は betaRayleigh を変えない (Rayleigh は物理定数で不変)', () => {
+    const base = effectiveCoefficients(2);
+    const withMie = effectiveCoefficients(2, { betaMie: 30e-6 });
+    for (let i = 0; i < 3; i += 1) {
+      expect(withMie.betaRayleigh[i]).toBeCloseTo(base.betaRayleigh[i], 12);
+    }
+  });
+
+  it('betaMie 0 で betaMie 全 0 (edge)', () => {
+    const noM = effectiveCoefficients(3, { betaMie: 0 });
+    expect(noM.betaMie).toEqual([0, 0, 0]);
+  });
+
+  it('非数 opts.betaMie は既定値 ATMO_BETA_MIE に落ちる', () => {
+    const e = effectiveCoefficients(1, { betaMie: NaN });
+    const base = effectiveCoefficients(1);
+    expect(e.betaMie[0]).toBeCloseTo(base.betaMie[0], 12);
+  });
+});
+
+describe('createAtmosphere.setParams — b62: betaMie / mieG / sunScale 拡張', () => {
+  it('setParams({betaMie}) が betaMie / betaExt uniform を変える', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    const before = atmo.uniforms.uAtmoBetaMie.value.x;
+    atmo.setParams({ betaMie: ATMO_BETA_MIE * 3 });
+    expect(atmo.uniforms.uAtmoBetaMie.value.x).toBeCloseTo(before * 3, 12);
+    // betaExt は Mie の消散ぶんを含むので一緒に増える。
+    expect(atmo.uniforms.uAtmoBetaExt.value.x).toBeGreaterThan(0);
+  });
+
+  it('setParams({betaMie}) は betaRayleigh uniform を変えない (Rayleigh は物理定数)', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    const before = atmo.uniforms.uAtmoBetaRayleigh.value.z;
+    atmo.setParams({ betaMie: ATMO_BETA_MIE * 4 });
+    expect(atmo.uniforms.uAtmoBetaRayleigh.value.z).toBe(before);
+  });
+
+  it('setParams({mieG}) が uAtmoMieG uniform を変える', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    atmo.setParams({ mieG: 0.2 });
+    expect(atmo.uniforms.uAtmoMieG.value).toBeCloseTo(0.2, 12);
+  });
+
+  it('setParams({sunScale}) が太陽色 uniform を倍率スケールする', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    const before = atmo.uniforms.uAtmoSunColor.value.x;
+    atmo.setParams({ sunScale: 2 });
+    expect(atmo.uniforms.uAtmoSunColor.value.x).toBeCloseTo(before * 2, 9);
+  });
+
+  it('sunScale は setSun を跨いで保持される (recalcSunColor 経由)', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    atmo.setParams({ sunScale: 2 });
+    atmo.setSun(135, 30, 1);  // 昼夜係数 1
+    // ATMO_SUN_COLOR · sunScale(2) · daylight(1) = 8.4 · 2
+    expect(atmo.uniforms.uAtmoSunColor.value.x).toBeCloseTo(ATMO_SUN_COLOR[0] * 2, 9);
+    atmo.setSun(135, 30, 0.5);  // 昼夜係数を変えても sunScale は残る
+    expect(atmo.uniforms.uAtmoSunColor.value.x).toBeCloseTo(ATMO_SUN_COLOR[0] * 2 * 0.5, 9);
+  });
+
+  it('error path: 非数 (NaN / undefined / 文字列 / Infinity) と未知キーは uniform を変えず throw もしない', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    const mie = atmo.uniforms.uAtmoBetaMie.value.x;
+    const g = atmo.uniforms.uAtmoMieG.value;
+    const sun = atmo.uniforms.uAtmoSunColor.value.x;
+    expect(() => atmo.setParams({
+      betaMie: NaN, mieG: undefined, sunScale: null, density: Infinity, rayleighScale: 0.5,
+    })).not.toThrow();
+    expect(atmo.uniforms.uAtmoBetaMie.value.x).toBe(mie);
+    expect(atmo.uniforms.uAtmoMieG.value).toBe(g);
+    expect(atmo.uniforms.uAtmoSunColor.value.x).toBe(sun);
+  });
+
+  it('edge: 複数キー同時 setParams が全部反映される', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    atmo.setParams({ betaMie: 8e-6, density: 5, mieG: 0.4 });
+    expect(atmo.uniforms.uAtmoMieG.value).toBeCloseTo(0.4, 12);
+    // betaMie · density = 8e-6 · 5
+    expect(atmo.uniforms.uAtmoBetaMie.value.x).toBeCloseTo(8e-6 * 5, 12);
+  });
+
+  it('edge: 空 {} は uniform を一切変えない', () => {
+    const atmo = createAtmosphere(fakeTHREE);
+    const snap = atmo.uniforms.uAtmoBetaMie.value.x;
+    atmo.setParams({});
+    atmo.setParams();
+    expect(atmo.uniforms.uAtmoBetaMie.value.x).toBe(snap);
   });
 });

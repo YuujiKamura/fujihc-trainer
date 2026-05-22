@@ -206,6 +206,19 @@ export function createScene({ container, capture = false }) {
       if (material) atmosphere.applyTo(material);
     },
 
+    // b62: 大気散乱パラメータ (density / betaMie / rayleighScale / mieG / sunScale) を
+    // 実行時に差し替える ── 機器設定パネルの調整スライダーの配線口。uniform は共有参照
+    // なので setParams の .value 書き換えが次フレームの描画に即反映される。
+    setAtmosphereParams(params) {
+      atmosphere.setParams(params);
+    },
+
+    // b62: 大気散乱の uniform を読む口 (= e2e がスライダー操作で uniform が実際に
+    // 変わったことを観測するため)。createAtmosphere の uniforms をそのまま返す。
+    getAtmosphereUniforms() {
+      return atmosphere.uniforms;
+    },
+
     // 影オルソカメラを自機 (pos) 中心へ寄せる。 太陽光の向き (= hillshade) は変えず、
     // light の position と target を pos 基準に平行移動するだけ ── 影カメラだけが自機を
     // 覆う狭い範囲に収まり、 shadow map の解像度を自機へ集中できる。 facade が render

@@ -23,9 +23,14 @@
 // 海面 Rayleigh 散乱係数 (1/m)。標準大気値 (Bruneton 2008 等の大気散乱実装の共通値)。
 // 青:赤 ≈ 5.7:1 = 1/λ⁴ の波長依存 ── これが「遠景の青さ」の物理的根拠。
 export const ATMO_BETA_RAYLEIGH = [5.8e-6, 13.5e-6, 33.1e-6];
-// Mie 散乱係数 (1/m、波長非依存 = 灰)。標準大気の晴天 aerosol 値。GLSL uniform へは
-// この scalar を RGB 3 成分に broadcast する。
-export const ATMO_BETA_MIE = 21e-6;
+// Mie 散乱係数 (1/m、波長非依存 = 灰)。GLSL uniform へはこの scalar を RGB 3 成分に
+// broadcast する ── 波長非依存ゆえ散乱光を灰色に寄せる「白濁」の源。
+// b62: b61 は標準大気の晴天 aerosol 値 21e-6 を既定にしたが、青 Rayleigh 係数 33.1e-6 の
+// 63% と大きく、内部散乱の灰色寄与が Rayleigh の青さを薄めて富士遠景が白っぽく霞んだ
+// (user 指摘「白っぽくし過ぎ」)。Rayleigh 優位 = 青い透明感に寄せるため 21e-6 → 5e-6
+// (青 Rayleigh 係数の約 1/7) に下げた。実画面 ?cap=1 目視で白濁を脱し遠景が青く澄む値。
+// 「かすみの日」を見たいときは atmoMie スライダーを上げる (CONTROL_DEFS, 0..42e-6)。
+export const ATMO_BETA_MIE = 5e-6;
 // Mie 単散乱アルベド。Mie 消散 (extinction) = 散乱 / albedo ── 吸収ぶんを含めた減衰。
 export const ATMO_MIE_ALBEDO = 0.9;
 // Mie 異方性 g (前方散乱)。標準大気値。0 = 等方。この値で太陽周りに緩いハローが出る程度。
@@ -168,21 +173,29 @@ export function sunDirection(azimuthDeg, elevationDeg) {
 /**
  * 視認性スケール density から実効散乱係数 3 本を返す純関数.
  *
- * βRayleigh_eff = ATMO_BETA_RAYLEIGH·density、βMie_eff = ATMO_BETA_MIE·density (RGB
- * broadcast)、βExt = βRayleigh_eff + βMie_eff/ATMO_MIE_ALBEDO (Mie の吸収ぶんを含めた
- * 総消散)。透過・散乱係数・内部散乱はすべてこの実効係数を使う ── 不一致だと energy
- * 非保存で濁る。
+ * βRayleigh_eff = ATMO_BETA_RAYLEIGH·density、βMie_eff = betaMie·density (RGB
+ * broadcast)、βExt = βRayleigh_eff + βMie_eff/ATMO_MIE_ALBEDO (Mie の吸収ぶんを
+ * 含めた総消散)。透過・散乱係数・内部散乱はすべてこの実効係数を使う ── 不一致だと
+ * energy 非保存で濁る。
+ *
+ * b62: 第 2 引数 opts で Mie 散乱係数を実行時に差し替えられる (調整スライダー用)。
+ * Rayleigh 散乱係数は空気分子由来でほぼ一定の物理的与件 ── 日々変わるのは Mie
+ * (エアロゾル・水滴 = 山肌のもや) なので、調整つまみは Mie 一本に絞る。省略時は
+ * betaMie=ATMO_BETA_MIE ── 1 引数呼び出し effectiveCoefficients(density) は b61 と
+ * 完全一致 (後方互換)。
  *
  * @param {number} density - 視認性スケール (ATMO_DENSITY が既定)
+ * @param {{betaMie?:number}} [opts] - Mie 散乱係数 (1/m)。非数は ATMO_BETA_MIE に落とす。
  * @returns {{betaRayleigh:number[], betaMie:number[], betaExt:number[]}}
  */
-export function effectiveCoefficients(density) {
+export function effectiveCoefficients(density, opts = {}) {
+  const betaMieScalar = Number.isFinite(opts.betaMie) ? opts.betaMie : ATMO_BETA_MIE;
   const betaRayleigh = [
     ATMO_BETA_RAYLEIGH[0] * density,
     ATMO_BETA_RAYLEIGH[1] * density,
     ATMO_BETA_RAYLEIGH[2] * density,
   ];
-  const mieEff = ATMO_BETA_MIE * density;
+  const mieEff = betaMieScalar * density;
   const betaMie = [mieEff, mieEff, mieEff];
   const betaExt = [
     betaRayleigh[0] + betaMie[0] / ATMO_MIE_ALBEDO,
@@ -255,7 +268,17 @@ ${FRAG_MARKER}`;
  * @returns {object} 大気散乱 API
  */
 export function createAtmosphere(THREE, opts = {}) {
+  // 散乱パラメータのランタイム状態 (b62: 調整スライダーが setParams で書き換える)。
+  // density / betaMie は実効係数 (recalcEffective)、mieG は uniform 直、sunScale は
+  // 太陽色 (recalcSunColor) に効く。いずれも module const が既定値。Rayleigh 係数は
+  // 空気分子由来の物理定数なので可変にしない (調整は Mie = もや 側に絞る)。
   let density = Number.isFinite(opts.density) ? opts.density : ATMO_DENSITY;
+  let betaMie = Number.isFinite(opts.betaMie) ? opts.betaMie : ATMO_BETA_MIE;
+  let mieG = Number.isFinite(opts.mieG) ? opts.mieG : ATMO_MIE_G;
+  // 太陽放射輝度 (ATMO_SUN_COLOR) に掛ける倍率 = 露出相当の非物理つまみ。
+  let sunScale = Number.isFinite(opts.sunScale) ? opts.sunScale : 1;
+  // 直近 setSun が受けた昼夜係数。sunScale 変更時に太陽色を再計算するため保持する。
+  let lastDaylight = 1;
 
   // uniform を 1 セット生成。{value} の参照を applyTo で共有する。
   const uniforms = {
@@ -268,14 +291,24 @@ export function createAtmosphere(THREE, opts = {}) {
     uAtmoMieG: { value: ATMO_MIE_G },
   };
 
-  // density から実効散乱係数 uniform 3 本を再計算する。
+  // density / betaMie / mieG から散乱係数 uniform を再計算する。
   function recalcEffective() {
-    const eff = effectiveCoefficients(density);
+    const eff = effectiveCoefficients(density, { betaMie });
     uniforms.uAtmoBetaRayleigh.value.set(...eff.betaRayleigh);
     uniforms.uAtmoBetaMie.value.set(...eff.betaMie);
     uniforms.uAtmoBetaExt.value.set(...eff.betaExt);
+    uniforms.uAtmoMieG.value = mieG;
+  }
+
+  // 太陽色 uniform を再計算する ── ATMO_SUN_COLOR·sunScale·昼夜係数。
+  function recalcSunColor() {
+    uniforms.uAtmoSunColor.value.set(
+      ATMO_SUN_COLOR[0] * sunScale * lastDaylight,
+      ATMO_SUN_COLOR[1] * sunScale * lastDaylight,
+      ATMO_SUN_COLOR[2] * sunScale * lastDaylight);
   }
   recalcEffective();
+  recalcSunColor();
 
   return {
     // 散乱パラメータの uniform を読む口 (= scene.js の検証 / 将来 control_panel 用)。
@@ -325,6 +358,9 @@ export function createAtmosphere(THREE, opts = {}) {
     /**
      * 太陽方向を更新する (地表照明と同じ太陽 ── scene.js の applySun が毎回呼ぶ).
      *
+     * b62: 昼夜係数 strength を lastDaylight に保持し recalcSunColor 経由で太陽色を出す
+     * ── これで setParams({sunScale}) が後から来ても次の setSun を待たず即反映できる。
+     *
      * @param {number} azimuthDeg - 方位 (北 0°、時計回り)
      * @param {number} elevationDeg - 仰角 (deg)
      * @param {number} strength - 昼夜係数 (昼 1 / 夜 0.18、scene.js の daylight と同値)
@@ -332,9 +368,8 @@ export function createAtmosphere(THREE, opts = {}) {
     setSun(azimuthDeg, elevationDeg, strength = 1) {
       const d = sunDirection(azimuthDeg, elevationDeg);
       uniforms.uAtmoSunDir.value.set(d[0], d[1], d[2]);
-      const s = Number.isFinite(strength) ? Math.max(0, strength) : 1;
-      uniforms.uAtmoSunColor.value.set(
-        ATMO_SUN_COLOR[0] * s, ATMO_SUN_COLOR[1] * s, ATMO_SUN_COLOR[2] * s);
+      lastDaylight = Number.isFinite(strength) ? Math.max(0, strength) : 1;
+      recalcSunColor();
     },
 
     /**
@@ -347,15 +382,24 @@ export function createAtmosphere(THREE, opts = {}) {
     },
 
     /**
-     * 反復調整 / 将来 control_panel 接続用 ── density 変更で実効係数を再計算する.
+     * 散乱パラメータを実行時に差し替える (b62: 機器設定パネルの調整スライダー接続口).
      *
-     * @param {{density?:number}} params
+     * 渡されたキーのうち有限数のものだけ更新する ── 非数 / undefined / 未知キーは黙って
+     * 無視し既存値を保つ (throw しない、現状の density ガードと同型)。density / betaMie /
+     * mieG を変えたら実効係数を、sunScale を変えたら太陽色を再計算する。Rayleigh 係数は
+     * 物理定数なので params に持たない。
+     *
+     * @param {{density?:number, betaMie?:number, mieG?:number, sunScale?:number}} params
      */
     setParams(params = {}) {
-      if (Number.isFinite(params.density)) {
-        density = params.density;
-        recalcEffective();
-      }
+      let effDirty = false;
+      let sunDirty = false;
+      if (Number.isFinite(params.density)) { density = params.density; effDirty = true; }
+      if (Number.isFinite(params.betaMie)) { betaMie = params.betaMie; effDirty = true; }
+      if (Number.isFinite(params.mieG)) { mieG = params.mieG; effDirty = true; }
+      if (Number.isFinite(params.sunScale)) { sunScale = params.sunScale; sunDirty = true; }
+      if (effDirty) recalcEffective();
+      if (sunDirty) recalcSunColor();
     },
   };
 }

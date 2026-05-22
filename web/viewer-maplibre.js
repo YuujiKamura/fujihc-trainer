@@ -2059,6 +2059,9 @@ if (TEST_MODE) {
         trkpts: rideState ? rideState.getTrkpts().length : 0,
       };
     },
+    // b62: 大気散乱 uniform の観測口 ── e2e が atmosphere スライダー操作で
+    // uniform が実際に変わったことを assert するため。scene 未生成なら null。
+    get atmo() { return mapRenderer.getAtmosphereUniforms(); },
   };
 }
 
@@ -2212,6 +2215,21 @@ const CONTROL_DEFS = [
   { key:'courseWidth',label:'コース幅',     min:4,   max:40,   step:2,  value:10,  unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setCourseWidth(raw); } },
   { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
   { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
+  // b62: 大気散乱 (aerial perspective) の調整スライダー 4 本。 atmosphere3d.js の散乱
+  //   パラメータを mapRenderer.setAtmosphereParams 経由で実行時に差し替える。 太陽方位は
+  //   既存 lightDir が兼ねる (= 仰角は方位由来 SoT、 大気の太陽は scene の applySun が
+  //   同期する) ので方位/仰角スライダーは足さない。 Rayleigh (青み) は空気分子由来の
+  //   物理定数なのでスライダーにしない ── 日々変わるのは Mie (もや) なので調整は Mie に
+  //   絞る。 各 def の raw 値の表現はコメント参照。
+  // atmoMie: raw = ATMO_BETA_MIE 生値 ×10⁶ (raw 5 = 5e-6)。 value 5 は const ATMO_BETA_MIE
+  //   と同 default ── 変えたら両方。 0 = 純 Rayleigh、 42 = 旧 b61 既定 21 の 2 倍 (白濁端)。
+  { key:'atmoMie',     label:'大気 かすみ(Mie)',  min:0,   max:42,   step:1,  value:5,   unit:'×10⁻⁶', format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ betaMie: raw*1e-6 }); } },
+  // atmoG: raw = ATMO_MIE_G ×100 (raw 76 = g 0.76)。 0 = 等方、 95 で止める (HG は g→1 で発散)。
+  { key:'atmoG',       label:'大気 Mie異方性 g',  min:0,   max:95,   step:5,  value:76,  unit:'g',      format:raw=>(raw/100).toFixed(2),         apply(raw){ mapRenderer.setAtmosphereParams({ mieG: raw/100 }); } },
+  // atmoDensity: raw = ATMO_DENSITY ×10 (raw 35 = density 3.5)。 散乱の視認性スケール (全体倍率)。
+  { key:'atmoDensity', label:'大気 散乱密度',     min:5,   max:80,   step:1,  value:35,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setAtmosphereParams({ density: raw/10 }); } },
+  // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
+  { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
 

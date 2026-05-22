@@ -23,5 +23,11 @@ export default defineConfig({
     url: 'http://127.0.0.1:8000/',
     reuseExistingServer: true,
     timeout: 15_000,
+    // b62: bridge の web 配信 root は fujihill パッケージの __file__ 相対。 editable
+    // install は常に元 repo を指すため、 git worktree から e2e を回すと worktree の
+    // web/ ではなく元 repo の web/ が配信され、 worktree の変更が検証されない。
+    // PYTHONPATH=src で worktree の src/fujihill を優先 import させ、 配信 root を
+    // worktree に向ける。 通常 checkout でも src layout で同じ repo を指すので無害。
+    env: { PYTHONPATH: 'src' },
   },
 });
