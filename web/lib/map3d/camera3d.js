@@ -103,10 +103,11 @@ export function createCamera3d(THREE, opts = {}) {
   let radius = 80;
   // radius のクランプ域 (m)。 terrain3d.html は span 比例 (span*0.03〜span*3.5) だが、
   // 富士のように span が大きいと最小でも数百 m になり「ライダーに寄れない」。
-  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 3000m
-  // (= コース全体の文脈は見えるが地形全景まで引かない、 31km 引きすぎ問題の解消)。
+  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 6000m
+  // (= コース全体 + 周辺地形の文脈まで引ける。 旧 3000m から 2 倍に拡張、
+  //  user 指示 2026-05-22「ズームアウトのキャップをあと 2 倍遠くに」)。
   const RADIUS_MIN = 5;
-  const RADIUS_MAX = 3000;
+  const RADIUS_MAX = 6000;
   // 追従カメラの距離定数 (m、 実スケール自転車に合わせた値、 terrain3d.html L622-624)。
   const FOLLOW_BACK = 8;
   const FOLLOW_UP = 1.8;
