@@ -323,6 +323,11 @@ const _lsNum = (k, d) => {
 let bikeMass = _lsNum('fujihill.mass', 88);    // kg (= rider + bike 総重量)
 let bikeCrr  = _lsNum('fujihill.crr', 0.001);  // 転がり抵抗係数 (= 既定 1‰、 競技寄り)
 let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
+// b53: 観る / デモ / TEST モードの手動パワー (W)。 パワースライダー (CONTROL_DEFS の
+// power def) が apply で書き換える。 createFakeStateGenerator に () => manualPowerW で
+// 渡し、 fake state の power_w として 1Hz で wsHandlers.state → integratePhysics に届く。
+// 実ライド (bridge / BLE) は fake generator を通らないため、 trainer 接続中は実 power 優先。
+let manualPowerW = _lsNum('fujihill.power', 250);
 // 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
 // 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
 // のみ、 distanceM も速度を持たない) seed できず 0 始動とする。 復元直後の 1 state メッセージ分
@@ -927,7 +932,8 @@ function initTestMode() {
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
-      () => (rideState ? rideState.snapshot() : null), 'OK (TEST MODE)'),
+      () => (rideState ? rideState.snapshot() : null), 'OK (TEST MODE)',
+      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
   // 2026-05-16 fix: user 報告 「F5 すると HUD もなにもない画面で詰む」.
   // ?test=1 は元々「自動 ride start」 設計だったが、 担当 C の preflight 統合で
@@ -1343,7 +1349,8 @@ function initViewMode() {
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
-      () => (rideState ? rideState.snapshot() : null), 'OK (VIEW MODE)'),
+      () => (rideState ? rideState.snapshot() : null), 'OK (VIEW MODE)',
+      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
 
   // 2026-05-15 fix: section-overlay 全画面 modal は撤回、 右上 persistent panel
@@ -1689,7 +1696,8 @@ function initMapMode() {
   client = createTestModeClient(wsHandlers, {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
-      () => (rideState ? rideState.snapshot() : null), 'OK (MAP MODE)'),
+      () => (rideState ? rideState.snapshot() : null), 'OK (MAP MODE)',
+      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
   // 描画完了まで ride を待機 (= user 指示: 「全体描画が終わるまでスタートせずに待機」).
   // ローディングインジケータを表示、 rideState 準備済 + map.idle (= 全 tile load + render flush)
@@ -2205,6 +2213,10 @@ const CONTROL_DEFS = [
   { key:'mass',       label:'質量',        min:60,  max:110,  step:1,  value:88,  unit:'kg',     format:raw=>String(Math.round(raw)),      apply(raw){ bikeMass=raw; } },
   { key:'crr',        label:'転がり抵抗',  min:1,   max:25,   step:1,  value:1,   unit:'‰',      format:raw=>String(Math.round(raw)),      apply(raw){ bikeCrr=raw/1000; } },
   { key:'cda',        label:'空気抵抗',    min:18,  max:60,   step:1,  value:35,  unit:'m²',     format:raw=>(raw/100).toFixed(2),         apply(raw){ bikeCda=raw/100; } },
+  // b53: 観る / デモ / TEST モードの手動パワー。 range 50–600W は一般的なロード走の
+  // 出力域 (ホビー巡航 100–200W、 競技 250–400W、 スプリント上限 600W 強) を覆う。
+  // step 10W は微調整に十分な粒度。 trainer 接続中の実ライドには効かない (上記 manualPowerW)。
+  { key:'power',      label:'パワー',      min:50,  max:600,  step:10, value:250, unit:'W',      format:raw=>String(Math.round(raw)),      apply(raw){ manualPowerW=raw; } },
   { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
   { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
   { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
@@ -2244,6 +2256,21 @@ const btnDbinitProceed = document.getElementById('btnDbinitProceed');
 if (btnDbinitProceed) btnDbinitProceed.addEventListener('click', proceedFromDbinit);
 const btnDbinitClose = document.getElementById('btnDbinitClose');
 if (btnDbinitClose) btnDbinitClose.addEventListener('click', closeDbinit);
+
+// b53: 観るモードの区間リストパネル (#section-list-panel) のヘッダ折りたたみトグル。
+// click で panel に .collapsed を toggle ── CSS が <ul#section-list> と .panel-hint を
+// display:none にする。 ヘッダ / トグル / #btnViewModeExit は折りたたみ時も残す
+// (= 再展開とモード退出の導線)。 折りたたみ状態は session 内のみ (localStorage 永続なし)。
+const btnSectionCollapse = document.getElementById('btnSectionCollapse');
+if (btnSectionCollapse) {
+  btnSectionCollapse.addEventListener('click', () => {
+    const panel = document.getElementById('section-list-panel');
+    if (!panel) return;
+    const collapsed = panel.classList.toggle('collapsed');
+    btnSectionCollapse.textContent = collapsed ? '▶' : '▼';
+    btnSectionCollapse.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  });
+}
 
 // brief 33: ride 履歴 + Strava 連携 button bind.
 // IndexedDB は遅延 open (= ride 終了 / 履歴 open 時に初めて開く、 起動時に open しない).

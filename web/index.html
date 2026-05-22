@@ -265,7 +265,19 @@
     display: none;
   }
   body.mode-view #section-list-panel { display: block; }
-  #section-list-panel h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #section-list-panel h3 {
+    margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;
+  }
+  /* b53: 区間リストパネルの折りたたみトグル。 ヘッダ右端に置く。 */
+  #section-list-panel #btnSectionCollapse {
+    background: none; border: none; color: #ffd54a; cursor: pointer;
+    font: inherit; line-height: 1; padding: 0.1rem 0.3rem; min-height: 24px;
+  }
+  /* collapsed のとき本体 (区間リスト + ヒント) を隠す。 ヘッダ / トグル /
+     #btnViewModeExit は残す (= 再展開とモード退出の導線)。 */
+  body.mode-view #section-list-panel.collapsed #section-list,
+  body.mode-view #section-list-panel.collapsed .panel-hint { display: none; }
   #section-list-panel .panel-hint { color: #aaa; font-size: 11px; margin: 0 0 0.5rem; line-height: 1.4; }
   #section-list-panel .sec-active { background: #2a4418 !important; border-color: #7fff00 !important; }
   /* 観るモードから抜ける導線 (= イントロ overlay を再表示してモードを選び直す). */
@@ -944,7 +956,11 @@
      行クリックでいつでも別区間にジャンプ可能 (= user 指摘「走行中に右上に区間リストが
      あって何時でも区間を選べる」反映). 全画面 section-overlay は撤去. -->
 <aside id="section-list-panel" aria-label="コース区間リスト">
-  <h3>区間を選んで観る</h3>
+  <h3>
+    <span>区間を選んで観る</span>
+    <button id="btnSectionCollapse" type="button" aria-expanded="true"
+            aria-label="区間リストの折りたたみ">▼</button>
+  </h3>
   <p class="panel-hint">行をクリックするとその区間の始点から走り直します。 ログ保存なし。</p>
   <ul id="section-list" aria-label="コース 10 区間"></ul>
   <button id="btnViewModeExit" type="button">最初の画面に戻る</button>

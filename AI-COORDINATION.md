@@ -76,6 +76,17 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
   実画面で course 読込 (1968 pts, 23.8 km) と描画が不変なことを目視確認。注: e2e の
   `svelte_map.spec.js` 2 件 fail は未追跡の Gemini レーン (Svelte 殻が GSI を冷フェッチ、
   b40 見張りが設計通り発火) で本作業と無関係。
+- 2026-05-22 Claude — b53 (brief `b53-section-collapse-and-power-slider`、 タスク表の
+  b53「tick ループ抽出」とは別件、 user 直接指示の UI 追加)。観るモードに 2 機能を追加。
+  (1) 区間リストパネル `#section-list-panel` のヘッダ折りたたみトグル `#btnSectionCollapse`
+  (index.html / CSS / viewer-maplibre.js)。(2) 調整パネル `CONTROL_DEFS` にパワー
+  スライダー power def (default 250W)。`createFakeStateGenerator` に `getPower` 第 3
+  引数を追加 (省略時 150 で後方互換)、 観る/デモ/TEST の fake trainer の power_w を
+  スライダー値 `manualPowerW` にした ── 既存の `wsHandlers.state` → `integratePhysics`
+  経路がそのまま rider 速度に反映。実ライドは fake generator を通らないため trainer
+  接続中はスライダー無効 (実行時分岐なし)。挙動の足し算。7軸 draft audit CONVERGED。
+  vitest 1453 green (b53 新規 15 件含む)、 e2e `section_collapse_and_power` 2/2 +
+  `view_mode_exit` green (単独実行で確認)。
 - 2026-05-22 Claude — 衝突復旧2 (brief `b52-restore-index-dom-primary`)。主エントリ
   `index.html` を engine 未配線の Svelte 殻から動く DOM 版に戻し、Svelte 殻を
   `index-svelte.html` へ分離、`index-dom.html` 削除。e2e 8 spec を index.html へ、

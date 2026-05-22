@@ -106,16 +106,24 @@ export function createBridgeClient(url, handlers, options = {}) {
  * @param {() => ({active?:boolean, paused?:boolean, distance?:number}|null)} getSnapshot
  *   rideState.snapshot() を返す関数 (= rideState 未生成なら null を返してよい).
  * @param {string} [ackLabel='OK (TEST MODE)'] last_ack に載せるモード名.
+ * @param {() => number} [getPower] moving 時に出す power_w を返す関数 (= 観る/デモ/TEST
+ *   モードのパワースライダー値)。 省略時は 150 固定 (= 後方互換、 既存テストの
+ *   power_w===150 期待を維持)。 非数を返した場合も 150 に fallback する。
  * @returns {() => object} createTestModeClient の fakeStateGenerator にそのまま渡せる関数.
  */
-export function createFakeStateGenerator(getSnapshot, ackLabel = 'OK (TEST MODE)') {
+export function createFakeStateGenerator(getSnapshot, ackLabel = 'OK (TEST MODE)', getPower) {
   return () => {
     const snap = (typeof getSnapshot === 'function' && getSnapshot())
       || { active: false, paused: true, distance: 0 };
     const moving = !!snap.active && !snap.paused;
+    // power_w は getPower() の戻り値 (= パワースライダー)。 実ライドの client は
+    // この生成器を通らないため、 スライダーは観る/デモ/TEST にのみ効く (= trainer
+    // 接続中は実 power 優先、 実行時分岐なしで構造的に成立)。
+    const rawPower = (typeof getPower === 'function') ? Number(getPower()) : 150;
+    const power = Number.isFinite(rawPower) ? rawPower : 150;
     return {
       speed_mps: moving ? (20 / 3.6) : 0,
-      power_w: moving ? 150 : 0,
+      power_w: moving ? power : 0,
       cadence_rpm: moving ? 80 : 0,
       distance_m: Number.isFinite(snap.distance) ? snap.distance : 0,
       slope_sent_pct: 0,
