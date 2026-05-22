@@ -83,6 +83,13 @@ export function zoomToRadius(zoom) {
   return ZOOM_RADIUS_REF_M * Math.pow(2, ZOOM_RADIUS_REF_ZOOM - zoom);
 }
 
+// orbit カメラのズーム半径クランプ域 (m)。RADIUS_MIN = ライダーに肉薄できる近接端、
+// RADIUS_MAX = ズームアウト上限。**この 2 つがズーム端の唯一の定義** ── camera の
+// far クリップ面はここから導出し、テストもここを import して参照する。ズーム端を
+// 変えるならこの 1 箇所だけ書き換えれば far もテストも自動追従する。
+export const RADIUS_MIN = 5;
+export const RADIUS_MAX = 12000;
+
 // === ファクトリ (THREE 注入、 描画グルー) ===
 
 // camera3d を生成する。 opts:
@@ -92,11 +99,11 @@ export function zoomToRadius(zoom) {
 //   mode    'orbit' (既定) | 'top' | 'follow'
 export function createCamera3d(THREE, opts = {}) {
   const span = opts.span || 1000;
-  // far 面は RADIUS_MAX (12000m) を必ず上回らせる ── orbit 半径が far を超えると、
-  // 最大ズームアウト時にシーン全体が far クリップ面の外へ出て画面が真っ暗になる
-  // (2026-05-22、RADIUS_MAX を 3000→6000 にしたとき far=span*6 を超えて発覚)。
-  // RADIUS_MAX を上げたら必ずこの下限もそれを超える値に上げること。
-  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, Math.max(span * 6, 28000));
+  // far クリップ面は RADIUS_MAX から導出する ── orbit 半径が far を超えると最大
+  // ズームアウトでシーンが far の外へ出て画面が真っ暗になる (2026-05-22 に発覚)。
+  // RADIUS_MAX*2 + span で「ズーム半径上限 + シーン奥行き」を必ず内包するので、
+  // RADIUS_MAX を変えれば far も自動追従する (far を別途いじる必要はない)。
+  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, Math.max(span * 6, RADIUS_MAX * 2 + span));
   const target = new THREE.Vector3(0, opts.targetY || 0, 0);
   const panOffset = new THREE.Vector3(0, 0, 0);
   // MapLibre 準拠のカメラ操作変数 (terrain3d.html L612-616)。
@@ -105,14 +112,8 @@ export function createCamera3d(THREE, opts = {}) {
   // 初期半径は走行視点寄りの 80m (= setCameraDefaults 未呼出でもライダーに寄った絵)。
   // viewer は loadCourse で setCameraDefaults({zoom,pitch}) を呼ぶのでそこで上書きされる。
   let radius = 80;
-  // radius のクランプ域 (m)。 terrain3d.html は span 比例 (span*0.03〜span*3.5) だが、
-  // 富士のように span が大きいと最小でも数百 m になり「ライダーに寄れない」。
-  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 12000m
-  // (= コース全体 + 広域の周辺地形まで引ける。 3000m→6000m→12000m と段階拡張、
-  //  user 指示 2026-05-22「ズームアウトのキャップをあと 2 倍」を 2 回)。
-  // RADIUS_MAX を上げたら上の camera far 面の下限も必ず追従させること。
-  const RADIUS_MIN = 5;
-  const RADIUS_MAX = 12000;
+  // radius のクランプ域 RADIUS_MIN / RADIUS_MAX はモジュール先頭の export const が
+  // 唯一の定義 (= ここでは再定義しない、そのまま参照する)。
   // 追従カメラの距離定数 (m、 実スケール自転車に合わせた値、 terrain3d.html L622-624)。
   const FOLLOW_BACK = 8;
   const FOLLOW_UP = 1.8;

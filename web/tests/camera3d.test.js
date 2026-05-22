@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   orbitPosition, topPosition, followPlacement, ndcToScreen,
   dragToBearing, dragToPitch, wheelRadius, zoomToRadius, createCamera3d,
-  ZOOM_RADIUS_REF_ZOOM, ZOOM_RADIUS_REF_M,
+  ZOOM_RADIUS_REF_ZOOM, ZOOM_RADIUS_REF_M, RADIUS_MIN, RADIUS_MAX,
 } from '../lib/map3d/camera3d.js';
 
 const ORIGIN = { x: 0, y: 0, z: 0 };
@@ -226,14 +226,14 @@ describe('createCamera3d: orbit 視点の永続化 (getOrbitState / applyOrbitSt
     expect(b.camera.position.z).toBeCloseTo(a.camera.position.z, 6);
   });
 
-  it('applyOrbitState は radius を [5, 12000] にクランプ、 bearing を 0..360 に正規化', () => {
+  it(`applyOrbitState は radius を [${RADIUS_MIN}, ${RADIUS_MAX}] にクランプ、 bearing を 0..360 に正規化`, () => {
     const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
     c3d.applyOrbitState({ bearing: 400, pitch: 50, radius: 999999 });
     const s = c3d.getOrbitState();
-    expect(s.radius).toBe(12000);
+    expect(s.radius).toBe(RADIUS_MAX);
     expect(s.bearing).toBeCloseTo(40, 6);
     c3d.applyOrbitState({ bearing: -30, pitch: 50, radius: 1 });
-    expect(c3d.getOrbitState().radius).toBe(5);
+    expect(c3d.getOrbitState().radius).toBe(RADIUS_MIN);
     expect(c3d.getOrbitState().bearing).toBeCloseTo(330, 6);
   });
 
@@ -276,18 +276,18 @@ describe('createCamera3d.setCameraDefaults: 初期 zoom/pitch の反映', () => 
     expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(zoomToRadius(21), 3);
   });
 
-  it('遠い zoom 8 でも RADIUS_MAX 12000m にクランプされる (= 引きすぎ問題の解消)', () => {
+  it(`遠い zoom 8 でも RADIUS_MAX (${RADIUS_MAX}m) にクランプされる (= 引きすぎ問題の解消)`, () => {
     const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
     c3d.setCameraDefaults({ zoom: 8 });  // zoomToRadius(8) は 30 万 m 超
     c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
-    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(12000, 3);
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(RADIUS_MAX, 3);
   });
 
-  it('近すぎる zoom 30 でも RADIUS_MIN 5m にクランプされる (= ライダーにめり込まない)', () => {
+  it(`近すぎる zoom 30 でも RADIUS_MIN (${RADIUS_MIN}m) にクランプされる (= ライダーにめり込まない)`, () => {
     const c3d = createCamera3d(makeThreeStub(), { span: 20000 });
     c3d.setCameraDefaults({ zoom: 30 });
     c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
-    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(5, 3);
+    expect(dist(c3d.camera.position, { x: 0, y: 0, z: 0 })).toBeCloseTo(RADIUS_MIN, 3);
   });
 
   it('zoom 未指定なら半径は変えず pitch だけ反映する', () => {
