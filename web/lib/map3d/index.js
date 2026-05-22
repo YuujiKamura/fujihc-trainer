@@ -21,7 +21,6 @@
 import { createCamera3d } from './camera3d.js';
 import { createRiderMesh3d } from './rider_mesh3d.js';
 import { createCourseRibbon } from './course_ribbon3d.js';
-import { createMarkers3d } from './markers3d.js';
 import { createLabels3d, LABEL_BASE_HEIGHT_M } from './labels3d.js';
 import { createLandmarks3d } from './landmarks3d.js';
 import { ROAD_OFFSET_M } from './terrain_surface.js';
@@ -105,7 +104,6 @@ export function createMapRenderer() {
   let camera3d = null;    // 部品4
   let rider3d = null;     // 部品5
   let ribbon3d = null;    // 部品3
-  let markers3d = null;   // 部品6
   let labels3d = null;    // 部品7
   let landmarks3d = null; // b39: 富士ヒル区間名標識 (= 7 件、 setLandmarks で生成 / 再呼出で dispose+再生成)
   let terrainMesh = null; // 部品2 の出力 mesh
@@ -508,12 +506,6 @@ export function createMapRenderer() {
       scene.add(ribbon3d.mesh);
       ribbonPositions = ribbon3d.mesh.geometry.getAttribute('position').array;
 
-      // 起点 / 終点マーカー。 球半径は地形 span 比例 (= terrain3d.html の endMark 準拠)。
-      markers3d = createMarkers3d(THREE, course, geoOpts, {
-        radiusM: Math.max(8, terrainSpan * 0.008),
-      });
-      scene.add(markers3d.group);
-
       // 距離ラベル。 約 50m 間隔の標識を billboard sprite で立てる。
       const polygonFC = buildGradeColoredRoadPolygons(course, 5);
       labels3d = createLabels3d(THREE, {
@@ -592,9 +584,10 @@ export function createMapRenderer() {
 
     // === 起点 / 終点マーカー ===
 
-    setStartGoalVisible(visible) {
-      if (markers3d) markers3d.setStartGoalVisible(visible);
-    },
+    // 起点 / 終点の球マーカーは 2026-05-22 に廃止 (= 地形に半分埋まり「ドーム」に
+    // 見えて不要との判断)。 差し替え口契約 (map_renderer.js と 22 メソッドで対称) を
+    // 保つため API は no-op で残す。
+    setStartGoalVisible() {},
 
     // === 実行時調整 (b13-3) ===
 
@@ -660,7 +653,6 @@ export function createMapRenderer() {
         }
       }
       if (labels3d) labels3d.shiftY(delta);
-      if (markers3d) markers3d.shiftY(delta);
     },
 
     setLabelHeight(heightM) {
