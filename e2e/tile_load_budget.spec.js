@@ -18,7 +18,7 @@
 
 import { test, expect } from './base-test.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/';
+const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
 const GSI_ORIGIN = 'https://cyberjapandata.gsi.go.jp';
 const OSM_ORIGIN = 'https://tile.openstreetmap.org';
 
@@ -54,11 +54,11 @@ async function setupGsiIntercept(page) {
 // これで terrain_loader.js の chain が「bridge fail → GSI direct fetch」 経路に進む。
 async function simulatePagesNoBridge(page) {
   // 同梱経路 (= `${BASE_PATH}static/tiles/gsi_dem/**`) を 404
-  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, async (route) => {
+  await page.route('http://127.0.0.1:8000/static/tiles/gsi_dem/**', async (route) => {
     await route.fulfill({ status: 404 });
   });
   // bridge mode 経路 (= `${origin}/tiles/gsi_dem/**`) を 404
-  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, async (route) => {
+  await page.route('http://127.0.0.1:8000/tiles/gsi_dem/**', async (route) => {
     await route.fulfill({ status: 404 });
   });
 }
@@ -98,7 +98,7 @@ async function clearTileCacheOnce(page) {
   // 空 page に goto して IndexedDB + Service Worker cache を削除 (= 同 origin 上で削除しないと
   // 効かない)。 brief 35 で SW cache 経路でタイルが返って GSI direct intercept をすり抜ける
   // ケースを塞ぐため、 SW unregister + Cache API clear も合わせて実施する。
-  await page.goto(`${VIEWER_URL}index.html`, { waitUntil: 'commit' });
+  await page.goto(VIEWER_URL, { waitUntil: 'commit' });
   await page.evaluate(() => new Promise((resolve) => {
     const req = indexedDB.deleteDatabase('fujihc-tile-cache');
     req.onsuccess = () => resolve();

@@ -36,48 +36,46 @@ describe('brief 29: index.html minimap DOM 構成 (= 2 canvas、 brief 28 の di
   });
 });
 
-describe('brief 29: viewer-maplibre.js は旧 OSM 直叩き minimap を持つ', () => {
+describe('b51: minimap は web/lib/minimap.js が OSM 直叩き minimap を持つ', () => {
+  // b51: minimap (loadOsmTile / 上下 base 画像 / update) は viewer-maplibre.js から
+  //   web/lib/minimap.js の createMinimap() factory へ切り出し済。
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
+  const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
 
-  it('function loadOsmTile 定義が存在する (= 旧版踏襲、 1-shot tile fetch)', () => {
-    expect(viewer).toMatch(/function\s+loadOsmTile\s*\(/);
+  it('viewer は createMinimap を minimap.js から import している', () => {
+    expect(viewer).toMatch(/import\s+\{[^}]*createMinimap[^}]*\}\s+from\s+['"]\.\/lib\/minimap\.js['"]/);
   });
 
-  it('function buildMinimapTopBase 定義が存在する (= 上半分の OSM + course polyline base 画像)', () => {
-    expect(viewer).toMatch(/function\s+buildMinimapTopBase\s*\(/);
+  it('function loadOsmTile 定義が minimap.js に存在する (= 1-shot tile fetch)', () => {
+    expect(minimapSrc).toMatch(/function\s+loadOsmTile\s*\(/);
   });
 
-  it('function buildMinimapBottomBase 定義が存在する (= 下半分の標高プロファイル base 画像)', () => {
-    expect(viewer).toMatch(/function\s+buildMinimapBottomBase\s*\(/);
+  it('buildTopBase / buildBottomBase / drawDirTriangle / update が minimap.js に存在する', () => {
+    expect(minimapSrc).toMatch(/function\s+buildTopBase\s*\(/);
+    expect(minimapSrc).toMatch(/function\s+buildBottomBase\s*\(/);
+    expect(minimapSrc).toMatch(/function\s+drawDirTriangle\s*\(/);
+    expect(minimapSrc).toMatch(/function\s+update\s*\(/);
   });
 
-  it('function drawDirTriangle 定義が存在する (= rider 進行方向三角形、 旧版踏襲)', () => {
-    expect(viewer).toMatch(/function\s+drawDirTriangle\s*\(/);
+  it('loadOsmTile は bridge osm_raster 経路を一次に使い、 OSM 公式直叩きはしない', () => {
+    expect(minimapSrc).toMatch(/osm_raster/);
+    // 2026-05-15 fix で OSM 公式 (tile.openstreetmap.org) への直叩き fallback は撤去済。
+    expect(minimapSrc).not.toMatch(/tile\.openstreetmap\.org/);
   });
 
-  it('loadOsmTile 内に tile.openstreetmap.org URL literal が現れる (= 旧版踏襲、 ToS 範囲内)', () => {
-    const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/tile\.openstreetmap\.org/);
+  it('minimap.js は tile_math から座標変換を import (= lib 経由)', () => {
+    expect(minimapSrc).toMatch(/import\s+\{[^}]*lonToTileX[^}]*\}\s+from\s+['"]\.\/tile_math\.js['"]/);
+    expect(minimapSrc).toMatch(/import\s+\{[^}]*tileYToLat[^}]*\}\s+from\s+['"]\.\/tile_math\.js['"]/);
   });
 
-  it('tile_math から lonToTileX / latToTileY / tileXToLon / tileYToLat を import (= lib 経由)', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*lonToTileX[^}]*\}\s+from\s+['"]\.\/lib\/tile_math\.js['"]/);
-    expect(viewer).toMatch(/import\s+\{[^}]*latToTileY[^}]*\}\s+from\s+['"]\.\/lib\/tile_math\.js['"]/);
-    expect(viewer).toMatch(/import\s+\{[^}]*tileXToLon[^}]*\}\s+from\s+['"]\.\/lib\/tile_math\.js['"]/);
-    expect(viewer).toMatch(/import\s+\{[^}]*tileYToLat[^}]*\}\s+from\s+['"]\.\/lib\/tile_math\.js['"]/);
+  it('minimap.js は update で minimapTopBase + minimapBottomBase の両方を drawImage', () => {
+    expect(minimapSrc).toMatch(/drawImage\(minimapTopBase/);
+    expect(minimapSrc).toMatch(/drawImage\(minimapBottomBase/);
   });
 
-  it('updateMinimap 内で minimapTopBase + minimapBottomBase の両方を drawImage', () => {
-    const m = viewer.match(/function\s+updateMinimap[\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/drawImage\(minimapTopBase/);
-    expect(m[0]).toMatch(/drawImage\(minimapBottomBase/);
-  });
-
-  it('module-scope に let minimapTopBase / minimapBottomBase が存在する', () => {
-    expect(viewer).toMatch(/let\s+minimapTopBase\s*=\s*null/);
-    expect(viewer).toMatch(/let\s+minimapBottomBase\s*=\s*null/);
+  it('minimap.js の closure に minimapTopBase / minimapBottomBase がある', () => {
+    expect(minimapSrc).toMatch(/let\s+minimapTopBase\s*=\s*null/);
+    expect(minimapSrc).toMatch(/let\s+minimapBottomBase\s*=\s*null/);
   });
 });
 
@@ -126,9 +124,11 @@ describe('brief 29: prefetchTilesAlongCourse の物理 freeze 維持 (= brief 13
     expect(viewer).not.toMatch(/prefetchTilesAlongCourse\s*=\s*function/);
   });
 
-  it('main viewer 内に OSM URL literal が複数箇所無い (= loadOsmTile 1 箇所のみ)', () => {
-    // tile.openstreetmap.org の出現が loadOsmTile 関数内の 1 箇所のみ
-    const all = (viewer.match(/tile\.openstreetmap\.org/g) || []).length;
-    expect(all).toBe(1);
+  it('viewer / minimap.js とも OSM 公式直叩き URL literal が無い (= 第三者 heavy use ゼロ)', () => {
+    // 2026-05-15 fix で tile.openstreetmap.org への直叩きは完全撤去。minimap の OSM
+    // raster は bridge の osm_raster 経路のみ (= static mode は取得せず)。
+    const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
+    expect((viewer.match(/tile\.openstreetmap\.org/g) || []).length).toBe(0);
+    expect((minimapSrc.match(/tile\.openstreetmap\.org/g) || []).length).toBe(0);
   });
 });

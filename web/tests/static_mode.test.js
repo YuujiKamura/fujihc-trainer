@@ -29,18 +29,21 @@ describe('brief 31: BASE_PATH / BRIDGE_TILE_BASE_URL / STATIC_TILE_BASE_URL の�
 });
 
 describe('brief 31 構造修正: static mode で OSM 直叩き fallback が無効化されている', () => {
-  it('loadOsmTile は ENV.mode !== "bridge" なら最初の onerror 前に early return', () => {
-    const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  it('minimap.js の loadOsmTile は env.mode !== "bridge" なら early return', () => {
+    // b51: loadOsmTile は web/lib/minimap.js に切り出し済。env は引数で渡る。
+    const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
+    const m = minimapSrc.match(/function\s+loadOsmTile\s*\([\s\S]*?\n  \}/);
     expect(m).not.toBeNull();
     const body = m[0];
-    // body の冒頭で ENV non-bridge 時の early resolve があるはず
-    expect(body).toMatch(/if\s*\(\s*!ENV\s*\|\|\s*ENV\.mode\s*!==?\s*['"]bridge['"]\s*\)/);
-    expect(body).toMatch(/resolve\(\s*\)\s*;\s*return\s*;/);
+    expect(body).toMatch(/if\s*\(\s*!env\s*\|\|\s*env\.mode\s*!==?\s*['"]bridge['"]\s*\)/);
+    expect(body).toMatch(/resolve\(\s*\)\s*;/);
   });
 
-  it('tile.openstreetmap.org への直叩きは loadOsmTile 内 1 箇所のみ (= bridge mode 時の fallback 限定)', () => {
-    const allMatches = viewer.match(/tile\.openstreetmap\.org/g) || [];
-    expect(allMatches.length).toBe(1);
+  it('OSM 公式直叩き URL が viewer / minimap.js とも無い (= static mode 第三者 harm ゼロ)', () => {
+    // 2026-05-15 fix で tile.openstreetmap.org 直叩きは完全撤去、bridge osm_raster のみ。
+    const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
+    expect((viewer.match(/tile\.openstreetmap\.org/g) || []).length).toBe(0);
+    expect((minimapSrc.match(/tile\.openstreetmap\.org/g) || []).length).toBe(0);
   });
 });
 

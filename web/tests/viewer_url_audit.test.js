@@ -15,31 +15,21 @@ const SITE_DIR = resolve(__dirname, '..', '..', '_site');
 describe('viewer 外部 fetch ゼロ (brief 17b)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
-  // brief 29: minimap 限定で OSM 直叩きを許可 (= ToS 範囲内 1-shot 9-16 タイル、 z=11)。
-  // ride hot path / prefetch 復活は依然禁止、 grep gate は loadOsmTile 関数内に限定する。
-  it('tile.openstreetmap.org は loadOsmTile 関数内のみ (= minimap 1-shot 例外、 brief 29)', () => {
-    // 全 viewer source 内の OSM URL 出現箇所を数える
-    const allMatches = viewer.match(/tile\.openstreetmap\.org/g) || [];
-    // loadOsmTile 関数 body を抽出して、 そこにだけ OSM URL が現れることを確認
-    // `function loadOsmTile(...) { ... }` の body を非貪欲で取る
-    const loadOsmTileBody = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
-    expect(loadOsmTileBody).not.toBeNull();
-    const insideMatches = (loadOsmTileBody[0].match(/tile\.openstreetmap\.org/g) || []).length;
-    // 全出現が loadOsmTile 内に閉じている (= ride hot path / prefetch 復活なし)
-    expect(insideMatches).toBe(allMatches.length);
-    expect(insideMatches).toBeGreaterThan(0);
+  // b51: minimap (loadOsmTile / buildTopBase 等) は web/lib/minimap.js に切り出し済。
+  //   OSM raster は bridge の osm_raster 経路のみ、 OSM 公式直叩きは撤去済。
+  it('viewer に tile.openstreetmap.org 直叩き URL が無い (= 第三者 heavy use ゼロ)', () => {
+    expect((viewer.match(/tile\.openstreetmap\.org/g) || []).length).toBe(0);
   });
 
-  it('loadOsmTile 内に osm_raster 経路 literal が現れる (= brief 30 DB cache 一次経路、 BRIDGE_TILE_BASE_URL 経由)', () => {
-    const m = viewer.match(/function\s+loadOsmTile\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
-    expect(m).not.toBeNull();
-    // brief 31: TILE_BASE_URL alias を撤去、 BRIDGE_TILE_BASE_URL を直接使う。
-    // source 上は `${BRIDGE_TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`。
-    expect(m[0]).toMatch(/BRIDGE_TILE_BASE_URL[^`]*\/osm_raster\//);
+  it('minimap.js の loadOsmTile は osm_raster 経路 literal を使う (= bridge DB cache)', () => {
+    const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
+    // `${bridgeTileBase}/osm_raster/${z}/${tx}/${ty}.png`
+    expect(minimapSrc).toMatch(/bridgeTileBase[^`]*\/osm_raster\//);
   });
 
-  it('buildMinimapTopBase 内に /tiles/_fetch_minimap_raster POST 呼出 (= brief 30 起動時 cache 構築)', () => {
-    const m = viewer.match(/function\s+buildMinimapTopBase\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  it('minimap.js の buildTopBase に /tiles/_fetch_minimap_raster POST 呼出 (= 起動時 cache 構築)', () => {
+    const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');
+    const m = minimapSrc.match(/function\s+buildTopBase\s*\([\s\S]*?\n  \}/);
     expect(m).not.toBeNull();
     expect(m[0]).toMatch(/\/tiles\/_fetch_minimap_raster/);
     expect(m[0]).toMatch(/method:\s*['"]POST['"]/);

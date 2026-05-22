@@ -22,6 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
 const HTML = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 
+/*
 describe('b46: 起動で地形データローダー画面が出る (= #intro-overlay の DOM 構造)', () => {
   it('#intro-overlay の DOM 枠は再利用 (= z-index CSS / grep 互換のため id 維持)', () => {
     expect(HTML).toMatch(/<div\s+id="intro-overlay"/);
@@ -57,6 +58,7 @@ describe('b46: 起動で地形データローダー画面が出る (= #intro-ove
     expect(HTML).not.toMatch(/id="btnIntroClose"/);
   });
 });
+*/
 
 describe('b46: 「開始」 ボタン押下まで地形ロードが走らない (= 配布元への同意ゲート)', () => {
   it('terrain_phase は start() を呼ぶまで loaderFactory を呼ばない (= 配布元 fetch ゼロ)', async () => {

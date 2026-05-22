@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- brief 33: CSP script-src self (= XSS 経由 token exfiltration の物理 gate). connect-src は Strava endpoint 経由を許可。
+     img-src に https://*.strava.com を含めるのは将来の activity サムネ表示用 (= 本 brief では使わないが将来余白)。
+     brief 34 ε-10: worker-src self blob: を追加 (= vendored maplibre-gl.js が setWorkerUrl(URL.createObjectURL(new Blob([...]))) で
+     自前 worker bundle を起動するため、 script-src の fallback だけだと blob: worker が block されて map が描画されない).
+     surface 拡大の評価: (a) script-src self 維持で外部 script 注入は物理 block 済 (= brief33_grep_gate で別 pin)、
+     (b) connect-src を Strava 限定で attacker domain への exfil 経路を絞り済、
+     (c) worker からの fetch は親 document の connect-src を継承するため worker 経由 surface も同制約下、
+     (d) brief 33 §11.5 の 4 重 gate (script-src self / inline script ゼロ / vendoring / revokeLocalToken) は維持。 -->
+<!-- b12 Phase 4: CSP に下記 importmap (インライン要素 1 個) 分の sha256 ハッシュを追加。
+     内容ハッシュ固定なので、 注入された任意のインライン要素は引き続き block される。 -->
+<!-- b12 Phase 4: connect-src に国土地理院 (cyberjapandata.gsi.go.jp) を追加。
+     Three.js 版は地形に貼る航空写真 (seamlessphoto) を国土地理院から起動時 1 回だけ
+     取得する (= IndexedDB キャッシュ必須、 2 回目以降は再アクセスなし、 GSI 配慮の範囲内)。
+     CSP がこれを許可していないと航空写真 fetch が block される。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com https://cyberjapandata.gsi.go.jp; script-src 'self' 'sha256-ams4LJMCHZGQskrbmkRXJOLWiK7NRUBvM4eTtE/MsaQ='; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
+<title>fujihill viewer</title>
+<!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
+     license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->
+<script src="./lib/vendor/maplibre-gl.js"></script>
+<link href="./lib/vendor/maplibre-gl.css" rel="stylesheet">
+<!-- brief 31: pmtiles.js v3.0.6 (= BSD-3-Clause, vendored, GitHub Pages 静的 mode 用) -->
+<script src="./lib/vendor/pmtiles.js"></script>
+<!-- b12 Phase 4: Three.js 描画モジュール (web/lib/map3d/) が bare specifier 'three' を
+     vendored three.module.js に解決するための importmap。 内容を変えたら CSP の
+     sha256 ハッシュも更新すること (= ハッシュ不一致だと CSP が importmap を block する)。 -->
+<script type="importmap">{"imports":{"three":"./lib/vendor/three.module.js"}}</script>
+<style>
+  :root {
+    --app-bg: #07110f;
+    --panel: #121b1d;
+    --panel-soft: #172326;
+    --panel-raised: #1d2b2f;
+    --glass: rgba(10, 18, 18, 0.78);
+    --glass-strong: rgba(10, 18, 18, 0.9);
+    --overlay: rgba(4, 10, 9, 0.58);
+    --overlay-strong: rgba(4, 10, 9, 0.78);
+    --border: #314247;
+    --border-soft: #243338;
+    --text: #eef4f1;
+    --muted: #9aaaa5;
+    --muted-strong: #b9c7c2;
+    --accent: #f2c14e;
+    --accent-soft: #3a301d;
+    --primary: #62d0a2;
+    --primary-soft: #17382f;
+    --primary-text: #06120e;
+    --link: #8bd3c7;
+    --danger: #e56b6f;
+    --danger-soft: #3a1c20;
+    --warn: #f0a96a;
+    --disabled-bg: #263034;
+    --disabled-text: #6e7b7a;
+  }
+  html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: var(--app-bg); font: 14px/1.5 ui-monospace, "Cascadia Code", monospace; color: var(--text); }
+  #map { position: fixed; inset: 0; }
+  /* brief 26b: state-checking / state-dbinit でも HUD / controls / minimap は隠す
+     (= まだ ride 中ではない、 BLE pairing 前段階の UI フロー)。
+     brief 28: #minimap (canvas) → #minimap-container (div+div+canvas) に変更、
+     state セレクタも container 側に向ける。 */
+  body.state-checking #hud,
+  body.state-checking #controls,
+  body.state-checking #minimap-container,
+  body.state-dbinit #hud,
+  body.state-dbinit #controls,
+  body.state-dbinit #minimap-container,
+  body.state-pairing #hud,
+  body.state-pairing #controls,
+  body.state-pairing #minimap-container { display: none !important; }
+  /* brief 26b: state 別の overlay 排他制御 (= 同時表示禁止 = NG-R1-3 再演回避) */
+  body.state-dbinit #setup-overlay { display: none !important; }
+  body.state-dbinit #dbinit-overlay { display: flex; }
+  body.state-pairing #dbinit-overlay,
+  body.state-riding #dbinit-overlay,
+  body.state-checking #dbinit-overlay { display: none !important; }
+
+  #hud {
+    /* bottom 2.5rem = 40px: 画面下端の帰属表示 #attrib (= 国土地理院 / OpenStreetMap 出典) に
+       重ならないように UI を上に逃がす. #attrib は画面右下隅・最下部に position:fixed で常時表示する.
+       font-size 18px に拡大 (= rider HUD と統一、 読みやすさ優先). */
+    position: fixed; left: 1rem; bottom: 2.5rem; z-index: 999;
+    background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
+    pointer-events: none; min-width: 16rem; font-size: 18px; line-height: 1.5;
+  }
+  #hud b { color: #ffd54a; font-size: 14px; }
+  /* rider HUD: 画面中央上部に固定。 left:50% + translate(-50%,0) で水平中央寄せ。 */
+  #rider-hud {
+    position: fixed; left: 50%; top: 1rem; z-index: 998;
+    background: rgba(0, 0, 0, 0.7); padding: 0.5rem 0.8rem; border-radius: 6px;
+    pointer-events: none; font: 18px ui-monospace, monospace;
+    transform: translate(-50%, 0);  /* 画面中央上部に固定 */
+    min-width: 11rem; display: none;  /* viewer の tick で display: block にする */
+  }
+  #rider-hud .ride-row { display: flex; gap: 0.5rem; align-items: baseline; }
+  #rider-hud b { color: #ffd54a; font-size: 14px; flex: 0 0 4rem; }
+  #rider-hud span { font-size: 22px; font-weight: bold; color: #fff; }
+  body.state-checking #rider-hud,
+  body.state-dbinit #rider-hud,
+  body.state-pairing #rider-hud { display: none !important; }
+  #controls {
+    /* 帰属表示 #attrib と重ならないよう bottom 2.5rem (= #hud と同じ).
+       font-size 18px に拡大 (= rider HUD と統一)、 button / slider も視認性 up. */
+    position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
+    font: 18px ui-monospace, monospace;
+    background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
+    min-width: 20rem;
+  }
+  #controls button { font: inherit; margin: 0 0.3rem; padding: 0.5rem 1rem; min-height: 44px; border-radius: 4px; }
+  #controls .row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+  #controls .row label { flex: 0 0 6rem; color: #ffd54a; font-size: 16px; }
+  #controls .row input[type=range] { flex: 1; height: 24px; }
+  #controls .row .val { flex: 0 0 4rem; text-align: right; font-size: 16px; }
+  #controls .panel-header { cursor: pointer; font-weight: bold; margin-top: 0.6rem; color: #ffd54a; }
+  #controls .panel-body {}
+  #status {
+    position: fixed; right: 1rem; top: 1rem; z-index: 999;
+    color: #aaa; font: 12px ui-monospace, monospace;
+    background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
+  }
+  /* task-g: 地図タイル出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
+     b12 Phase 4 で描画エンジンが Three.js になり MapLibre 標準 AttributionControl が消えた
+     ため、 terrain3d.html の #attrib と同型の静的 HTML 出典 DOM を新設した。
+     位置: 画面右下隅・最下部 (= #hud / #controls が bottom:2.5rem に逃げて空けた帯).
+     z-index 2001: 全 overlay (intro 1450 〜 loading-indicator 2000) より上 ── intro /
+     setup / dbinit の半透明 overlay 越しにも 3D 地形タイルは見えており、 タイルが見えて
+     いる間は出典が要るため、 全 state で常時・読める形で見せる。 */
+  #attrib {
+    position: fixed; right: 1rem; bottom: 8px; z-index: 2001;
+    font: 12px/1.4 ui-monospace, monospace; color: #e6edf3;
+    background: rgba(13, 17, 23, 0.92); border: 1px solid #30363d;
+    padding: 5px 10px; border-radius: 6px;
+  }
+  #attrib a { color: #58a6ff; }
+  /* brief 29: minimap 上半分を旧 OSM 直叩き方式 (= canvas + loadOsmTile + drawImage)
+     に rollback。 brief 28 の MapLibre 2nd instance は撤回、 上下 2 canvas 構造は維持。
+     上半分: course bbox を覆う z=11 周辺 9-16 OSM タイルを起動時 1-shot fetch、
+            ride 中は base 画像 + rider 三角形のみ。
+     下半分: 標高プロファイル (= brief 28 と同じ buildMinimapBottom 仕様)。 */
+  #minimap-container {
+    position: fixed; left: 1rem; top: 1rem; z-index: 999;
+    width: 320px; height: 720px;
+    background: rgba(0, 0, 0, 0.8); border-radius: 6px; overflow: hidden;
+  }
+  #minimap-top    { display: block; width: 100%; height: 561px; }   /* 78% = 平面マップ */
+  #minimap-bottom { display: block; width: 100%; height: 159px; } /* 22% = 標高 */
+
+  #setup-overlay {
+    position: fixed; inset: 0; z-index: 1500;
+    /* 2026-05-15 fix: 背景を半透明 (0.86 → 0.55) に薄めて、 後ろの地図 (= 富士山 + コース) が
+       うっすら見えるようにする。 「何のアプリか」を直感で伝えるには地図が見えてる必要。 */
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  #setup-overlay.visible { display: flex; }
+  #setup-panel {
+    background: #1a1a22; border: 1px solid #444; border-radius: 10px;
+    padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px;
+  }
+  #setup-panel h2 { margin: 0 0 0.5rem; color: #ffd54a; font-size: 20px; }
+  #setup-panel h3 { margin: 0.8rem 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #setup-panel .status-line { color: #aaa; margin-bottom: 0.5rem; font-size: 12px; }
+
+  #step-indicator { display: flex; gap: 0.4rem; margin: 0.6rem 0 0.4rem; }
+  #step-indicator .step { flex: 1; padding: 0.3rem 0.4rem; text-align: center; border: 1px solid #333; border-radius: 4px; font-size: 11px; color: #777; background: #14141a; }
+  #step-indicator .step.active { color: #ffd54a; border-color: #ffd54a; background: #2a2418; }
+  #step-indicator .step.done { color: #7fff00; border-color: #7fff00; }
+
+  .pair-cols { display: flex; gap: 1rem; margin-bottom: 0.6rem; }
+  .pair-cols section { flex: 1; background: #14141a; border: 1px solid #333; border-radius: 6px; padding: 0.5rem 0.7rem; }
+  .pair-cols section dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.6rem; font-size: 12px; }
+  .pair-cols section dt { color: #ffd54a; }
+  .pair-cols section dd { margin: 0; color: #ddd; word-break: break-all; }
+
+  #setup-list { list-style: none; padding: 0; margin: 0 0 0.5rem; max-height: 200px; overflow-y: auto; }
+  #setup-list li { padding: 0.5rem 0.7rem; border-radius: 4px; cursor: pointer; border: 1px solid #333; margin-bottom: 0.3rem; display: flex; justify-content: space-between; align-items: center; }
+  #setup-list li:hover, #setup-list li:focus { background: #2a2a36; border-color: #666; outline: none; }
+  #setup-list li.ftms { border-left: 3px solid #ffd54a; }
+  #setup-list .dev-name { font-weight: bold; }
+  #setup-list .dev-meta { color: #888; font-size: 11px; }
+  #setup-buttons { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  #setup-error { color: #ff5050; margin: 0.4rem 0; min-height: 1em; font-size: 12px; }
+
+  #btnRideStart { display: block; width: 100%; margin-top: 0.9rem; background: #7fff00; color: #000; font: bold 18px/1.4 ui-monospace, monospace; border: none; border-radius: 6px; padding: 0.8rem 1.2rem; min-height: 56px; cursor: pointer; }
+  #btnRideStart:disabled { background: #444; color: #888; cursor: not-allowed; }
+  #btnRideStart:focus { outline: 3px solid #ffd54a; outline-offset: 2px; }
+
+  #postride-overlay { position: fixed; inset: 0; z-index: 1600; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; }
+  #postride-overlay.visible { display: flex; }
+  #postride-panel { background: #1a1a22; border: 1px solid #444; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
+  #postride-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #postride-panel .gpx-line { background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; margin: 0.5rem 0; font-family: ui-monospace, monospace; font-size: 12px; color: #ffd54a; word-break: break-all; }
+  #postride-panel .hint { color: #aaa; font-size: 12px; margin: 0.4rem 0; }
+  #postride-panel button { margin-right: 0.4rem; }
+
+  /* brief 26b: dbinit-overlay (= 起動時 DB 構築 UI、 setup-overlay とは独立 DOM)
+     z-index: 1400 (= setup 1500 / postride 1600 / confirm 1700 より下)、
+     BLE pairing 中は body class で抑止される */
+  #dbinit-overlay { position: fixed; inset: 0; z-index: 1400; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; }
+  #dbinit-panel { background: #1a1a22; border: 1px solid #444; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; }
+  #dbinit-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #dbinit-panel h3 { margin: 0.8rem 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #dbinit-panel .status-line { color: #aaa; margin-bottom: 0.5rem; font-size: 12px; }
+  #dbinit-panel .progress-row { margin: 0.4rem 0; display: flex; align-items: center; gap: 0.6rem; font-size: 13px; }
+  #dbinit-panel .progress-row .label-name { flex: 0 0 8rem; color: #ffd54a; }
+  #dbinit-panel .progress-bar { flex: 1; height: 14px; background: #14141a; border: 1px solid #333; border-radius: 4px; position: relative; overflow: hidden; }
+  #dbinit-panel .progress-bar .fill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #7fff00 0%, #ffd54a 100%); transition: width 0.2s linear; }
+  #dbinit-panel .progress-bar .label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; mix-blend-mode: difference; }
+  #dbinit-panel .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+  #dbinit-panel input[type=text] { flex: 1; padding: 0.4rem 0.6rem; min-height: 32px; font: inherit; background: #0c0c10; color: #ddd; border: 1px solid #333; border-radius: 4px; }
+  #dbinit-panel #btnDbinitSkip { background: #14141a; color: #aaa; }
+
+  #confirm-overlay { position: fixed; inset: 0; z-index: 1700; background: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; }
+  #confirm-overlay.visible { display: flex; }
+  #confirm-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 8px; padding: 1.2rem 1.4rem; max-width: 440px; }
+  #confirm-panel h3 { margin: 0 0 0.6rem; color: #ffd54a; }
+  #confirm-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
+
+  /* brief 34 ε-1: 公開ガードレール intro-overlay (= z-index 1450、 ページ読込直後に必ず表示).
+     setup-overlay (1500) より下、 dbinit-overlay (1400) / history-overlay (1550) との衝突なし. */
+  #intro-overlay { position: fixed; inset: 0; z-index: 1450; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #intro-overlay.visible { display: flex; }
+  #intro-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
+  #intro-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #intro-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; line-height: 1.6; }
+  #intro-panel p.intro-disclaimer { color: #ffd54a; font-weight: bold; background: #221a08; border-left: 3px solid #ffd54a; padding: 0.6rem 0.8rem; }
+  #intro-panel .actions { margin-top: 1rem; display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
+  #intro-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
+  /* b46: 地形データローダー画面の「開始」 ボタン (= 起動シーンの主アクション). */
+  #intro-panel .actions button#btnTerrainLoaderStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #intro-panel .actions button#btnTerrainLoaderRetry { background: #221a08; color: #ffd54a; border-color: #ffd54a; }
+  /* b46: 地形ロード進捗 (= 「開始」 押下後に表示). */
+  #terrain-loader-lead { color: #aaa; font-size: 13px; }
+  #terrain-loader-progress { margin-top: 0.6rem; }
+  #terrain-loader-progress #terrain-loader-status { color: #7fff00; font-weight: bold; }
+  #terrain-loader-error { color: #ff9966; font-weight: bold; }
+  /* 2026-05-15 fix: 走行系 button (= 地形 load 完了まで disabled) のグレーアウト表現を強制.
+     btnSetupGoView は inline style で色 hardcode してたので :disabled 擬似クラスが効かなかった、
+     ここで `button:disabled` を high-specificity で上書きして disabled 時は灰色 + not-allowed cursor. */
+  button#btnTerrainLoaderStart:disabled,
+  button#btnSetupGoView:disabled,
+  button#btnScan:disabled,
+  button#btnScanHrm:disabled,
+  button#btn-ble-trainer:disabled,
+  button#btn-ble-hrm:disabled,
+  button#btnRideStart:disabled {
+    background: #333 !important;
+    color: #666 !important;
+    border-color: #555 !important;
+    cursor: not-allowed !important;
+    opacity: 0.55;
+  }
+
+  /* 2026-05-15 fix: 観るモード ride 中に右上常時表示する区間リスト panel.
+     全画面 section-overlay は撤去、 走行中いつでも区間を選び直せる UX に変更. */
+  #section-list-panel {
+    position: fixed; right: 1rem; top: 1rem; z-index: 999;
+    width: 300px; max-height: 80vh; overflow-y: auto;
+    background: rgba(0, 0, 0, 0.65); border: 1px solid #ffd54a; border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    font: 13px ui-monospace, monospace;
+    display: none;
+  }
+  body.mode-view #section-list-panel { display: block; }
+  #section-list-panel h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #section-list-panel .panel-hint { color: #aaa; font-size: 11px; margin: 0 0 0.5rem; line-height: 1.4; }
+  #section-list-panel .sec-active { background: #2a4418 !important; border-color: #7fff00 !important; }
+  /* 観るモードから抜ける導線 (= イントロ overlay を再表示してモードを選び直す). */
+  #section-list-panel #btnViewModeExit {
+    display: block; width: 100%; margin-top: 0.6rem;
+    padding: 0.5rem; min-height: 36px;
+    background: #1a3322; color: #7fff00; border: 1px solid #7fff00; border-radius: 4px;
+    font: inherit; cursor: pointer;
+  }
+  /* brief 34 ε-8: 「観る」モード用 section-overlay (= z-index 1470、 consent 1460 と setup 1500 の間).
+     intro で「コースを観る」を選んだ場合のみ表示、 trainer 不要 / 一定速度 fake state ride で
+     区間勾配を眺めるための UI。 Zwift Climb Portal 風 (= ただし trainer 不要 + ログ保存なし). */
+  #section-overlay { position: fixed; inset: 0; z-index: 1470; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #section-overlay.visible { display: flex; }
+  #section-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px; max-height: 90vh; overflow-y: auto; }
+  #section-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #section-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
+  #section-list { list-style: none; padding: 0; margin: 0.4rem 0; }
+  /* 2026-05-15 fix: 区間リスト行を grid layout で整理。
+     1 行 = [区間番号 + 距離レンジ] + [勾配 (= 大、 右寄せ、 色強調)]、
+     下に [標高 ↑ 上昇量] を小さく副情報として配置。 */
+  #section-list li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 0.1rem 0.6rem;
+    align-items: baseline;
+    background: #14141a; border: 1px solid #333; border-radius: 4px;
+    padding: 0.4rem 0.6rem; margin-bottom: 0.25rem;
+    cursor: pointer;
+  }
+  #section-list li:hover, #section-list li:focus { background: #2a2a36; border-color: #7fff00; outline: none; }
+  #section-list .sec-label { color: #ffd54a; font-weight: bold; font-size: 13px; grid-column: 1; grid-row: 1; }
+  /* 勾配を右側に大きく出す (= 一番大事な情報). 平均 / 最大 を 2 行で右寄せ縦並び。 */
+  #section-list .sec-grade { display: flex; flex-direction: column; align-items: flex-end; gap: 0.05rem; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  #section-list .sec-grade-avg { color: #ff8866; font-weight: bold; font-size: 15px; line-height: 1.1; }
+  #section-list .sec-grade-max { color: #ff5544; font-weight: bold; font-size: 13px; line-height: 1.1; }
+  /* 標高情報は副、 小さく gray で下段に. */
+  #section-list .sec-meta { color: #888; font-size: 11px; grid-column: 1; grid-row: 2; }
+  #section-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.4rem; justify-content: flex-end; }
+  #section-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
+  /* view モード中は postride / strava 系を一切表示しない (= 観るモードは記録対象外). */
+  body.mode-view #postride-overlay { display: none !important; }
+
+  /* brief 34 ε-1: 公開ガードレール consent-overlay (= z-index 1460、 ride 開始前の opt-in).
+     intro (1450) より上、 setup (1500) より下に挟むと「intro 通過 → setup 画面 → ride 開始ボタンで consent 表示」が成立. */
+  #consent-overlay { position: fixed; inset: 0; z-index: 1460; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #consent-overlay.visible { display: flex; }
+  #consent-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
+  #consent-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #consent-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; line-height: 1.5; }
+  #consent-panel .opt-row { display: flex; gap: 0.6rem; align-items: flex-start; margin: 0.6rem 0; padding: 0.5rem 0.7rem; background: #14141a; border: 1px solid #333; border-radius: 4px; }
+  #consent-panel .opt-row input[type=checkbox] { margin-top: 0.2rem; transform: scale(1.2); }
+  #consent-panel .opt-row label { color: #ddd; font-size: 13px; line-height: 1.5; }
+  #consent-panel .opt-row label .opt-title { color: #ffd54a; font-weight: bold; display: block; margin-bottom: 0.2rem; }
+  #consent-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #consent-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
+  #consent-panel .actions button#btnConsentAccept { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #consent-panel .actions button#btnConsentCancel { background: #14141a; color: #aaa; }
+  /* preflight-overlay (= ride 開始前の事前 validation panel、 z-index 1465).
+     consent (1460) より上、 setup (1500) より下に挟む。 list 形式で項目を縦に並べる. */
+  #preflight-overlay { position: fixed; inset: 0; z-index: 1465; background: rgba(0, 0, 0, 0.55); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #preflight-overlay.visible { display: flex; }
+  #preflight-panel { background: #1a1a22; border: 1px solid #7fff00; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 480px; max-width: 720px; }
+  #preflight-panel h2 { margin: 0 0 0.6rem; color: #7fff00; font-size: 20px; }
+  #preflight-panel p { margin: 0.4rem 0; color: #ddd; font-size: 13px; line-height: 1.5; }
+  #preflight-list { list-style: none; padding: 0; margin: 0.6rem 0; background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; max-height: 320px; overflow-y: auto; }
+  #preflight-message { font-size: 13px; margin: 0.4rem 0; }
+  #preflight-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #preflight-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
+  #preflight-panel .actions button#btnPreflightStart { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #preflight-panel .actions button#btnPreflightStart:disabled { background: #444; color: #888; border-color: #444; cursor: not-allowed; }
+  /* save-summary block (= postride 冒頭の保存予定 summary). postride-panel 内で使用. */
+  .save-summary { background: #14141a; border: 1px solid #333; border-radius: 4px; padding: 0.5rem 0.7rem; margin: 0.5rem 0; }
+  .save-summary h3 { margin: 0 0 0.4rem; font-size: 14px; color: #ffd54a; }
+  .save-summary dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.8rem; margin: 0; font-size: 12px; }
+  .save-summary dt { color: #aaa; }
+  .save-summary dd { color: #ddd; margin: 0; font-family: ui-monospace, monospace; }
+  .save-summary .anomaly { color: #ff5050; font-weight: bold; }
+  /* restore-overlay (= 起動時の途中 ride 復元 dialog、 intro と同じ z-index 1450). */
+  #restore-overlay { position: fixed; inset: 0; z-index: 1455; background: rgba(0, 0, 0, 0.85); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  #restore-overlay.visible { display: flex; }
+  #restore-panel { background: #1a1a22; border: 1px solid #ffd54a; border-radius: 10px; padding: 1.4rem 1.6rem; min-width: 420px; max-width: 640px; }
+  #restore-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #restore-panel p { margin: 0.4rem 0; color: #ddd; font-size: 14px; }
+  #restore-panel .actions { margin-top: 0.8rem; display: flex; gap: 0.6rem; justify-content: flex-end; }
+  #restore-panel .actions button { font: inherit; padding: 0.5rem 1.1rem; min-height: 40px; cursor: pointer; border-radius: 4px; border: 1px solid #444; background: var(--panel-raised); color: var(--text); }
+  #restore-panel .actions button#btnRestoreYes { background: #7fff00; color: #000; border-color: #7fff00; font-weight: bold; }
+  #restore-panel .actions button#btnRestoreDiscard { background: #14141a; color: #ff8866; border-color: #ff8866; }
+  /* brief 33: history-overlay (= 過去 ride 一覧). state-history で表示、 他 state で hide. */
+  #history-overlay {
+    position: fixed; inset: 0; z-index: 1550;
+    background: rgba(0, 0, 0, 0.55);
+    display: none; align-items: flex-start; justify-content: center;
+    padding-top: 4rem;
+  }
+  body.state-history #history-overlay { display: flex; }
+  body.state-history #setup-overlay,
+  body.state-history #postride-overlay,
+  body.state-history #dbinit-overlay,
+  body.state-history #hud,
+  body.state-history #controls,
+  body.state-history #minimap-container,
+  body.state-history #rider-hud { display: none !important; }
+  /* 2026-05-16: ?debug=1 で右上に debug HUD 表示 (= rider 座標 / camera 差分 / frame timing 等、
+     ride 中の挙動を user が目視確認できる開発者向け). 公開時は default 非表示. */
+  /* 2026-05-16: 右上は観るモードの区間リストと重なるため、 左上に移動 + opacity 下げて
+     他 UI に被っても邪魔にならないようにする (= user 「debug HUD が他 GUI と重なってウザい」). */
+  #debug-hud {
+    position: fixed; top: 8px; left: 8px; z-index: 1700;
+    background: rgba(0, 0, 0, 0.55); color: #7fff00;
+    padding: 4px 8px;
+    font: 10px/1.35 ui-monospace, "Cascadia Code", monospace;
+    border: 1px solid #333; border-radius: 4px;
+    display: none; pointer-events: none; white-space: nowrap;
+    opacity: 0.75;
+  }
+  body.debug-on #debug-hud { display: block; }
+  #history-panel {
+    background: #1a1a22; border: 1px solid #444; border-radius: 10px;
+    padding: 1.4rem 1.6rem; min-width: 560px; max-width: 760px;
+    max-height: 80vh; overflow-y: auto;
+  }
+  #history-panel h2 { margin: 0 0 0.6rem; color: #ffd54a; font-size: 20px; }
+  #history-list { list-style: none; padding: 0; margin: 0.6rem 0; }
+  #history-list li { background: #14141a; border: 1px solid #333; border-radius: 6px;
+    padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+  #history-list .ride-meta { flex: 1; }
+  #history-list .ride-date { color: #ffd54a; font-weight: bold; }
+  #history-list .ride-summary { color: #aaa; font-size: 12px; }
+  #history-list .ride-actions button { font: inherit; padding: 0.3rem 0.6rem; margin-left: 0.3rem; min-height: 32px; cursor: pointer; }
+  #history-empty { color: #888; padding: 0.6rem; }
+  #history-buttons { margin-top: 0.8rem; display: flex; gap: 0.4rem; }
+
+  /* brief 33: setup-overlay 内 Strava 連携セクション */
+  #strava-section { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid #333; }
+  #strava-section h3 { margin: 0 0 0.4rem; color: #ffd54a; font-size: 14px; }
+  #strava-section .strava-status { color: #aaa; font-size: 12px; margin-bottom: 0.4rem; }
+  #strava-section button { margin-right: 0.4rem; }
+  #strava-section a { color: #7fff00; text-decoration: underline; font-size: 12px; }
+
+  /* ローディングインジケータ (= MAP_MODE 起動時、 全描画完了まで表示).
+     画面中央上部、 大きめ font、 半透明黒背景。 idle で hide。 */
+  #loading-indicator {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 2000; display: none;
+    background: rgba(0, 0, 0, 0.85); color: #ffd54a;
+    padding: 1rem 2rem; border-radius: 8px;
+    font: bold 24px ui-monospace, monospace;
+    pointer-events: none;
+  }
+  /* brief 35: ロード overlay 拡張 (= 既存 #loading-indicator を進捗 UI に拡張)。
+     visible 時のみ flex column、 子要素 (= title / progress / bar / note / warning / button) を縦並び。
+     pointer-events: auto に変えるのは「地形なしで進む」 button を click 可能にするため。 */
+  #loading-indicator.visible {
+    display: flex !important;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 280px;
+    max-width: 480px;
+    pointer-events: auto;
+    transition: opacity 0.3s ease-out;
+  }
+  #loading-indicator.fade-out { opacity: 0; }
+  #loading-indicator .loading-title { font-size: 18px; }
+  #loading-indicator .loading-progress { font-size: 22px; text-align: center; }
+  #loading-indicator .loading-bar {
+    height: 10px; background: rgba(255, 255, 255, 0.12);
+    border-radius: 5px; overflow: hidden;
+  }
+  #loading-indicator #loading-bar-fill {
+    height: 100%; width: 0%; background: #7fff00;
+    transition: width 0.2s ease-out;
+  }
+  #loading-indicator .loading-note {
+    font: 12px ui-monospace, monospace; color: #aaa; font-weight: normal;
+  }
+  #loading-indicator .loading-warning {
+    font: 13px ui-monospace, monospace; color: #ff9966; font-weight: normal;
+    padding: 0.4rem 0.6rem; background: rgba(255, 153, 102, 0.12);
+    border-radius: 4px;
+  }
+  #loading-indicator #btnLoadingGiveUp {
+    align-self: center; padding: 0.5rem 1rem;
+    background: rgba(255, 153, 102, 0.18); color: #ff9966;
+    border: 1px solid #ff9966; border-radius: 4px;
+    font: bold 14px ui-monospace, monospace; cursor: pointer;
+  }
+  #loading-indicator #btnLoadingGiveUp:hover { background: rgba(255, 153, 102, 0.3); }
+  /* brief b-segment-labels: 道路セグメントの距離+勾配ラベルは MapLibre の symbol
+     レイヤー (icon-image / canvas 画像) で地面平面に描く。 DOM 要素ではないため
+     ここに CSS は無い (= viewer-maplibre.js の makeSegLabelImage が canvas に描画)。 */
+
+  /* Palette refresh: existing selectors stay in place; these rules normalize the visual system. */
+  #hud, #controls, #rider-hud, #section-list-panel, #debug-hud,
+  #minimap-container, #status, #attrib, #loading-indicator {
+    background: var(--glass) !important;
+    color: var(--text) !important;
+    border-color: var(--border-soft) !important;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(10px);
+  }
+  #setup-overlay, #postride-overlay, #dbinit-overlay, #confirm-overlay,
+  #intro-overlay, #section-overlay, #consent-overlay, #preflight-overlay,
+  #restore-overlay, #history-overlay, #strava-setup-overlay,
+  #clear-confirm-overlay, #clear-done-overlay {
+    background: var(--overlay) !important;
+  }
+  #setup-panel, #postride-panel, #dbinit-panel, #confirm-panel, #intro-panel,
+  #section-panel, #consent-panel, #preflight-panel, #restore-panel,
+  #history-panel, #strava-setup-overlay > div, #clear-confirm-overlay > div,
+  #clear-done-overlay > div, .pair-cols section, #section-list li,
+  #consent-panel .opt-row, #preflight-list, .save-summary, #postride-panel .gpx-line,
+  [style*="background:#1a1a22"], [style*="background:#14141a"],
+  [style*="background:#0c0c10"] {
+    background: var(--panel) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  .pair-cols section, #section-list li, #consent-panel .opt-row, #preflight-list,
+  .save-summary, #postride-panel .gpx-line {
+    background: var(--panel-soft) !important;
+  }
+  #setup-panel h2, #setup-panel h3, #dbinit-panel h2, #dbinit-panel h3,
+  #intro-panel h2, #confirm-panel h3, #restore-panel h2, #history-panel h2,
+  #strava-section h3, #section-list-panel h3, #section-list .sec-label,
+  .save-summary h3, #hud b, #rider-hud b, #controls .row label,
+  #controls .panel-header, .pair-cols section dt,
+  #consent-panel .opt-row label .opt-title,
+  #terrain-status, summary, label[style*="#ffd54a"],
+  h2[style*="#ffd54a"], h3[style*="#ffd54a"], [style*="color:#ffd54a"] {
+    color: var(--accent) !important;
+  }
+  #postride-panel h2, #section-panel h2, #consent-panel h2, #preflight-panel h2,
+  #step-indicator .step.done, #section-list-panel .sec-active,
+  a, #attrib a, #strava-section a, strong[style*="#7fff00"],
+  a[style*="#7fff00"], [style*="color:#7fff00"] {
+    color: var(--primary) !important;
+  }
+  #setup-panel .status-line, #dbinit-panel .status-line, #intro-panel p,
+  #section-panel p, #consent-panel p, #preflight-panel p, .save-summary dd,
+  .pair-cols section dd, [style*="color:#ddd"] {
+    color: var(--text) !important;
+  }
+  #setup-list .dev-meta, #section-list .sec-meta, #section-list-panel .panel-hint,
+  #postride-panel .hint, #history-list .ride-summary, #history-empty,
+  .save-summary dt, .strava-status, [style*="color:#aaa"], [style*="color:#888"] {
+    color: var(--muted) !important;
+  }
+  #setup-error, .save-summary .anomaly, #section-list .sec-grade-max,
+  [style*="color:#ff5050"], [style*="color:#ff5544"], [style*="color:#ff3030"],
+  [style*="color:#ff8866"] {
+    color: var(--danger) !important;
+  }
+  #section-list .sec-grade-avg, .ble-support-msg, strong[style*="#ff8"],
+  [style*="color:#ff8"] {
+    color: var(--warn) !important;
+  }
+  #step-indicator .step {
+    background: var(--panel-soft) !important;
+    border-color: var(--border-soft) !important;
+    color: var(--muted) !important;
+  }
+  #step-indicator .step.active {
+    background: var(--accent-soft) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+  }
+  #step-indicator .step.done {
+    background: var(--primary-soft) !important;
+    border-color: var(--primary) !important;
+  }
+  button {
+    background: var(--panel-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font: inherit;
+    padding: 0.5rem 1.1rem;
+    min-height: 40px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) {
+    background: #25363a;
+    border-color: #496167;
+  }
+  button:focus-visible {
+    outline: 3px solid rgba(242, 193, 78, 0.45);
+    outline-offset: 2px;
+  }
+  #btnRideStart, #btnIntroStart, #btnConsentAccept, #btnPreflightStart,
+  #btnRestoreYes, #btnDbinitProceed, #btnSetupGoView, #btnStravaSetupSave,
+  #btnClearDoneOk, #section-list-panel #btnViewModeExit,
+  button[style*="background:#7fff00"], button[style*="background:#2a4418"],
+  button[style*="background:#1a3322"] {
+    background: var(--primary) !important;
+    color: var(--primary-text) !important;
+    border-color: var(--primary) !important;
+    font-weight: 700;
+  }
+  #btnClearAllData, #btnClearConfirm, #btnSaveAnomalyAccept,
+  #restore-panel .actions button#btnRestoreDiscard,
+  button[style*="background:#ff8866"] {
+    background: var(--danger-soft) !important;
+    color: #ffd9d6 !important;
+    border-color: var(--danger) !important;
+  }
+  #intro-panel .actions button#btnIntroClose,
+  #consent-panel .actions button#btnConsentCancel,
+  #dbinit-panel #btnDbinitSkip,
+  button[style*="background:#14141a"] {
+    background: #10191b !important;
+    color: var(--muted-strong) !important;
+    border-color: var(--border-soft) !important;
+  }
+  button#btnIntroStart:disabled,
+  button#btnIntroView:disabled,
+  button#btnSetupGoView:disabled,
+  button#btnScan:disabled,
+  button#btnScanHrm:disabled,
+  button#btn-ble-trainer:disabled,
+  button#btn-ble-hrm:disabled,
+  button#btnRideStart:disabled {
+    background: var(--disabled-bg) !important;
+    color: var(--disabled-text) !important;
+    border-color: #374245 !important;
+  }
+  input[type=text] {
+    background: #0b1415 !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  input[type=range], input[type=checkbox] { accent-color: var(--primary); }
+  #dbinit-panel .progress-bar .fill {
+    background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%) !important;
+  }
+  #intro-panel p.intro-disclaimer {
+    background: rgba(242, 193, 78, 0.12) !important;
+    border-left-color: var(--accent) !important;
+  }
+  #section-list li:hover, #section-list li:focus,
+  #setup-list li:hover, #setup-list li:focus {
+    background: var(--panel-raised) !important;
+    border-color: var(--primary) !important;
+  }
+  #section-list-panel .sec-active {
+    background: var(--primary-soft) !important;
+    border-color: var(--primary) !important;
+  }
+</style>
+</head>
+<body class="state-checking">
+<div id="map"></div>
+
+<!-- brief 35: ロード overlay。 イントロ overlay 抜けた直後 (= view モード / ride モード起動時) の
+     地形タイル取得の進捗を見せる。 「描画準備中...」 だけだと訪問者が「死んでる」 と判断する沈黙
+     期間 (= 10-30 秒) を、 進捗数値 + バー + 注記で「動いてる」 状態に変える。
+     `#loading-progress-den` は course bounds + DEM_ZOOM から動的算出する (= ハードコードしない、
+     コース変更で fail しない設計、 b35 軸 4 HIGH 反映)。
+     状態 (= 通常 / timeout / IndexedDB 不在 / 無音) は `data-loading-state` 属性で expose、
+     e2e は属性遷移を pin する (= 文言 grep だけの misleading test 回避)。 -->
+<div id="loading-indicator" data-loading-state="idle">
+  <div class="loading-title">地形タイルを取得中</div>
+  <div class="loading-progress">
+    <span id="loading-progress-num">0</span> / <span id="loading-progress-den">0</span>
+  </div>
+  <div class="loading-bar"><div id="loading-bar-fill"></div></div>
+  <div class="loading-note">国土地理院のサーバから初回のみ取得します。 2 回目以降はブラウザ内キャッシュから即時表示されます。</div>
+  <div id="loading-warning" class="loading-warning" hidden></div>
+  <button id="btnLoadingGiveUp" type="button" hidden>地形なしで進む</button>
+</div>
+
+<div id="hud">
+  <b>time</b>  <span id="elapsed">00:00:00</span><br>
+  <b>dist</b>  <span id="dist">0</span> / <span id="total">?</span> m<br>
+  <b>ele</b>   <span id="ele">0</span> m<br>
+  <b>eta</b>   <span id="eta">--</span><br>
+  <b>ack</b>   <span id="ack" style="color:#aaa">trainer 応答待ち</span><br>
+  <span style="color:#888; font-size:11px;">cam z=<span id="cam-zoom">--</span> p=<span id="cam-pitch">--</span>°</span>
+</div>
+
+<!-- rider 追随 HUD: ride の重要数値 (= slope / speed / power / cadence / hr) を大きめ text で
+     rider polygon の下に追随表示。 tick で rider screen 座標を map.project し、 left/top を更新。 -->
+<div id="rider-hud">
+  <div class="ride-row"><b>slope</b> <span id="r-slope">0</span> %</div>
+  <div class="ride-row"><b>speed</b> <span id="r-speed">--</span></div>
+  <div class="ride-row"><b>power</b> <span id="r-power">--</span> W</div>
+  <div class="ride-row"><b>cad</b>   <span id="r-cadence">--</span> rpm</div>
+  <div class="ride-row"><b>hr</b>    <span id="r-hr">--</span> bpm</div>
+</div>
+
+<!-- 2026-05-16: ?debug=1 のとき表示。 走行中の座標 / camera drift / frame timing を可視化、
+     user の「camera が rider 中心からズレていく」 「慣性力おかしい」 を数値で追える. -->
+<div id="debug-hud">
+  <b>rider</b>    <span id="d-rider-lat">--</span>, <span id="d-rider-lon">--</span><br>
+  <b>cam ctr</b>  <span id="d-cam-lat">--</span>, <span id="d-cam-lon">--</span><br>
+  <b>drift</b>    <span id="d-cam-drift">--</span> m<br>
+  <b>dist</b>     <span id="d-dist">--</span> m<br>
+  <b>spd</b>      <span id="d-speed">--</span> m/s (<span id="d-speed-kmh">--</span> km/h)<br>
+  <b>seg</b>      <span id="d-seg">--</span> + <span id="d-frac">--</span><br>
+  <b>slope</b>    <span id="d-slope">--</span> %<br>
+  <b>cam brng</b> <span id="d-brng">--</span>°<br>
+  <b>frame</b>    <span id="d-dt">--</span> ms (<span id="d-fps">--</span> fps)<br>
+  <b>pow / cad</b> <span id="d-pow">--</span> W / <span id="d-cad">--</span> rpm<br>
+  <b>trkpts</b>   <span id="d-trkn">--</span> 件 / lat-uniq <span id="d-trkuniq">--</span> / Δlat <span id="d-trkspread">--</span><br>
+  <b>chk</b>      <span id="d-chk">--</span>
+</div>
+
+<div id="controls">
+  <div>
+    <button id="btnRideEnd" disabled>ライド終了</button>
+    <button id="btnPause">pause</button>
+    <button id="btnOpenPairing">機器設定</button>
+  </div>
+  <div id="control-sliders"></div>
+  <div id="bike-shape-sliders"></div>
+  <div style="margin-top:0.4rem; font-size:13px; color:#aaa;">
+    hillshade dbg:
+    dir <span id="dbgLightDir">135</span>°,
+    exag <span id="dbgLightExag">1.00</span>,
+    anchor <span id="dbgLightAnchor">map</span>
+  </div>
+</div>
+
+<div id="status">loading...</div>
+
+<div id="dbinit-overlay" role="dialog" aria-modal="true" aria-labelledby="dbinit-title">
+  <div id="dbinit-panel">
+    <h2 id="dbinit-title">地図 DB の構築</h2>
+    <div class="status-line" id="dbinit-status">起動時の DB 状態を確認中...</div>
+    <div id="dbinit-gsi-bar" class="progress-row">
+      <span class="label-name">GSI 標高</span>
+      <span class="progress-bar"><span class="fill"></span><span class="label">0/0</span></span>
+    </div>
+    <div id="dbinit-osm-bar" class="progress-row">
+      <span class="label-name">OSM ベクトル</span>
+      <span class="progress-bar"><span class="fill"></span><span class="label">0/0</span></span>
+    </div>
+    <h3>GSI 標高 (国土地理院、 自動取得)</h3>
+    <div class="row">
+      <button id="btnFetchGsi">GSI 標高タイルを取得 (約 36 秒)</button>
+    </div>
+    <h3>OSM ベクトル (Protomaps PMTiles から抽出)</h3>
+    <div class="row">
+      <input id="osmPmtilesPath" type="text" placeholder="ローカル PMTiles file path (例: ~/Downloads/japan.pmtiles)">
+      <button id="btnExtractOsm">PMTiles から取り込み</button>
+    </div>
+    <!-- 2026-05-15 fix: 出口ボタン明示。 自動遷移に頼らず、 user が押せる「次へ」/「キャンセル」を常設。
+         過去訂正「アフォーダンスのセンス無い、 ノーマルエグジットボタンが絶対要る」反映。 -->
+    <div class="row" style="margin-top: 1rem; border-top: 1px solid #444; padding-top: 0.8rem; gap: 0.6rem;">
+      <button id="btnDbinitProceed" style="background:#2a4418; color:#7fff00; border-color:#7fff00; font-weight:bold;">▶ 機器選択へ進む</button>
+      <button id="btnDbinitSkip">スキップ (地形だけで進む)</button>
+      <button id="btnDbinitClose" style="margin-left:auto;">× 閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div id="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="pairing-title">
+  <div id="setup-panel">
+    <h2 id="pairing-title">fujihill trainer ライド準備</h2>
+    <div class="status-line" id="setup-status">起動中...</div>
+    <!-- brief 34 ε-9: 既存 4 step indicator の頭に「0. 地形データ準備」を追加して 5 step 化.
+         terrain ready === false の間は他 step は到達不能 (= 全アクションボタン disabled). -->
+    <div id="step-indicator">
+      <div class="step active" id="step-terrain">0. 地形データ準備</div>
+      <div class="step" id="step-scan">1. 機器検出</div>
+      <div class="step" id="step-connect">2. BLE 接続</div>
+      <div class="step" id="step-handshake">3. ハンドシェイク</div>
+      <div class="step" id="step-ready">4. 走行準備完了</div>
+    </div>
+    <!-- brief 34 ε-9: 地形データ準備のステータスバー. terrainReady === false の間は
+         「pmtiles 読み込み中 / GSI 標高 N/M / 完了」 を表示、 phase で色を変える
+         (= pending/loading=黄、 done=緑、 failed=赤). 完了で setup-status が表面に戻る. -->
+    <div id="terrain-status" class="status-line" style="color:#ffd54a; margin:0.3rem 0;">地形データ準備中...</div>
+    <!-- b44: 機器の状態 (trainer 情報 / live values) はフォールド、 デフォルト閉じ。
+         接続前は中身が `--` ばかりで、 走行前に常時表示する必要がない。 -->
+    <details id="device-status-fold">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:14px; font-weight:bold;">機器の状態</summary>
+      <div class="pair-cols" style="margin-top:0.4rem;">
+        <section><h3>trainer</h3><dl>
+          <dt>機種</dt><dd><span id="p-device">--</span></dd>
+          <dt>状態</dt><dd><span id="p-state">--</span></dd>
+          <dt>応答</dt><dd><span id="p-ack">--</span></dd>
+        </dl></section>
+        <section><h3>live values</h3><dl>
+          <dt>power</dt><dd><span id="p-power">--</span> W</dd>
+          <dt>cadence</dt><dd><span id="p-cadence">--</span> rpm</dd>
+          <dt>speed</dt><dd><span id="p-speed">--</span> km/h</dd>
+          <dt>hr</dt><dd><span id="p-hr">--</span> bpm</dd>
+        </dl></section>
+      </div>
+    </details>
+    <!-- 2026-05-15 fix: bridge mode 用 UI (= python BLE 経由の scan list) を section で囲み、
+         default 経路 (= Web Bluetooth) では 1 個 hide で全部消えるように。 -->
+    <!-- b44: 機器選択 (bridge mode 用 scan list) はフォールド、 デフォルト閉じ。
+         Web Bluetooth 経路では元々 hidden、 補助的な UI。 -->
+    <details id="bridge-scan-section">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:14px; font-weight:bold;">機器選択 <span id="scan-mode-label" style="color:#aaa; font-weight:normal; font-size:11px;">(trainer モード: FTMS を自動接続)</span></summary>
+      <ul id="setup-list"></ul>
+      <div id="setup-error"></div>
+      <div id="setup-buttons">
+        <button id="btnScan">trainer スキャン</button>
+        <button id="btnScanHrm">心拍計スキャン</button>
+        <button id="btnClosePairing" hidden>ライドに戻る</button>
+      </div>
+    </details>
+    <!-- brief 32: default 経路 (= initBleMode) で unhide、 訪問者は browser から直接 BLE 接続. -->
+    <section id="ble-section" hidden>
+      <h3>Web Bluetooth 直接接続</h3>
+      <p style="color:#aaa; font-size:11px; margin:0 0 0.4rem;">bridge.py 無し、 ブラウザから直接 FTMS trainer と心拍計に接続します。</p>
+      <button id="btn-ble-trainer">Trainer に接続 (BLE)</button>
+      <button id="btn-ble-hrm">心拍計に接続 (BLE、 任意)</button>
+      <p class="ble-support-msg" style="color:#ff8; font-size:12px; margin-top:0.4rem;" hidden>このブラウザは Web Bluetooth 非対応です (= iOS Safari / Firefox)。 Chrome / Edge / Android Chrome をご利用ください。</p>
+    </section>
+    <button id="btnRideStart" disabled>▶ ライド開始</button>
+    <div id="ride-start-hint" style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">trainer のハンドシェイク完了後に押せるようになります</div>
+
+    <!-- 2026-05-15 fix: 「コースを観る」を setup-overlay からも起動可能に (= intro 通過後でも
+         走る ↔ 観る を切り替えたい時の出口、 user 指摘「コースを観るボタンが消えた」反映). -->
+    <div style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333; text-align:center;">
+      <button id="btnSetupGoView" disabled style="background:#1a3322; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">▷ コースを観る (= trainer 不要、 区間勾配を眺める)</button>
+    </div>
+
+    <!-- brief 33: 履歴 / Strava 連携セクション (= ride 前から open できる導線).
+         2026-05-15 user 指示「ストラバ連携とかめんどくさいからフォールドしてていいと思う」
+         反映: 「過去 ride を見る」 は表に残し、 Strava 連携 button 群は details 要素で
+         default 閉じ。 機能は残す、 普段の視覚負担を下げる。 -->
+    <section id="strava-section">
+      <h3>履歴 / Strava 連携</h3>
+      <button id="btnViewHistoryFromSetup">過去 ride を見る</button>
+      <details id="strava-fold" style="margin-top:0.6rem;">
+        <summary style="cursor:pointer; color:#ffd54a; font-size:13px;">Strava 連携 (オプション)</summary>
+        <div style="margin-top:0.4rem;">
+          <div class="strava-status" id="strava-status">未連携</div>
+          <button id="btnStravaConnect">Strava と連携</button>
+          <button id="btnStravaDisconnect" hidden>連携を解除</button>
+          <div style="color:#888; font-size:11px; margin-top:0.4rem;">
+            連携解除後、 完全に断つには Strava 側で
+            <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer">設定 → 連携アプリ</a>
+            から fujihill-trainer を revoke してください (= ローカル削除だけでは Strava 側 app 登録は残ります)。
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- brief 34 ε-5 / b43: setup-overlay 末尾の「データとキャッシュの管理」 section.
+         全データ削除 (= 破壊的、 #clear-confirm-overlay 確認 dialog 経由) と
+         アプリ更新 (= b43、 非破壊、 SW キャッシュのみ消して reload) の 2 操作を持つ. -->
+    <details id="clear-data-section" style="margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid #333;">
+      <summary style="cursor:pointer; color:#ff8866; font-size:14px; font-weight:bold; margin:0 0 0.4rem;">データとキャッシュの管理</summary>
+      <div style="color:#aaa; font-size:11px; margin-bottom:0.4rem;">
+        IndexedDB (= ride 履歴) と localStorage (= consent / Strava token / 設定値) を全削除し、
+        intro overlay からやり直します。 確認 dialog 必須 (= 共用 PC 誤動作防止)。
+      </div>
+      <button id="btnClearAllData" style="background:#221a08; color:#ff8866; border:1px solid #ff8866;">全データを削除...</button>
+      <!-- b43: SW キャッシュ (= アプリ本体コード) を消して最新版に更新。 非破壊 (= 履歴は残る)。 -->
+      <div style="color:#aaa; font-size:11px; margin:0.6rem 0 0.4rem;">
+        アプリが古い版のままのときに使います。 Service Worker のキャッシュ (= アプリ本体コード) を
+        消して再読み込みします。 走行履歴と設定は残ります (= 非破壊)。
+      </div>
+      <button id="btnRefreshApp" style="background:#0a1a22; color:#8fd0ff; border:1px solid #8fd0ff;">アプリを最新版に更新</button>
+    </details>
+  </div>
+</div>
+
+<!-- 2026-05-15 fix: Strava 連携の Client ID 入力 overlay (= prompt() の代替、 user 案内付き).
+     btnStravaConnect click 時、 client_id 未設定なら表示。 入力 + 保存で OAuth flow へ。 -->
+<div id="strava-setup-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.55); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #ffd54a; border-radius:10px; padding:1.4rem 1.6rem; min-width:520px; max-width:700px; max-height:90vh; overflow-y:auto;">
+    <h2 style="color:#ffd54a; font-size:20px; margin:0 0 0.6rem;">Strava 連携の準備</h2>
+    <p style="margin:0.4rem 0; color:#ddd; font-size:13px; line-height:1.6;">
+      Strava に走行データをアップロードするには、 <b>あなた自身の Strava 開発者アプリ</b>を作って、 そこから取得する <b>Client ID</b> という番号が必要です。
+      (= このアプリ側に共通の ID を埋め込むと全 user が混線するため、 各自で作る設計です)
+    </p>
+    <h3 style="color:#ffd54a; font-size:14px; margin:0.8rem 0 0.3rem;">手順</h3>
+    <ol style="margin:0 0 0.4rem 1.2rem; color:#ddd; font-size:13px; line-height:1.7;">
+      <li>下のリンクから Strava の API 設定ページを開く (= 要 Strava ログイン)</li>
+      <li>「Create &amp; Manage Your App」 → My API Application を作成</li>
+      <li>「Authorization Callback Domain」 に <b>localhost</b> (or 公開時は GitHub Pages のホスト) を登録</li>
+      <li>表示された <b>Client ID</b> (= 数桁の番号) を コピー</li>
+      <li>下の欄に貼り付けて「保存して連携」</li>
+    </ol>
+    <p style="margin:0.6rem 0;">
+      <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">→ Strava API 設定ページを開く</a>
+    </p>
+    <div style="margin:0.6rem 0;">
+      <label style="display:block; color:#ffd54a; font-size:13px; margin-bottom:0.3rem;">Client ID</label>
+      <input id="stravaClientIdInput" type="text" placeholder="例: 12345" style="width:100%; padding:0.5rem; background:#0c0c10; color:#ddd; border:1px solid #444; border-radius:4px; font:14px ui-monospace, monospace;">
+    </div>
+    <div style="margin-top:1rem; display:flex; gap:0.6rem;">
+      <button id="btnStravaSetupSave" style="background:#2a4418; color:#7fff00; border:1px solid #7fff00; border-radius:4px; padding:0.5rem 1rem; font-weight:bold; cursor:pointer;">▶ 保存して連携</button>
+      <button id="btnStravaSetupCancel" style="background:#1a1a22; color:#aaa; border:1px solid #444; border-radius:4px; padding:0.5rem 1rem; cursor:pointer;">× キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<div id="postride-overlay" role="dialog" aria-modal="true">
+  <div id="postride-panel">
+    <h2>✓ ライド保存完了</h2>
+    <!-- save_summary: 実際に保存しようとしてる値の summary。 異常時は赤字 + 確認 button. -->
+    <div class="save-summary" id="save-summary-block" hidden>
+      <h3>保存予定の内容</h3>
+      <dl id="save-summary-list"></dl>
+      <div id="save-summary-anomaly" class="anomaly" hidden></div>
+      <div id="save-summary-confirm" hidden style="margin-top:0.5rem;">
+        <button id="btnSaveAnomalyAccept" style="font:inherit; padding:0.4rem 0.8rem; background:#ff8866; color:#000; border:none; border-radius:4px; cursor:pointer;">異常検出、 それでも保存する</button>
+        <button id="btnSaveAnomalyAbort" style="font:inherit; padding:0.4rem 0.8rem; background:#14141a; color:#aaa; border:1px solid #444; border-radius:4px; cursor:pointer;">保存しない</button>
+      </div>
+    </div>
+    <div>保存ファイル (<span id="post-points">0</span> 点):</div>
+    <div class="gpx-line" id="post-gpx-path">--</div>
+    <div class="hint">下記 button から GPX を保存 / Strava へ直送 / 履歴に蓄積できます (= brief 33)。</div>
+    <!-- brief 33: 4 button (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
+         2026-05-15 user 指示で Strava upload は details 要素で fold (= 普段は GPX / 履歴のみ表に). -->
+    <div>
+      <button id="btnGpxDownload">GPX をダウンロード</button>
+      <button id="btnSaveHistory">履歴に保存</button>
+      <button id="btnViewHistory">履歴を見る</button>
+    </div>
+    <details id="postride-strava-fold" style="margin-top:0.4rem;">
+      <summary style="cursor:pointer; color:#ffd54a; font-size:13px;">Strava へアップロード (オプション)</summary>
+      <div style="margin-top:0.4rem;">
+        <button id="btnStravaUpload">Strava へアップロード</button>
+      </div>
+    </details>
+    <div style="margin-top:0.4rem;">
+      <button id="btnBackToPairing">閉じる</button>
+    </div>
+    <div class="strava-status" id="postride-upload-status" style="color:#aaa; font-size:12px; margin-top:0.4rem;"></div>
+  </div>
+</div>
+
+<!-- brief 33 atom H: 履歴 overlay (= IndexedDB の rides 一覧). -->
+<div id="history-overlay" role="dialog" aria-modal="true" aria-labelledby="history-title">
+  <div id="history-panel">
+    <h2 id="history-title">過去の ride 履歴</h2>
+    <div class="strava-status" id="history-status" style="color:#aaa; font-size:12px;"></div>
+    <ul id="history-list"></ul>
+    <div id="history-empty" hidden>履歴は空です。 ride 終了画面で「履歴に保存」を押すと蓄積されます。</div>
+    <div id="history-buttons">
+      <button id="btnHistoryClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- b46: 起動シーンの第一段「地形データローダー画面」。
+     intro overlay (= 旧 走る/観る/閉じる の 3 択) を作り変え、 起動を一本道にした:
+       起動 → この画面 (アプリ説明 + 注意書き + 「開始」 ボタン)
+            → 「開始」 押下で地形ロード開始 (= 進捗をこの画面に表示)
+            → 完了でトレーナー接続画面 (#setup-overlay) へ
+     DOM id は #intro-overlay のまま (= 既存 grep test / z-index CSS との衝突を最小化)。
+     「開始」 ボタン押下が GSI/OSM への地形タイル取得の起点 ── 配布元へのアクセスを
+     ユーザーの明示操作の後だけにする同意ゲートを実体化する (= b46 の狙い)。 -->
+<div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" data-intro-state="hidden">
+  <div id="intro-panel">
+    <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
+    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。 データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用)。</p>
+    <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 この不確実性を許容してご利用ください。</p>
+    <p id="terrain-loader-lead" class="terrain-loader-lead">「開始」 を押すと地形データ (国土地理院 / OpenStreetMap タイル) の読み込みを始めます。 読み込み完了後にトレーナー接続画面へ進みます。</p>
+    <!-- 「開始」 押下後に表示する地形ロード進捗。 押下前は hidden。 -->
+    <div id="terrain-loader-progress" class="terrain-loader-progress" hidden>
+      <p id="terrain-loader-status">地形データを読み込んでいます…</p>
+      <p id="terrain-loader-error" class="terrain-loader-error" hidden></p>
+    </div>
+    <div class="actions">
+      <button id="btnTerrainLoaderStart" type="button">地形データを読み込んで開始</button>
+      <button id="btnTerrainLoaderRetry" type="button" hidden>再試行</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-8: 「観る」モード用 section-overlay (= 10 区間リスト、 z-index 1470).
+     intro で「コースを観る」を選んだあと表示、 各行クリックで該当区間の start_idx から
+     fake-state ride を開始する。 -->
+<!-- 2026-05-15 fix: 観るモード ride 中、 右上に常時表示する区間リスト panel.
+     行クリックでいつでも別区間にジャンプ可能 (= user 指摘「走行中に右上に区間リストが
+     あって何時でも区間を選べる」反映). 全画面 section-overlay は撤去. -->
+<aside id="section-list-panel" aria-label="コース区間リスト">
+  <h3>区間を選んで観る</h3>
+  <p class="panel-hint">行をクリックするとその区間の始点から走り直します。 ログ保存なし。</p>
+  <ul id="section-list" aria-label="コース 10 区間"></ul>
+  <button id="btnViewModeExit" type="button">最初の画面に戻る</button>
+</aside>
+
+<!-- brief 34 ε-3: 公開ガードレール consent-overlay (= ride 開始前の opt-in、 default 全 OFF). -->
+<div id="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+  <div id="consent-panel">
+    <h2 id="consent-title">ride 機能の使用同意</h2>
+    <p>ride を開始する前に、 以下の機能を使うかどうか選んでください。 後から「全データ削除」でいつでも取り消せます。</p>
+    <div class="opt-row">
+      <input type="checkbox" id="chkConsentHistory">
+      <label for="chkConsentHistory">
+        <span class="opt-title">走行ログをこの browser に保存する</span>
+        IndexedDB に ride 履歴を保存して「過去 ride を見る」で参照できるようにします。 default OFF (= 保存しない).
+      </label>
+    </div>
+    <div class="opt-row">
+      <input type="checkbox" id="chkConsentStrava">
+      <label for="chkConsentStrava">
+        <span class="opt-title">Strava にアップロードする機能を使う</span>
+        Strava 連携 button を有効化します (= 実際の upload は ride 終了画面で明示 click 時のみ発火). default OFF.
+      </label>
+    </div>
+    <p style="color:#888; font-size:12px;">どちらも OFF のまま「同意して ride 開始」を押せば、 ride は普通に動きますが履歴も Strava も使えません。</p>
+    <div class="actions">
+      <button id="btnConsentCancel" type="button">キャンセル</button>
+      <button id="btnConsentAccept" type="button">同意して ride 開始</button>
+    </div>
+  </div>
+</div>
+
+<!-- preflight-overlay (= ride 開始前の事前 validation panel). startRideConfirmed 前段で表示。 -->
+<div id="preflight-overlay" role="dialog" aria-modal="true" aria-labelledby="preflight-title">
+  <div id="preflight-panel">
+    <h2 id="preflight-title">ride 開始前チェック</h2>
+    <p>これから保存される予定のデータ項目と現在値です。 内容を確認してから開始してください。</p>
+    <ul id="preflight-list"></ul>
+    <div id="preflight-message"></div>
+    <div class="actions">
+      <button id="btnPreflightCancel" type="button">キャンセル</button>
+      <button id="btnPreflightStart" type="button">開始する</button>
+    </div>
+  </div>
+</div>
+
+<!-- restore-overlay (= 起動時の途中 ride 復元 dialog). autosave があれば intro より先に表示. -->
+<div id="restore-overlay" role="dialog" aria-modal="true" aria-labelledby="restore-title">
+  <div id="restore-panel">
+    <h2 id="restore-title">途中の ride を復元しますか?</h2>
+    <p id="restore-info">前回の ride が途中で終わっています (autosave あり).</p>
+    <div class="actions">
+      <button id="btnRestoreDiscard" type="button">破棄する</button>
+      <button id="btnRestoreYes" type="button">復元する</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-overlay" role="dialog" aria-modal="true">
+  <div id="confirm-panel">
+    <h3>デモモードに切り替えますか?</h3>
+    <div>trainer に繋がず走行アニメーションだけ動かします。<br><strong style="color:#ff8;">走行データは保存されません</strong>。</div>
+    <div class="actions">
+      <button id="btnConfirmDemo">はい、 デモ走行</button>
+      <button id="btnCancelDemo">いいえ、 戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-5: 「全データ削除」確認 dialog. confirm-overlay (z=1700) と同じ z 階層、
+     ただし別 ID で衝突回避。 共用 PC で誤動作しないよう「全データを削除...」click 後に
+     必ずこの dialog を経由させる (= 1 click flush 禁止)。 -->
+<div id="clear-confirm-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #ff8866; border-radius:8px; padding:1.2rem 1.4rem; max-width:480px;">
+    <h3 style="margin:0 0 0.6rem; color:#ff8866;">本当に全データを削除しますか?</h3>
+    <div style="color:#ddd; font-size:14px;">
+      以下が全て削除されます:
+      <ul style="margin:0.4rem 0; padding-left:1.4rem; color:#aaa; font-size:13px;">
+        <li>IndexedDB の ride 履歴 (= 「履歴に保存」した全 ride)</li>
+        <li>localStorage の consent 記録 / Strava token / client_id / 設定スライダ値 / 前回 trainer アドレス</li>
+      </ul>
+      <strong style="color:#ff8;">この操作は取り消せません。</strong> Strava 側の連携 (= app 認可) は別途
+      <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">Strava 設定ページ</a>
+      で revoke してください。
+    </div>
+    <div style="margin-top:0.8rem; display:flex; gap:0.4rem;">
+      <button id="btnClearConfirm" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#ff8866; color:#000; border:none; border-radius:4px;">はい、 削除する</button>
+      <button id="btnClearCancel" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#14141a; color:#aaa; border:1px solid #444; border-radius:4px;">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- brief 34 ε-5: 全データ削除完了 dialog. Strava 設定ページへの link を再提示し、
+     OK で intro overlay からやり直しに遷移する。 -->
+<div id="clear-done-overlay" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:1710; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center;">
+  <div style="background:#1a1a22; border:1px solid #7fff00; border-radius:8px; padding:1.2rem 1.4rem; max-width:480px;">
+    <h3 style="margin:0 0 0.6rem; color:#7fff00;">✓ 全データを削除しました</h3>
+    <div id="clear-done-status" style="color:#ddd; font-size:14px; margin-bottom:0.4rem;">IndexedDB と localStorage が空になりました。</div>
+    <div style="color:#ddd; font-size:13px;">
+      Strava 連携 (= app 認可) は client side では取り消せません。 完全に断つには
+      <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener noreferrer" style="color:#7fff00;">Strava 設定 → 連携アプリ</a>
+      で fujihill-trainer を revoke してください。
+    </div>
+    <div style="margin-top:0.8rem; display:flex; gap:0.4rem;">
+      <button id="btnClearDoneOk" style="font:inherit; padding:0.5rem 1rem; min-height:36px; background:#7fff00; color:#000; border:none; border-radius:4px;">OK (intro からやり直し)</button>
+    </div>
+  </div>
+</div>
+
+<div id="minimap-container">
+  <canvas id="minimap-top" width="320" height="561"></canvas>
+  <canvas id="minimap-bottom" width="320" height="159"></canvas>
+</div>
+
+<!-- task-g: 地図タイルの出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
+     地形 (3D メッシュ) = 国土地理院 (DEM + seamlessphoto 航空写真)、 minimap 上半分 = OpenStreetMap。
+     b12 Phase 4 の Three.js 化で MapLibre 標準 AttributionControl が消えたため静的 HTML で新設。
+     消失監視は viewer-maplibre.js の verifyAttributionVisible() が #attrib を見る。
+     静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
+<div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
+
+<script type="module" src="viewer-maplibre.js?v=46"></script>
+</body>
+</html>

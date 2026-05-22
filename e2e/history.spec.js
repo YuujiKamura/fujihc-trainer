@@ -27,7 +27,7 @@ import {
 // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 履歴機能は IndexedDB 上の
 // 動作で地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
 // b46: ?test=1 は地形データローダー画面を介さない開発者経路 (= defaultDispatch 直行)。
-const VIEWER_URL = 'http://127.0.0.1:8000/?test=1&noterrain=1';
+const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html?test=1&noterrain=1';
 
 // ride_db.js の正規スキーマ定数を使って IndexedDB に ride を 1 件書き込む。
 // スキーマ名 (DB / store / index) は文字列直書きせず import 定数を page に渡す。

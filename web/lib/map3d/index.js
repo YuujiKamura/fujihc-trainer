@@ -199,9 +199,14 @@ export function createMapRenderer() {
     let drag = null;
     let dragged = false;       // drag 中に実際に動いたか (= mouseup で保存するか判定)
     let wheelSaveTimer = null; // wheel 連打を 1 回の保存にまとめる debounce
-    el.addEventListener('mousedown', (e) => { drag = { x: e.clientX, y: e.clientY }; dragged = false; e.preventDefault(); });
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 && e.button !== 2) return;
+      drag = { x: e.clientX, y: e.clientY, button: e.button, ctrl: e.ctrlKey };
+      dragged = false;
+      e.preventDefault();
+    });
     window.addEventListener('mouseup', () => {
-      if (drag && dragged) saveOrbit();  // drag 終了時に合わせた視点を保存
+      if (drag && dragged) saveOrbit();
       drag = null;
     });
     window.addEventListener('mousemove', (e) => {
@@ -210,7 +215,13 @@ export function createMapRenderer() {
       const dy = e.clientY - drag.y;
       drag.x = e.clientX; drag.y = e.clientY;
       if (dx || dy) dragged = true;
-      camera3d.onDrag(dx, dy);
+      
+      if (drag.button === 2 || (drag.button === 0 && drag.ctrl)) {
+        camera3d.onDrag(dx, dy);
+      } else if (drag.button === 0) {
+        camera3d.onPan(dx, dy);
+      }
+      
       camera3d.update(lastTarget || terrainCenter(), lastForward || { x: 0, y: 0, z: -1 });
     });
     el.addEventListener('wheel', (e) => {

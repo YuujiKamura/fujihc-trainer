@@ -6,7 +6,7 @@
 // 跨いで復元されることを確認する。
 import { test, expect } from './base-test.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/';
+const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
 const GSI_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==',
   'base64',
@@ -30,15 +30,16 @@ async function reachViewModeMap(page) {
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 5_000 });
 }
 
-// 地図中央を水平 dx px ドラッグして orbit (= bearing) を回す。
+// 地図中央を右ボタンで水平 dx px ドラッグして orbit (= bearing) を回す。
+// カメラ操作は左ドラッグ=パン / 右ドラッグ (or Ctrl+左)=オービット (map3d wireCameraInput)。
 async function dragMap(page, dx) {
   const box = await page.locator('#map').boundingBox();
   const cx = box.x + box.width * 0.4;   // 右上の区間パネルを避けて左寄り中央
   const cy = box.y + box.height * 0.5;
   await page.mouse.move(cx, cy);
-  await page.mouse.down();
+  await page.mouse.down({ button: 'right' });
   await page.mouse.move(cx + dx, cy, { steps: 8 });
-  await page.mouse.up();
+  await page.mouse.up({ button: 'right' });
 }
 
 const readOrbit = (page) => page.evaluate(() => {

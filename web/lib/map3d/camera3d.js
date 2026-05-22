@@ -94,6 +94,7 @@ export function createCamera3d(THREE, opts = {}) {
   const span = opts.span || 1000;
   const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, span * 6);
   const target = new THREE.Vector3(0, opts.targetY || 0, 0);
+  const panOffset = new THREE.Vector3(0, 0, 0);
   // MapLibre 準拠のカメラ操作変数 (terrain3d.html L612-616)。
   let bearing = 0;
   let pitch = 61;             // 初期仰角 ≈ 61° (terrain3d.html の初期 phi と揃える)
@@ -135,7 +136,7 @@ export function createCamera3d(THREE, opts = {}) {
     // 毎フレーム、 ライダー現在位置 (world {x,y,z}) と進行方向 forward {x,y,z} で
     // カメラを更新する。 orbit/top はライダーを注視点に、 follow は後方固定。
     update(riderPos, forward) {
-      target.set(riderPos.x, riderPos.y, riderPos.z);
+      target.set(riderPos.x + panOffset.x, riderPos.y + panOffset.y, riderPos.z + panOffset.z);
       if (mode === 'follow') {
         const fp = followPlacement(riderPos, forward || { x: 0, y: 0, z: -1 },
           FOLLOW_BACK, FOLLOW_UP, LOOK_AHEAD);
@@ -182,6 +183,21 @@ export function createCamera3d(THREE, opts = {}) {
     onDrag(dxPx, dyPx) {
       bearing = dragToBearing(bearing, dxPx);
       pitch = dragToPitch(pitch, dyPx);
+    },
+    onPan(dxPx, dyPx) {
+      const panSpeed = radius * 0.001; // 半径に比例したパン速度
+      const rad = bearing * Math.PI / 180;
+      
+      const rightX = Math.cos(rad);
+      const rightZ = Math.sin(rad);
+      const fwdX = -Math.sin(rad);
+      const fwdZ = Math.cos(rad);
+      
+      panOffset.x -= (dxPx * rightX + dyPx * fwdX) * panSpeed;
+      panOffset.z -= (dxPx * rightZ + dyPx * fwdZ) * panSpeed;
+    },
+    resetPan() {
+      panOffset.set(0, 0, 0);
     },
     onWheel(deltaY) {
       radius = wheelRadius(radius, deltaY, RADIUS_MIN, RADIUS_MAX);

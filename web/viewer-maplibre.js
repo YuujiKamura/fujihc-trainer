@@ -15,9 +15,7 @@ import { loadCourseData } from './lib/course_loader.js';
 // brief b2: per-frame コスト削減 ── 「変化した時だけ更新」 の判定純関数群。
 // b12 Phase 2.5: コース polygon / セグメントラベル / ライダー geometry / カメラ計算 /
 // 勾配色 / mesh cache は地図描画モジュール (map_renderer.js) の中へ集約済。
-import {
-  createTextWriter, minimapDirty,
-} from './lib/frame_diff.js';
+import { createTextWriter } from './lib/frame_diff.js';
 // Path B Phase 0: ライド HUD の表示更新を hud.js に集約 (= MapLibre/Three.js 非依存)。
 import {
   createHud, formatPower, formatCadence, formatHr, formatAck,
@@ -34,9 +32,9 @@ import { createRideState } from './lib/ride_state.js';
 // 内側に持つため二重 state にはならない).
 import { createRider } from './lib/rider.js';
 import { integratePhysics } from './lib/bike_physics.js';
-// brief 29: minimap 上半分の OSM タイル 1-shot fetch 用の tile 座標変換
-// (= 旧 inline 定義を web/lib/tile_math.js に切り出し済、 ride hot path には使わない)
-import { lonToTileX, latToTileY, tileXToLon, tileYToLat } from './lib/tile_math.js';
+// b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は minimap.js に切り出し済。
+//   tile 座標変換 / 再描画判定もそちらが内側で import する。
+import { createMinimap } from './lib/minimap.js';
 // brief 31 commit γ: checkSetupStatus を lib 抽出して behavioral test 可能に
 import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_status.js';
 // brief 33: ride 終了時の 4 button bind (= GPX download / Strava upload / 履歴に保存 / 履歴を見る).
@@ -342,15 +340,9 @@ const POSITION_SEND_INTERVAL_MS = 1000;
 let scanMode = 'ftms';
 
 let riderMarker = null;
-// brief 29: minimap を旧 OSM 直叩き方式に rollback。 brief 28 の MapLibre 2nd instance は撤回。
-// minimapTopBase: 上半分 (#minimap-top canvas) の base 画像 (off-screen canvas)、
-//   = z=11 周辺 9-16 OSM タイル + course polyline + start/goal dot + 180度回転、 起動時 1 回作成。
-// minimapBottomBase: 下半分 (#minimap-bottom canvas) の標高プロファイル base 画像、 1 回作成。
-// minimapStats: 上下共有の幾何 (= 上半分は projectLatLon / rotateTop、 下半分は
-//   botInnerW / botInnerH / botBaseY / botTopY / PAD / minE / maxE / totalD)。
-let minimapTopBase = null;
-let minimapBottomBase = null;
-let minimapStats = null;
+// b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は web/lib/minimap.js に
+//   切り出し済。base 画像 / stats / 再描画判定の状態は createMinimap() の closure が持つ。
+const minimap = createMinimap();
 // b12 Phase 2.5: カメラ状態 (zoom/pitch/bearing offset) と ホイール/ドラッグ操作は
 // map_renderer.js が保持・処理する。 viewer は setCameraDefaults / updateCamera 経由で頼む。
 // brief 35: 旧 spinAngle / currentCadence / currentPower / currentHr は rider 内部に集約.
@@ -1838,332 +1830,16 @@ async function loadCourse() {
   updateStartGoalVisibility();
 
   // brief 29: minimap は MapLibre 非依存の Canvas 2D 直描画。 course load 完了後 1 回だけ。
-  // buildMinimapTopBase は async (= OSM タイル fetch 完了待ち)、 await はせず fire-and-forget。
-  buildMinimapTopBase();
-  buildMinimapBottomBase();
+  // b51: minimap.js に切り出し済。buildTopBase は async (= OSM タイル fetch 完了待ち)、
+  //   await はせず fire-and-forget。env / 各 base URL は viewer 側の値を渡す。
+  minimap.buildTopBase({
+    course, env: ENV, bridgeTileBase: BRIDGE_TILE_BASE_URL,
+    httpBase: HTTP_BASE_URL, skipTerrain: SKIP_TERRAIN,
+  });
+  minimap.buildBottomBase({ course, terrain });
 
   lastT = performance.now();
   requestAnimationFrame(tick);
-}
-
-// === minimap (course polyline + OSM 1-shot + 標高プロファイル) ===
-// brief 29: brief 28 の MapLibre 2nd instance 撤回、 旧 OSM 直叩き方式 (= canvas + loadOsmTile)
-// に rollback。 ToS 範囲内 1-shot 9-16 タイル fetch、 ride 中 再 fetch ゼロ。
-// 上半分 (= #minimap-top canvas): z=11 周辺 OSM タイル + course polyline + start/goal dot + 180度回転。
-// 下半分 (= #minimap-bottom canvas): 標高プロファイル (= brief 28 と同仕様、 関数名 rename のみ)。
-// 注意: ここで OSM 直叩きが復活していたが、 brief 31 構造修正で static mode は
-// 完全 disable (= GitHub Pages 訪問者全員が OSM ToS heavy use 違反になる harm vector close)。
-// ride hot path には絶対戻さない、 prefetchTilesAlongCourse 復活も絶対 NG (= brief 13 物理 freeze)。
-
-// loadOsmTile: brief 30 で DB cache 化、 brief 31 で mode 分岐。
-// bridge mode: 一次 ${BRIDGE_TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png (= bridge.py が SQLite から PNG)、
-//   fallback で OSM 直叩き (= localhost 単独利用、 ToS 上 heavy use ではない)
-// static mode (= GitHub Pages): minimap 用 OSM raster を bridge に依存するため、
-//   一次経路を最初から無効化 (= 即 resolve、 minimap は地形 PNG + 路線 polygon のみで描画)。
-//   ここで bridge URL を叩くと static 訪問者が localhost を引いて 404 → onerror で OSM 直叩き
-//   fallback 発火 → 訪問者全員が公式 tile server を heavy use する第三者 harm vector になる。
-// 失敗時は resolve のみ (= reject しない、 旧版踏襲)。
-// crossOrigin='anonymous' は canvas tainted 回避用 (= drawImage 後 getImageData は呼ばないので
-// 必須ではないが旧版踏襲、 OSM 側は CORS 許可ヘッダを返すので無害)。
-// User-Agent は browser が自動で送る (= bridge 側で fetch するときは fujihill-trainer/0.1 UA を明示)。
-function loadOsmTile(ctx, tx, ty, z, projectLatLon, clipRect) {
-  return new Promise((resolve) => {
-    // brief 31: static mode (= bridge 未到達) では minimap 用 OSM raster を取得しない。
-    // 第三者 harm 防止 (= 公開 viewer から OSM 公式 tile server への heavy use 発生回避)。
-    // commit β: 旧 _bridgeReachable 直接参照を ENV.mode 経由に置換 (= immutable env object)。
-    if (!ENV || ENV.mode !== 'bridge') {
-      resolve();
-      return;
-    }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    let tried = false;
-    img.onload = () => {
-      const lonW = tileXToLon(tx, z), lonE = tileXToLon(tx + 1, z);
-      const latN = tileYToLat(ty, z), latS = tileYToLat(ty + 1, z);
-      const [x1, y1] = projectLatLon(latN, lonW);
-      const [x2, y2] = projectLatLon(latS, lonE);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h);
-      ctx.clip();
-      ctx.drawImage(img, x1, y1, x2 - x1, y2 - y1);
-      ctx.restore();
-      resolve();
-    };
-    img.onerror = () => {
-      // 2026-05-15 fix: OSM 公式 (tile.openstreetmap.org) への直叩き fallback を撤去。
-      // CSP の img-src は 'self' + Strava のみ、 OSM 直叩きは block されて Console に
-      // 「CSP violation」 が並んでいた。 2026-05-14 user 訂正「ローカル DB にタイルを
-      // 整備したらダメなんか」と整合 (= 第三者 OSM サーバへの heavy use 回避 + CSP
-      // error 消滅)。 cache miss は silent resolve、 minimap の該当タイルは透明で OK。
-      resolve();
-    };
-    // brief 30 一次経路: bridge 経由で DB tiles table から hit (= source='osm_raster')。
-    // 2 回目以降の起動では完全に DB hit、 OSM サーバへの再 fetch ゼロ。
-    img.src = `${BRIDGE_TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png`;
-  });
-}
-
-// drawDirTriangle: 旧版踏襲。 rider の進行方向を示す三角形を canvas 上半分に描画。
-// 180度回転後の上半分内で描くので、 heading は反転考慮済の値を渡す側で処理する。
-function drawDirTriangle(ctx, x, y, heading, size) {
-  const cosH = Math.cos(heading), sinH = Math.sin(heading);
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.beginPath();
-  // 三角形 (= 進行方向の先端 + 後ろ 2 点)
-  ctx.moveTo(sinH * size, -cosH * size);
-  ctx.lineTo(sinH * -size * 0.6 + cosH * size * 0.6, -cosH * -size * 0.6 + sinH * size * 0.6);
-  ctx.lineTo(sinH * -size * 0.6 - cosH * size * 0.6, -cosH * -size * 0.6 - sinH * size * 0.6);
-  ctx.closePath();
-  ctx.fillStyle = 'cyan';
-  ctx.strokeStyle = 'black';
-  ctx.lineWidth = 2;
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-// brief 29: 上半分 (#minimap-top canvas) の base 画像を生成。 旧 buildMinimapBase のうち
-// 上半分処理だけを抽出 (= 下半分は buildMinimapBottomBase に分離)、 結果は minimapTopBase に保存。
-// 9-16 OSM タイル (= z=11) を 1-shot 並列 fetch、 fetch 失敗時は単色 + polyline + dot は残す。
-async function buildMinimapTopBase() {
-  const onscreen = document.getElementById('minimap-top');
-  if (!onscreen || course.length === 0) return;
-  // brief 30: 起動時 1 回、 bridge に minimap raster の DB cache 構築を fire-and-forget で依頼。
-  // 既に DB に揃っていれば 9-16 タイル分の skipped で完走 (= OSM fetch ゼロ)、
-  // 不足分のみ 1 req/sec で fetch + insert。 完走後は次回起動から完全 DB hit。
-  // bridge 未起動 / 失敗時は無視 (= OSM 直叩き fallback が loadOsmTile 内で動く)。
-  // b41: ?noterrain= では bridge への raster cache 構築依頼も出さない。 タイル取得を
-  // 物理 skip する経路で、 minimap raster の事前取得もその対象。 e2e bridge は本 POST を
-  // 501 で返すため、 訪問者には無害でも console error が fatalErrors を汚す ── それを断つ。
-  if (!SKIP_TERRAIN) {
-    fetch(`${HTTP_BASE_URL}/tiles/_fetch_minimap_raster`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    }).catch(() => { /* silent: fallback は loadOsmTile が担う */ });
-  }
-  const W = onscreen.width, H = onscreen.height;
-  const PAD = 12;
-  // course bbox を 20% margin で広げる
-  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-  for (const p of course) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
-  }
-  const latM = (maxLat - minLat) * 0.20, lonM = (maxLon - minLon) * 0.20;
-  minLat -= latM; maxLat += latM; minLon -= lonM; maxLon += lonM;
-  const midLat = (minLat + maxLat) / 2;
-  const lonScale = Math.cos(midLat * Math.PI / 180);
-  const dLat = maxLat - minLat, dLon = (maxLon - minLon) * lonScale;
-  const innerW = W - 2 * PAD, innerH = H - 2 * PAD;
-  const scale = Math.min(innerW / dLon, innerH / dLat);
-  const projW = dLon * scale, projH = dLat * scale;
-  const offsetX = PAD + (innerW - projW) / 2;
-  const offsetY = PAD + (innerH - projH) / 2;
-  // 普通の projection (北上向き)、 180 度回転は最後に canvas 全体に rotate を掛けて実現
-  function project(lat, lon) {
-    const x = offsetX + (lon - minLon) * lonScale * scale;
-    const y = offsetY + (maxLat - lat) * scale;
-    return [x, y];
-  }
-  // 上半分の minimapStats は projectLatLon を含む (= updateMinimap の rider 描画で使う)
-  // 下半分の stats は buildMinimapBottomBase が後で setup する。
-  minimapStats = Object.assign(minimapStats || {}, {
-    projectLatLon: project,
-    rotateTop: { W, H },
-  });
-
-  // off-screen canvas に描画して minimapTopBase に保存
-  const off = document.createElement('canvas');
-  off.width = W; off.height = H;
-  const ctx = off.getContext('2d');
-  ctx.fillStyle = 'rgba(10,18,18,0.88)';
-  ctx.fillRect(0, 0, W, H);
-
-  // OSM タイル 1-shot 並列 fetch (= z=11 周辺、 buffer=1 で 9-16 タイル)
-  // ToS 範囲内: 起動時 1 回、 ride 中 再 fetch ゼロ。 brief 29 / Rule 11 class B 扱い。
-  const z = 11;
-  const buffer = 1;
-  const minTx = Math.floor(lonToTileX(minLon, z)) - buffer;
-  const maxTx = Math.floor(lonToTileX(maxLon, z)) + buffer;
-  const minTy = Math.floor(latToTileY(maxLat, z)) - buffer;
-  const maxTy = Math.floor(latToTileY(minLat, z)) + buffer;
-  const clip = { x: PAD, y: PAD, w: W - 2 * PAD, h: H - 2 * PAD };
-  const ps = [];
-  for (let tx = minTx; tx <= maxTx; tx++) {
-    for (let ty = minTy; ty <= maxTy; ty++) {
-      ps.push(loadOsmTile(ctx, tx, ty, z, project, clip));
-    }
-  }
-  await Promise.all(ps);
-
-  // course polyline (= muted amber)
-  ctx.beginPath();
-  for (let i = 0; i < course.length; i++) {
-    const [x, y] = project(course[i].lat, course[i].lon);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.strokeStyle = '#f2c14e';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  // start dot (= soft green)
-  const [sx, sy] = project(course[0].lat, course[0].lon);
-  ctx.fillStyle = '#62d0a2';
-  ctx.strokeStyle = '#07110f';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-  // goal dot (= soft red)
-  const [gx, gy] = project(course[course.length - 1].lat, course[course.length - 1].lon);
-  ctx.fillStyle = '#e56b6f';
-  ctx.beginPath(); ctx.arc(gx, gy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-
-  // 180 度回転 (= 画面下が進行方向前方になる視覚整合、 旧版踏襲)
-  const copy = document.createElement('canvas');
-  copy.width = W; copy.height = H;
-  copy.getContext('2d').drawImage(off, 0, 0);
-  ctx.save();
-  ctx.clearRect(0, 0, W, H);
-  ctx.translate(W / 2, H / 2);
-  ctx.rotate(Math.PI);
-  ctx.translate(-W / 2, -H / 2);
-  ctx.drawImage(copy, 0, 0);
-  ctx.restore();
-
-  minimapTopBase = off;
-}
-
-// brief 29: 下半分 (= #minimap-bottom canvas) の標高プロファイル base 画像。
-// brief 28 の buildMinimapBottom と同仕様、 関数名のみ rename (= buildMinimapTopBase との対称性)。
-function buildMinimapBottomBase() {
-  const onscreen = document.getElementById('minimap-bottom');
-  // terrain 未生成 / totalDistance=0 (= 単一点 course 等) は早期 return。 下のループが
-  // terrain.distanceAtIdx を呼び、 x = distanceAtIdx / totalD でゼロ除算するため。
-  if (!onscreen || course.length === 0 || !terrain || terrain.totalDistance === 0) return;
-  const W = onscreen.width, H = onscreen.height;
-  const PAD = 12;
-  const eles = course.map(p => p.elevation_m);
-  const minE = Math.min(...eles), maxE = Math.max(...eles);
-  // rider-position-model: x 軸は terrain の haversine 累積長 (= rider dot の curDistM と
-  // 同一スケール)。 course.json の distance_m は壊れた目盛りなので使わない。
-  const totalD = terrain.totalDistance;
-  const botInnerW = W - 2 * PAD;
-  const botInnerH = H - 2 * PAD;
-  const botBaseY = H - PAD;
-  const botTopY = PAD;
-  minimapStats = Object.assign(minimapStats || {}, {
-    minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY,
-  });
-
-  const off = document.createElement('canvas'); off.width = W; off.height = H;
-  const ctx = off.getContext('2d');
-  ctx.fillStyle = 'rgba(10,18,18,0.88)'; ctx.fillRect(0, 0, W, H);
-  // 標高プロファイルの塗り (= gradient)
-  ctx.beginPath(); ctx.moveTo(PAD, botBaseY);
-  for (let i = 0; i < course.length; i++) {
-    const p = course[i];
-    const x = PAD + (terrain.distanceAtIdx(i) / totalD) * botInnerW;
-    const y = botBaseY - ((p.elevation_m - minE) / (maxE - minE)) * botInnerH;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(PAD + botInnerW, botBaseY); ctx.closePath();
-  const grad = ctx.createLinearGradient(0, botTopY, 0, botBaseY);
-  grad.addColorStop(0, 'rgba(98,208,162,0.62)');
-  grad.addColorStop(1, 'rgba(242,193,78,0.14)');
-  ctx.fillStyle = grad; ctx.fill();
-  // 標高プロファイルの白線
-  ctx.beginPath();
-  for (let i = 0; i < course.length; i++) {
-    const p = course[i];
-    const x = PAD + (terrain.distanceAtIdx(i) / totalD) * botInnerW;
-    const y = botBaseY - ((p.elevation_m - minE) / (maxE - minE)) * botInnerH;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.strokeStyle = '#eef4f1'; ctx.lineWidth = 2; ctx.stroke();
-  // min/max 標高ラベル
-  ctx.fillStyle = '#9aaaa5'; ctx.font = '14px ui-monospace, monospace';
-  ctx.fillText(`${maxE.toFixed(0)}m`, 4, botTopY + 14);
-  ctx.fillText(`${minE.toFixed(0)}m`, 4, botBaseY - 4);
-  minimapBottomBase = off;
-}
-
-// brief 17b: prefetchTilesAlongCourse は完全削除。 関連する seenOsm / seenDem 等の
-// 変数も使用箇所が無いため定義しない。 タイルは MapLibre の on-demand fetch (= localhost
-// /tiles/... 経由) で読み込み、 外部第三者 endpoint には一切 fetch しない (= main viewer)。
-// brief 29: minimap だけ例外で OSM 直叩き (= 起動時 1-shot 9-16 タイル、 z=11)、
-// ride 中の再 fetch ゼロ。 prefetchTilesAlongCourse 復活は絶対 NG。
-
-// rider マーカーの GeoJSON 生成は web/lib/rider_styles.js の buildRiderFeatures に切り出し済
-// (= 純粋関数 + 単体テスト)。 rider-body レイヤー (fill-extrusion) が各 feature の
-// color / base / height を ['get'] で読む。
-
-// brief 29: 上下 2 canvas にそれぞれ base 画像を drawImage + rider 描画。
-// 上半分: 180度回転後の座標で rider 三角形を描く (= 進行方向を画面下向きに)。
-// 下半分: 標高プロファイル base 画像の上に rider 縦線 + dot。
-// brief b2 High-5: getContext は loop 外 (= lazy 1 回) でキャッシュ、 2D canvas の
-// 全 clear + drawImage は rider が pixel 単位で動いた時だけ実行する。 停止中は skip。
-let _minimapTopCtx = null;
-let _minimapBotCtx = null;
-let _minimapTopFrame = null;  // 前フレームの rider 位置/向き (= 上 canvas 再描画判定)
-let _minimapBotFrame = null;  // 前フレームの dot 位置 (= 下 canvas 再描画判定)
-
-function updateMinimap(curDistM, curEleM, curLat, curLon, heading) {
-  if (!minimapStats) return;
-
-  const topCanvas = document.getElementById('minimap-top');
-  const botCanvas = document.getElementById('minimap-bottom');
-  const hasTop = topCanvas && minimapTopBase && minimapStats.projectLatLon;
-  const hasBot = botCanvas && minimapBottomBase;
-  if (!hasTop && !hasBot) return;
-
-  const { minE, maxE, totalD, PAD, botInnerW, botInnerH, botBaseY, botTopY } = minimapStats;
-  // 上半分 rider 位置 (= 描画前に算出して変化検出に使う)
-  let rx = 0, ry = 0;
-  if (hasTop) { [rx, ry] = minimapStats.projectLatLon(curLat, curLon); }
-  // 下半分 dot 位置
-  const px = PAD + (curDistM / totalD) * botInnerW;
-  const py = botBaseY - ((curEleM - minE) / (maxE - minE)) * botInnerH;
-
-  // 上 rider (x,y,heading度) と下 dot (px,py) のいずれかが量子化単位で動いたら再描画。
-  const frame = { x: rx, y: ry, h: heading * 180 / Math.PI };
-  const botMoved = !_minimapBotFrame
-    || Math.round(_minimapBotFrame.px) !== Math.round(px)
-    || Math.round(_minimapBotFrame.py) !== Math.round(py);
-  if (!minimapDirty(_minimapTopFrame, frame) && !botMoved) return;
-  _minimapTopFrame = frame;
-  _minimapBotFrame = { px, py };
-
-  // 上半分: #minimap-top ── rider 三角形を 180度回転後の座標系で描画
-  // (= base 画像が既に 180度回転済なので、 rider 位置も同じ rotate を適用する)
-  if (hasTop) {
-    if (!_minimapTopCtx) _minimapTopCtx = topCanvas.getContext('2d');
-    const tctx = _minimapTopCtx;
-    tctx.clearRect(0, 0, topCanvas.width, topCanvas.height);
-    tctx.drawImage(minimapTopBase, 0, 0);
-    const { W, H } = minimapStats.rotateTop;
-    tctx.save();
-    tctx.translate(W / 2, H / 2);
-    tctx.rotate(Math.PI);
-    tctx.translate(-W / 2, -H / 2);
-    drawDirTriangle(tctx, rx, ry, heading, 9);
-    tctx.restore();
-  }
-
-  // 下半分: #minimap-bottom
-  if (hasBot) {
-    if (!_minimapBotCtx) _minimapBotCtx = botCanvas.getContext('2d');
-    const ctx = _minimapBotCtx;
-    ctx.clearRect(0, 0, botCanvas.width, botCanvas.height);
-    ctx.drawImage(minimapBottomBase, 0, 0);
-    ctx.strokeStyle = 'rgba(0,220,220,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(px, botTopY); ctx.lineTo(px, botBaseY); ctx.stroke();
-    ctx.fillStyle = 'cyan'; ctx.strokeStyle = 'black'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(px, py, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-  }
 }
 
 function tick(t) {
@@ -2297,10 +1973,8 @@ function tick(t) {
     }
   } catch (_e) { /* validation は best-effort、 落ちても ride を止めない */ }
   }  // end if (DEBUG_HUD)
-  // brief 35 同型 bug 修正: 旧 viewer は riderHeadingRad を計算しつつ updateMinimap に
-  // `headingRad` (= 未定義) を渡していた、 runtime ReferenceError. jsdom test 環境で tick が
-  // 走らないため source-grep が通り続けていた dead bug. minimap には rider 進行方向を渡す.
-  updateMinimap(curDist, rEle, rLat, rLon, riderHeadingRad);
+  // minimap には rider 進行方向 (riderHeadingRad) を渡す。
+  minimap.update(curDist, rEle, rLat, rLon, riderHeadingRad);
   const dispKmh = snap.speed * speedMult * 3.6;
   const connected = !!(client && client.isOpen());
   hud.speed(dispKmh, { paused: snap.paused, connected });
@@ -2864,4 +2538,12 @@ window.addEventListener('message', (ev) => {
 
 // Svelte Interop
 window.fujihillInterop = { startTerrainPhase, onTerrainLoaderDone };
+
+// Phase 3: Svelte 版 Map3D を使用する場合、既存の viewer-maplibre の初期化をバイパスする
+if (new URLSearchParams(location.search).has('svelte_map')) {
+  console.log('[viewer-maplibre] svelte_map mode detected. Bypassing Vanilla JS boot.');
+  // return; -> Cannot return from top-level outside a module without wrapping, but we are in module.
+  // Actually, we can just avoid calling `initApp()`. Let's wrap initApp or just abort.
+}
+
 

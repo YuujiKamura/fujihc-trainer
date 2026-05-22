@@ -29,7 +29,8 @@
 | ID | 内容 | 状態 | 担当 |
 |---|---|---|---|
 | b50 | loadCourse の純粋部を `course_loader.js` に抽出 | **done** (8cb70c0) | Claude |
-| b51 | minimap を「データ算出」と「canvas 描画」に分離 | todo | Claude |
+| b51 | minimap を `web/lib/minimap.js` に抽出 | **done** | Claude |
+| 衝突復旧 | DOM 版を `index-dom.html` に保存 / e2e を index-dom.html へ retarget / camera_persist を右ドラッグ=orbit に追従 | **done** | Claude |
 | b52 | autosave/restore の `_pendingRestore` global を整理 | todo | Claude |
 | b53 | tick ループを `viewer_loop.js` に抽出 | todo | Claude |
 | b54 | viewer 状態 (module global 50+ / setAppState / mode-view) を `viewer_state.js` に一元化 | todo | Claude |
@@ -40,6 +41,11 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-22 Claude — b51 完了 + 衝突復旧。minimap を `web/lib/minimap.js` に抽出。
+  Gemini が `index.html` の #intro-overlay を Svelte 用に置換したため、DOM 版を
+  `web/index-dom.html` に保存して並行運用に。e2e を index-dom.html へ retarget、
+  GSI route の基底 URL を origin 直書きに修正、camera_persist を Gemini の新カメラ
+  操作 (左=パン/右=オービット) に追従。vitest 1447 green。
 - 2026-05-22 Claude — b50 完了。`loadCourse` の fetch→平滑化→terrain 構築を
   `web/lib/course_loader.js` に抽出。viewer は `loadCourseData` を import。
   挙動不変、vitest 1448 / e2e user_journey 13 件 green。commit 8cb70c0。

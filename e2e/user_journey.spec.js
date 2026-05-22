@@ -19,7 +19,7 @@
 import { test, expect } from './base-test.js';
 import { RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE } from '../web/lib/ride_db.js';
 
-const VIEWER_URL = 'http://127.0.0.1:8000/';
+const VIEWER_URL = 'http://127.0.0.1:8000/index-dom.html';
 
 test('初回訪問: 地形データローダー画面が出て「開始」 ボタンが押せる', async ({ page }) => {
   // 起動 → 地形データローダー画面 (= #intro-overlay の DOM 枠を再利用) が表示される
@@ -378,8 +378,8 @@ test('b46 edge: GSI 通信無音 10s でロード overlay が silent state + 諦
     await new Promise((resolve) => setTimeout(resolve, 30_000));
     await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
   };
-  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
-  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route('http://127.0.0.1:8000/static/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
+  await page.route('http://127.0.0.1:8000/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
   await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
@@ -410,8 +410,8 @@ test('b46 edge: 諦め button click でロード overlay が即時消えて view
     await new Promise((resolve) => setTimeout(resolve, 30_000));
     await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
   };
-  await page.route(`${VIEWER_URL}static/tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
-  await page.route(`${VIEWER_URL}tiles/gsi_dem/**`, route => route.fulfill({ status: 404 }));
+  await page.route('http://127.0.0.1:8000/static/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
+  await page.route('http://127.0.0.1:8000/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
   await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });

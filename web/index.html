@@ -919,23 +919,7 @@
      DOM id は #intro-overlay のまま (= 既存 grep test / z-index CSS との衝突を最小化)。
      「開始」 ボタン押下が GSI/OSM への地形タイル取得の起点 ── 配布元へのアクセスを
      ユーザーの明示操作の後だけにする同意ゲートを実体化する (= b46 の狙い)。 -->
-<div id="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="intro-title" data-intro-state="hidden">
-  <div id="intro-panel">
-    <h2 id="intro-title">fujihill-trainer (= 富士ヒルクライム シミュレータ)</h2>
-    <p>このアプリは富士ヒルクライムコースを室内 trainer で再現する練習補助シミュレータです。 データはこの browser のローカルのみで完結します (= サーバ送信なし、 cookie 不使用)。</p>
-    <p class="intro-disclaimer">元 GPX は屋外計測の GPS データで、 受信状態によって位置・標高に誤差を含みます (= 実際の富士スバルラインの勾配と完全一致しません、 大体合ってる程度の精度です)。 この不確実性を許容してご利用ください。</p>
-    <p id="terrain-loader-lead" class="terrain-loader-lead">「開始」 を押すと地形データ (国土地理院 / OpenStreetMap タイル) の読み込みを始めます。 読み込み完了後にトレーナー接続画面へ進みます。</p>
-    <!-- 「開始」 押下後に表示する地形ロード進捗。 押下前は hidden。 -->
-    <div id="terrain-loader-progress" class="terrain-loader-progress" hidden>
-      <p id="terrain-loader-status">地形データを読み込んでいます…</p>
-      <p id="terrain-loader-error" class="terrain-loader-error" hidden></p>
-    </div>
-    <div class="actions">
-      <button id="btnTerrainLoaderStart" type="button">地形データを読み込んで開始</button>
-      <button id="btnTerrainLoaderRetry" type="button" hidden>再試行</button>
-    </div>
-  </div>
-</div>
+<div id="svelte-app"></div>
 
 <!-- brief 34 ε-8: 「観る」モード用 section-overlay (= 10 区間リスト、 z-index 1470).
      intro で「コースを観る」を選んだあと表示、 各行クリックで該当区間の start_idx から
@@ -1066,6 +1050,7 @@
      静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
 <div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
 
+<script type="module" src="dist/main.js"></script>
 <script type="module" src="viewer-maplibre.js?v=46"></script>
 </body>
 </html>

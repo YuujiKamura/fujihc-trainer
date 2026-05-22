@@ -125,14 +125,14 @@ describe('brief 35: tick 関数は rider.tick + snapshot 経路', () => {
     expect(m[0]).toMatch(/snap\.position/);
   });
 
-  it('tick 内で updateMinimap に riderHeadingRad を渡している (= 旧 headingRad 未定義 bug 修正)', () => {
+  it('tick 内で minimap.update に riderHeadingRad を渡している (= 旧 headingRad 未定義 bug 修正)', () => {
+    // b51: minimap は minimap.js に切り出し済、viewer は minimap.update(...) を呼ぶ。
     const m = viewer.match(/function\s+tick\s*\(\s*t\s*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    // updateMinimap(... , riderHeadingRad) が呼ばれる. 旧 headingRad は別 symbol で未定義だった.
-    expect(m[0]).toMatch(/updateMinimap\([^)]*riderHeadingRad/);
-    // 旧 bug pattern (= updateMinimap に headingRad だけを渡す) が live コードに残っていない.
+    expect(m[0]).toMatch(/minimap\.update\([^)]*riderHeadingRad/);
+    // 旧 bug pattern (= 未定義 headingRad を渡す) が live コードに残っていない.
     const tickLive = stripComments(m[0]);
-    expect(tickLive).not.toMatch(/updateMinimap\([^)]*,\s*headingRad\s*\)/);
+    expect(tickLive).not.toMatch(/minimap\.update\([^)]*,\s*headingRad\s*\)/);
   });
 
   it('tick 内で rider.atGoal を end 判定に使う (= rideState.isAtEnd と等価)', () => {
