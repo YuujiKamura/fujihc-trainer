@@ -92,10 +92,11 @@ export function zoomToRadius(zoom) {
 //   mode    'orbit' (既定) | 'top' | 'follow'
 export function createCamera3d(THREE, opts = {}) {
   const span = opts.span || 1000;
-  // far 面は RADIUS_MAX (6000m) を必ず上回らせる ── orbit 半径が far を超えると、
+  // far 面は RADIUS_MAX (12000m) を必ず上回らせる ── orbit 半径が far を超えると、
   // 最大ズームアウト時にシーン全体が far クリップ面の外へ出て画面が真っ暗になる
   // (2026-05-22、RADIUS_MAX を 3000→6000 にしたとき far=span*6 を超えて発覚)。
-  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, Math.max(span * 6, 14000));
+  // RADIUS_MAX を上げたら必ずこの下限もそれを超える値に上げること。
+  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, Math.max(span * 6, 28000));
   const target = new THREE.Vector3(0, opts.targetY || 0, 0);
   const panOffset = new THREE.Vector3(0, 0, 0);
   // MapLibre 準拠のカメラ操作変数 (terrain3d.html L612-616)。
@@ -106,11 +107,12 @@ export function createCamera3d(THREE, opts = {}) {
   let radius = 80;
   // radius のクランプ域 (m)。 terrain3d.html は span 比例 (span*0.03〜span*3.5) だが、
   // 富士のように span が大きいと最小でも数百 m になり「ライダーに寄れない」。
-  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 6000m
-  // (= コース全体 + 周辺地形の文脈まで引ける。 旧 3000m から 2 倍に拡張、
-  //  user 指示 2026-05-22「ズームアウトのキャップをあと 2 倍遠くに」)。
+  // 走行視点が要なので min は固定 5m (= ライダーに肉薄)、 max は 12000m
+  // (= コース全体 + 広域の周辺地形まで引ける。 3000m→6000m→12000m と段階拡張、
+  //  user 指示 2026-05-22「ズームアウトのキャップをあと 2 倍」を 2 回)。
+  // RADIUS_MAX を上げたら上の camera far 面の下限も必ず追従させること。
   const RADIUS_MIN = 5;
-  const RADIUS_MAX = 6000;
+  const RADIUS_MAX = 12000;
   // 追従カメラの距離定数 (m、 実スケール自転車に合わせた値、 terrain3d.html L622-624)。
   const FOLLOW_BACK = 8;
   const FOLLOW_UP = 1.8;
