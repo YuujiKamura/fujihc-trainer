@@ -1,7 +1,10 @@
-// brief 34 ε-9 unit test: terrain_loader の state 遷移を pin.
+// brief 34 ε-9 + b69 unit test: terrain_loader の state 遷移を pin.
+//
+// b69 で `cfg.gsiTileBaseUrl` (= 旧 static/bridge 配信経路) を撤去し、 DEM タイル取得
+// chain を IndexedDB → GSI 直の 2 段に統一した。 本 test も `gsiDirectBase` 必須前提で書く。
 //
 // 範囲:
-//   - createTerrainLoader({ courseUrl, pmtilesUrl, gsiTileBaseUrl, fetchImpl }) で生成
+//   - createTerrainLoader({ courseUrl, pmtilesUrl, gsiDirectBase, fetchImpl }) で生成
 //   - start() で全 probe 並列発火 → 全 ok で isReady() === true
 //   - course.json 取得失敗 → phase === 'failed' / isReady === false / error 文言
 //   - pmtilesUrl 省略 → static mode skip でも all-green になる (= bridge mode 対応)
@@ -16,6 +19,8 @@ import {
   createTerrainLoader, buildGsiProbeUrls, buildGsiProbeCoords, GSI_DEM_DIRECT_BASE,
 } from '../lib/terrain_loader.js';
 import { openTileCache } from '../lib/tile_cache.js';
+
+const TEST_DIRECT_BASE = 'https://example.test/dem';
 
 function ok() {
   return { ok: true, status: 200 };
@@ -35,25 +40,25 @@ function makeFetch(map) {
   };
 }
 
-describe('buildGsiProbeUrls', () => {
+describe('buildGsiProbeUrls (b69: gsiDirectBase 1 引数)', () => {
   it('default lon/lat (= 富士山中央) で z=15 タイル 3 枚を生成 (b59: dem5a z15)', () => {
-    const urls = buildGsiProbeUrls('/tiles/gsi_dem');
+    const urls = buildGsiProbeUrls(TEST_DIRECT_BASE);
     expect(urls.length).toBe(3);
     expect(urls[0]).toMatch(/\/15\/\d+\/\d+\.png$/);
   });
 
   it('opts.lon / opts.lat で別座標の tile を計算', () => {
-    const a = buildGsiProbeUrls('/g', { lon: 138.75, lat: 35.40, z: 14 });
-    const b = buildGsiProbeUrls('/g', { lon: 139.50, lat: 35.50, z: 14 });
+    const a = buildGsiProbeUrls(TEST_DIRECT_BASE, { lon: 138.75, lat: 35.40, z: 14 });
+    const b = buildGsiProbeUrls(TEST_DIRECT_BASE, { lon: 139.50, lat: 35.50, z: 14 });
     // 東京寄り b の方が x 大きい (= 経度東側).
     const ax = parseInt(a[0].match(/\/14\/(\d+)\//)[1], 10);
     const bx = parseInt(b[0].match(/\/14\/(\d+)\//)[1], 10);
     expect(bx).toBeGreaterThan(ax);
   });
 
-  it('prefix の前置形を尊重 (= /tiles/gsi_dem / /gsi_dem 両対応)', () => {
-    expect(buildGsiProbeUrls('/tiles/gsi_dem')[0]).toMatch(/^\/tiles\/gsi_dem\/15\//);
-    expect(buildGsiProbeUrls('/gsi_dem')[0]).toMatch(/^\/gsi_dem\/15\//);
+  it('gsiDirectBase prefix を尊重 (= GSI 公式 endpoint へ直接 append)', () => {
+    expect(buildGsiProbeUrls('https://example.test/dem')[0]).toMatch(/^https:\/\/example\.test\/dem\/15\//);
+    expect(buildGsiProbeUrls('https://other.test/x')[0]).toMatch(/^https:\/\/other\.test\/x\/15\//);
   });
 });
 
@@ -62,32 +67,20 @@ describe('createTerrainLoader: 全 probe 成功', () => {
     const loader = createTerrainLoader({
       courseUrl: '/static/course.json',
       pmtilesUrl: '/static/map.pmtiles',
-      gsiTileBaseUrl: '/static/tiles/gsi_dem',
-      fetchImpl: makeFetch({
-        '/static/course.json': ok(),
-        '/static/map.pmtiles': ok(),
-      }),
-    });
-    // GSI 3 枚は makeFetch の部分一致 fallback では引っかからないので、
-    // 個別 entry を別途追加した fetchImpl で再構築する必要がある。
-    // ここは「全 url ok を返す」mock に置換。
-    const loader2 = createTerrainLoader({
-      courseUrl: '/static/course.json',
-      pmtilesUrl: '/static/map.pmtiles',
-      gsiTileBaseUrl: '/static/tiles/gsi_dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
-    await loader2.start();
-    expect(loader2.isReady()).toBe(true);
-    expect(loader2.getStatus().phase).toBe('done');
-    expect(loader2.getStatus().percent).toBe(100);
-    expect(loader2.getStatus().error).toBe(null);
+    await loader.start();
+    expect(loader.isReady()).toBe(true);
+    expect(loader.getStatus().phase).toBe('done');
+    expect(loader.getStatus().percent).toBe(100);
+    expect(loader.getStatus().error).toBe(null);
   });
 
   it('bridge mode (pmtiles 省略) → course + gsi 3 で all-green', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/course.json',
-      gsiTileBaseUrl: '/tiles/gsi_dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
     await loader.start();
@@ -102,7 +95,7 @@ describe('createTerrainLoader: 失敗 case', () => {
   it('course.json 404 → phase failed / isReady false / error 文言', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/missing.json',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async (url) => (url.includes('missing.json') ? notFound() : ok()),
     });
     await loader.start();
@@ -115,7 +108,7 @@ describe('createTerrainLoader: 失敗 case', () => {
     const loader = createTerrainLoader({
       courseUrl: '/course.json',
       pmtilesUrl: '/map.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async (url) => (url.includes('map.pmtiles') ? notFound() : ok()),
     });
     await loader.start();
@@ -126,8 +119,8 @@ describe('createTerrainLoader: 失敗 case', () => {
   it('GSI 3 枚全部失敗 → error 文言', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/course.json',
-      gsiTileBaseUrl: '/g',
-      fetchImpl: async (url) => (url.includes('/g/') ? notFound() : ok()),
+      gsiDirectBase: TEST_DIRECT_BASE,
+      fetchImpl: async (url) => (url.startsWith(TEST_DIRECT_BASE) ? notFound() : ok()),
     });
     await loader.start();
     expect(loader.isReady()).toBe(false);
@@ -138,9 +131,9 @@ describe('createTerrainLoader: 失敗 case', () => {
     let gsiCount = 0;
     const loader = createTerrainLoader({
       courseUrl: '/course.json',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async (url) => {
-        if (url.includes('/g/')) {
+        if (url.startsWith(TEST_DIRECT_BASE)) {
           gsiCount += 1;
           return gsiCount === 1 ? notFound() : ok();
         }
@@ -155,12 +148,23 @@ describe('createTerrainLoader: 失敗 case', () => {
   it('fetch reject (= network error) でも crash せず failed 状態に倒す', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/course.json',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => { throw new Error('NetworkError'); },
     });
     await loader.start();
     expect(loader.isReady()).toBe(false);
     expect(loader.getStatus().phase).toBe('failed');
+  });
+
+  it('b69: gsiDirectBase 未指定 → probe 失敗扱い (= chain が GSI 直に到達不能)', async () => {
+    const loader = createTerrainLoader({
+      courseUrl: '/course.json',
+      // gsiDirectBase 未指定
+      fetchImpl: async () => ok(),
+    });
+    await loader.start();
+    expect(loader.isReady()).toBe(false);
+    expect(loader.getStatus().error).toMatch(/GSI/);
   });
 });
 
@@ -169,7 +173,7 @@ describe('createTerrainLoader: subscribe', () => {
     const events = [];
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
     const unsub = loader.subscribe((s) => events.push(s.phase));
@@ -185,7 +189,7 @@ describe('createTerrainLoader: subscribe', () => {
     const events = [];
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
     const unsub = loader.subscribe((s) => events.push(s.phase));
@@ -202,7 +206,7 @@ describe('createTerrainLoader: idempotency', () => {
     let courseFetched = 0;
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async (url) => {
         if (url === '/c') courseFetched += 1;
         return ok();
@@ -219,7 +223,7 @@ describe('createTerrainLoader: snapshot は frozen', () => {
   it('getStatus が返す object は Object.isFrozen', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
     const s = loader.getStatus();
@@ -258,7 +262,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 206 }),
     });
     await loader.start();
@@ -270,7 +274,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 200 }),
     });
     await loader.start();
@@ -283,7 +287,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 416 }),
     });
     await loader.start();
@@ -306,7 +310,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl,
     });
     await loader.start();
@@ -318,7 +322,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
   it('pmtilesUrl 省略 (= bridge mode) → Range probe 走らない、 rangeWarning null', async () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: async () => ok(),
     });
     await loader.start();
@@ -330,7 +334,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: makeRangeFetch({ headStatus: 404, rangeStatus: 206 }),
     });
     await loader.start();
@@ -344,7 +348,7 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
     const loader = createTerrainLoader({
       courseUrl: '/c',
       pmtilesUrl: '/p.pmtiles',
-      gsiTileBaseUrl: '/g',
+      gsiDirectBase: TEST_DIRECT_BASE,
       fetchImpl: makeRangeFetch({ headStatus: 200, rangeStatus: 200 }),
     });
     await loader.start();
@@ -354,13 +358,13 @@ describe('createTerrainLoader: pmtiles Range probe (brief 34 ε-10)', () => {
   });
 });
 
-// b31: GSI dem 取得経路を IndexedDB → bridge → GSI direct → IndexedDB.set の chain に
-// 差し替える経路を pin。 既存 26 件は backward compat 経路 (= chain 引数なし、 旧挙動) を通る
-// ので無改変 PASS、 本 describe は新 chain 経路 (= TileCache + gsiDirectBase 指定時) のみ pin。
-describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => {
+// b69: DEM タイル取得 chain は IndexedDB → GSI 直の 2 段。
+// 旧 bridge 段 (= `cfg.gsiTileBaseUrl` 経由) は撤去済。 cache hit → fetch ゼロ、
+// cache miss + GSI 直 ok → fetch 走って cache.set、 cache miss + GSI 直 fail → error。
+describe('createTerrainLoader: IndexedDB chain (b69: 2 段に統一)', () => {
   it('buildGsiProbeCoords を export し、 buildGsiProbeUrls と一致する z/x/y を返す', () => {
     const coords = buildGsiProbeCoords();
-    const urls = buildGsiProbeUrls('/g');
+    const urls = buildGsiProbeUrls(TEST_DIRECT_BASE);
     expect(coords.length).toBe(3);
     expect(urls[0]).toMatch(new RegExp(`/${coords[0].z}/${coords[0].x}/${coords[0].y}\\.png$`));
     expect(urls[1]).toMatch(new RegExp(`/${coords[1].z}/${coords[1].x}/${coords[1].y}\\.png$`));
@@ -394,11 +398,10 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     let fetchCallCount = 0;
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/g',
-      gsiDirectBase: 'https://example.test/dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       tileCache: cache,
       fetchImpl: async (url) => {
-        if (url.includes('/g/') || url.includes('example.test/dem')) fetchCallCount += 1;
+        if (url.startsWith(TEST_DIRECT_BASE)) fetchCallCount += 1;
         return { ok: true, status: 200 };
       },
     });
@@ -407,21 +410,15 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     expect(fetchCallCount).toBe(0);  // GSI fetch はゼロ、 cache のみ
   });
 
-  it('tileCache miss + bridge ok で bridge fetch、 tileCache に set される', async () => {
+  it('tileCache miss + GSI direct ok で direct fetch、 tileCache に set される', async () => {
     const cache = await openTileCache({ idbFactory: new IDBFactory() });
-    let bridgeFetched = 0;
     let directFetched = 0;
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/bridge/dem',
-      gsiDirectBase: 'https://example.test/dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       tileCache: cache,
       fetchImpl: async (url) => {
-        if (url.startsWith('/bridge/dem/')) {
-          bridgeFetched += 1;
-          return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) };
-        }
-        if (url.startsWith('https://example.test/dem')) {
+        if (url.startsWith(TEST_DIRECT_BASE)) {
           directFetched += 1;
           return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) };
         }
@@ -430,8 +427,7 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     });
     await loader.start();
     expect(loader.isReady()).toBe(true);
-    expect(bridgeFetched).toBe(3);   // 3 枚すべて bridge から取得
-    expect(directFetched).toBe(0);   // GSI direct は呼ばれず
+    expect(directFetched).toBe(3);   // 3 枚すべて GSI 直から取得
 
     // tileCache に保存されたことを確認
     const coords = buildGsiProbeCoords();
@@ -439,45 +435,14 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     expect(got).toBeTruthy();
   });
 
-  it('tileCache miss + bridge fail + GSI direct ok で GSI direct fetch、 tileCache に set される', async () => {
-    const cache = await openTileCache({ idbFactory: new IDBFactory() });
-    let bridgeFetched = 0;
-    let directFetched = 0;
-    const loader = createTerrainLoader({
-      courseUrl: '/c',
-      gsiTileBaseUrl: '/bridge/dem',
-      gsiDirectBase: 'https://example.test/dem',
-      tileCache: cache,
-      fetchImpl: async (url) => {
-        if (url.startsWith('/bridge/dem/')) {
-          bridgeFetched += 1;
-          return { ok: false, status: 404 };  // bridge は不在
-        }
-        if (url.startsWith('https://example.test/dem')) {
-          directFetched += 1;
-          return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) };
-        }
-        return { ok: true, status: 200 };
-      },
-    });
-    await loader.start();
-    expect(loader.isReady()).toBe(true);
-    expect(bridgeFetched).toBe(3);    // 3 枚 bridge 試行 (全 fail)
-    expect(directFetched).toBe(3);    // 3 枚 direct 試行 (全 ok)
-    const coords = buildGsiProbeCoords();
-    const got = await cache.get('dem_png', coords[0].z, coords[0].x, coords[0].y);
-    expect(got).toBeTruthy();
-  });
-
-  it('tileCache miss + bridge fail + GSI direct fail で probe failure (= error 立つ)', async () => {
+  it('tileCache miss + GSI direct fail で probe failure (= error 立つ)', async () => {
     const cache = await openTileCache({ idbFactory: new IDBFactory() });
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/bridge/dem',
-      gsiDirectBase: 'https://example.test/dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       tileCache: cache,
       fetchImpl: async (url) => {
-        if (url.startsWith('/bridge/dem/') || url.startsWith('https://example.test/dem')) {
+        if (url.startsWith(TEST_DIRECT_BASE)) {
           return { ok: false, status: 404 };
         }
         return { ok: true, status: 200 };
@@ -488,16 +453,15 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     expect(loader.getStatus().error).toMatch(/GSI/);
   });
 
-  it('tileCache が Promise<null> でも crash せず bridge / direct chain だけで動く', async () => {
-    let bridgeFetched = 0;
+  it('tileCache が Promise<null> でも crash せず GSI 直のみで動く', async () => {
+    let directFetched = 0;
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/bridge/dem',
-      gsiDirectBase: 'https://example.test/dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       tileCache: Promise.resolve(null),  // = IndexedDB 利用不可環境
       fetchImpl: async (url) => {
-        if (url.startsWith('/bridge/dem/')) {
-          bridgeFetched += 1;
+        if (url.startsWith(TEST_DIRECT_BASE)) {
+          directFetched += 1;
           return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) };
         }
         return { ok: true, status: 200 };
@@ -505,49 +469,27 @@ describe('createTerrainLoader: IndexedDB chain (b31 経路差し替え)', () => 
     });
     await loader.start();
     expect(loader.isReady()).toBe(true);
-    expect(bridgeFetched).toBe(3);
+    expect(directFetched).toBe(3);
   });
 
-  it('gsiDirectBase 未指定 + tileCache のみ → bridge fail で direct fallback なし、 ただし cache hit は効く', async () => {
+  it('b69 negative: probe が叩く URL に static/tiles を一切含まない (= 撤去確認)', async () => {
     const cache = await openTileCache({ idbFactory: new IDBFactory() });
-    // 1 枚だけ pre-populate
-    const coords = buildGsiProbeCoords();
-    await cache.set('dem_png', coords[0].z, coords[0].x, coords[0].y, new Uint8Array([0]));
-    let bridgeFetched = 0;
+    const fetchedUrls = [];
     const loader = createTerrainLoader({
       courseUrl: '/c',
-      gsiTileBaseUrl: '/bridge/dem',
+      gsiDirectBase: TEST_DIRECT_BASE,
       tileCache: cache,
-      // gsiDirectBase 未指定 = GSI direct fallback なし
       fetchImpl: async (url) => {
-        if (url.startsWith('/bridge/dem/')) {
-          bridgeFetched += 1;
-          return { ok: false, status: 404 };  // bridge も全 fail
+        fetchedUrls.push(url);
+        if (url.startsWith(TEST_DIRECT_BASE)) {
+          return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) };
         }
         return { ok: true, status: 200 };
       },
     });
     await loader.start();
-    // 1 枚は cache hit、 残 2 枚は bridge fail で direct fallback なし → 1 枚成功 (= 部分許容)
     expect(loader.isReady()).toBe(true);
-    expect(bridgeFetched).toBe(2);   // 残 2 枚だけ bridge 試行 (cache miss 分)
-  });
-
-  it('cfg.tileCache / cfg.gsiDirectBase 両方未指定 = backward compat (= 既存 26 件と等価挙動)', async () => {
-    // 既存挙動: gsiUrls (= buildGsiProbeUrls の戻り) で 1 回 fetch のみ、 retry / chain なし
-    let fetchedUrls = [];
-    const loader = createTerrainLoader({
-      courseUrl: '/c',
-      gsiTileBaseUrl: '/legacy/gsi_dem',
-      fetchImpl: async (url) => {
-        fetchedUrls.push(url);
-        return { ok: true, status: 200 };
-      },
-    });
-    await loader.start();
-    expect(loader.isReady()).toBe(true);
-    // 既存挙動: gsiTileBaseUrl prefix で 3 枚 fetch
-    const gsiFetches = fetchedUrls.filter((u) => u.startsWith('/legacy/gsi_dem/'));
-    expect(gsiFetches.length).toBe(3);
+    // probe URL に static/tiles を含む経路が混入していない
+    expect(fetchedUrls.some((u) => u.includes('static/tiles'))).toBe(false);
   });
 });

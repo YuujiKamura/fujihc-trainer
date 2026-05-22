@@ -48,18 +48,19 @@ function makeFakeLoader(emitOnStart) {
   };
 }
 
-describe('buildTerrainPhaseUrls — URL 構築 (= 旧 startTerrainProbe と同一)', () => {
-  it('basePath から course / pmtiles / GSI bridge prefix を組む', () => {
+describe('buildTerrainPhaseUrls — URL 構築 (= b69 で gsiTileBaseUrl 撤去後)', () => {
+  it('basePath から course / pmtiles を組む (gsi 関連 key は持たない)', () => {
     const urls = buildTerrainPhaseUrls('/fujihc-trainer/');
     expect(urls.courseUrl).toBe('/fujihc-trainer/static/course.json');
     expect(urls.pmtilesUrl).toBe('/fujihc-trainer/static/map.pmtiles');
-    expect(urls.gsiTileBaseUrl).toBe('/fujihc-trainer/static/tiles/gsi_dem');
+    // b69: 撤去確認 ── 旧 gsiTileBaseUrl は undefined (= プロパティ自体が消えた)
+    expect(urls.gsiTileBaseUrl).toBeUndefined();
   });
 
-  it('basePath = "/" (= localhost) でも static path を組む', () => {
+  it('basePath = "/" (= localhost) でも course / pmtiles を組む', () => {
     const urls = buildTerrainPhaseUrls('/');
     expect(urls.courseUrl).toBe('/static/course.json');
-    expect(urls.gsiTileBaseUrl).toBe('/static/tiles/gsi_dem');
+    expect(urls.pmtilesUrl).toBe('/static/map.pmtiles');
   });
 
   it('basePath 未指定 (= "") でも throw せず相対 path を返す', () => {
@@ -82,7 +83,8 @@ describe('createTerrainPhase — happy path (fake loader)', () => {
     expect(capturedCfg).not.toBeNull();
     expect(capturedCfg.courseUrl).toBe('/fujihc-trainer/static/course.json');
     expect(capturedCfg.pmtilesUrl).toBe('/fujihc-trainer/static/map.pmtiles');
-    expect(capturedCfg.gsiTileBaseUrl).toBe('/fujihc-trainer/static/tiles/gsi_dem');
+    // b69: gsiTileBaseUrl は cfg に渡されない (= chain は IndexedDB → GSI 直の 2 段)
+    expect(capturedCfg.gsiTileBaseUrl).toBeUndefined();
     // GSI direct base は terrain_loader.js の SoT 定数がそのまま渡る (= literal 移設なし)
     expect(capturedCfg.gsiDirectBase).toBe(GSI_DEM_DIRECT_BASE);
     expect(fake.startCalls()).toBe(1);
@@ -162,20 +164,16 @@ describe('createTerrainPhase — idempotent', () => {
 describe('createTerrainPhase — 既定 loader 経由の pass-through (loaderFactory 未指定)', () => {
   it('fetchImpl 注入で既定 createTerrainLoader が走り、GSI direct base 由来の URL が fetch される', async () => {
     const fetched = [];
-    // bridge GSI tile (= static/tiles/gsi_dem) は 404、 GSI direct は ok を返す mock。
-    // → loader の chain が bridge fail → GSI direct fetch に落ち、GSI_DEM_DIRECT_BASE が
-    //   loader へ渡っていることが fetch 先 URL で観測できる。
+    // b69: chain は IndexedDB → GSI 直の 2 段。 static/tiles 経路は撤去済なので、
+    // GSI 直に対する fetch が直接走る (= loader へ GSI_DEM_DIRECT_BASE が渡る pass-through 確認)。
     const fetchImpl = async (url) => {
       fetched.push(url);
-      if (url.includes('/static/tiles/gsi_dem/')) {
-        return { ok: false, status: 404 };
-      }
       return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };
     };
     const phase = createTerrainPhase({
       basePath: '/',
       skipTerrain: false,
-      tileCache: null,            // IndexedDB chain を skip (= backward compat path)
+      tileCache: null,            // cache 未使用 = GSI 直のみで動くことを確認
       fetchImpl,                  // loaderFactory 未指定 = 既定 createTerrainLoader
     });
     await phase.start();
@@ -183,5 +181,7 @@ describe('createTerrainPhase — 既定 loader 経由の pass-through (loaderFac
     expect(hitGsiDirect).toBe(true);
     // course.json も probe される (= URL 構築の pass-through)
     expect(fetched.some((u) => u.includes('static/course.json'))).toBe(true);
+    // b69 negative: probe は static/tiles を一切叩かない
+    expect(fetched.some((u) => u.includes('static/tiles'))).toBe(false);
   });
 });

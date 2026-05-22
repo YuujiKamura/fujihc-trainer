@@ -132,7 +132,7 @@ describe('brief 34 ε-9 integration: terrainReady=false 初期は全アクショ
 describe('brief 34 ε-9 integration: terrain_loader の status 文言遷移', () => {
   it('pending → loading → done の遷移で label / phase / percent が同期', async () => {
     const loader = createTerrainLoader({
-      courseUrl: '/c', pmtilesUrl: '/p', gsiTileBaseUrl: '/g',
+      courseUrl: '/c', pmtilesUrl: '/p', gsiDirectBase: 'https://example.test/dem',
       fetchImpl: async () => ({ ok: true, status: 200 }),
     });
     expect(loader.getStatus().phase).toBe('pending');
@@ -147,7 +147,7 @@ describe('brief 34 ε-9 integration: terrain_loader の status 文言遷移', ()
 
   it('course.json 失敗 → status.label に「pmtiles ✓」「GSI N/M」が残るが error が立つ (= partial 表示)', async () => {
     const loader = createTerrainLoader({
-      courseUrl: '/missing', pmtilesUrl: '/p', gsiTileBaseUrl: '/g',
+      courseUrl: '/missing', pmtilesUrl: '/p', gsiDirectBase: 'https://example.test/dem',
       fetchImpl: async (url) => (url.includes('missing') ? { ok: false, status: 404 } : { ok: true, status: 200 }),
     });
     await loader.start();
@@ -294,7 +294,7 @@ describe('brief 34 ε-9 integration: dispatch 経由でも terrainReady=false �
   it('地形 load 中 (= phase=loading) でも intro / scan / skip / section が全部 click block 状態', () => {
     // phase=loading は terrainReady=false 扱い (= isReady() === false).
     const loader = createTerrainLoader({
-      courseUrl: '/c', gsiTileBaseUrl: '/g',
+      courseUrl: '/c', gsiDirectBase: 'https://example.test/dem',
       fetchImpl: async () => { await new Promise((r) => setTimeout(r, 0)); return { ok: true, status: 200 }; },
     });
     // start 開始直後は loading

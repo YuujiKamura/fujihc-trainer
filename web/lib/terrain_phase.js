@@ -17,15 +17,15 @@
 import { createTerrainLoader, GSI_DEM_DIRECT_BASE } from './terrain_loader.js';
 import { openTileCache } from './tile_cache.js';
 
-// basePath から course / pmtiles / GSI bridge prefix の URL を構築する pure formatter。
-// bridge / static のどちらでも到達可能な static 側 path を返す (= 旧 startTerrainProbe と同一)。
-// bridge mode 起動済の localhost でも /static/* は web/static/ にあるため 404 にならない。
+// basePath から course / pmtiles の URL を構築する pure formatter。
+// b69 (= タイルを IndexedDB のみで保持する方針徹底) で `gsiTileBaseUrl` (= 旧 static/tiles/gsi_dem
+// 配信経路) を撤去した。 DEM タイルは IndexedDB → GSI 直の 2 段 chain で取得する
+// (= terrain_loader.js の GSI_DEM_DIRECT_BASE 経由)、 配信物に乗せる static 経路は持たない。
 export function buildTerrainPhaseUrls(basePath) {
   const base = basePath || '';
   return {
     courseUrl: `${base}static/course.json`,
     pmtilesUrl: `${base}static/map.pmtiles`,
-    gsiTileBaseUrl: `${base}static/tiles/gsi_dem`,
   };
 }
 
@@ -106,8 +106,8 @@ export function createTerrainPhase(cfg) {
       loader = loaderFactory({
         courseUrl: urls.courseUrl,
         pmtilesUrl: urls.pmtilesUrl,
-        gsiTileBaseUrl: urls.gsiTileBaseUrl,
         // GSI direct base は terrain_loader.js の SoT 定数を渡すだけ (= literal を持たない)。
+        // b69 で static/tiles 段を撤去し chain は IndexedDB → GSI 直の 2 段に統一。
         gsiDirectBase: GSI_DEM_DIRECT_BASE,
         tileCache,
         fetchImpl: c.fetchImpl,

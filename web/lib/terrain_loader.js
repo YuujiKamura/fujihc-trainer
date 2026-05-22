@@ -8,7 +8,12 @@
 // 監視対象は **既存 viewer の fetch 経路を再利用** (= 新規 endpoint 追加なし):
 //   1. course.json       (= bridge / static 共通、 ENV.courseUrl 経由)
 //   2. map.pmtiles HEAD   (= static mode のみ、 bridge mode は trivially OK で skip)
-//   3. GSI dem tile x N   (= z=14 で DB bbox 中央付近、 3 枚)
+//   3. GSI dem tile x N   (= z=15 dem5a で DB bbox 中央付近、 3 枚)
+//
+// b69 (= タイルを IndexedDB のみで保持する方針徹底) で、 DEM タイル取得 chain から
+// static/bridge 配信経路 (= 旧 `cfg.gsiTileBaseUrl`) を撤去した。 現在は IndexedDB
+// (= TileCache、 `tile_cache.js`) → GSI 直 (= GSI_DEM_DIRECT_BASE) の 2 段。 既存 tileCache
+// 保存データ (= TTL 内) はそのまま hit、 miss だけが GSI 直に流れる。
 //
 // 設計:
 // - status は { phase, label, percent, done, total, error } の immutable snapshot.
@@ -71,8 +76,8 @@ const GSI_PROBE_Z = 15;
 // 1 枚でも fetch 成功すれば gsi_dem source が DB として実在することを確認できる軽量 sample。
 //
 // b31: buildGsiProbeCoords を分離 (= probe 経路の IndexedDB chain で z/x/y が必要)。
-// buildGsiProbeUrls は pure formatter のまま (= NG-R1-7 「1 関数 multi-層」 回避、
-// IndexedDB chain は createTerrainLoader 内の probeGsi で別途実装する)。
+// b69: buildGsiProbeUrls の引数を GSI 直 base に固定 (= static/bridge 配信経路を撤去、
+// chain は IndexedDB → GSI 直の 2 段に統一)。
 export function buildGsiProbeCoords(opts = {}) {
   const lon = opts.lon != null ? opts.lon : DB_CENTER_LON;
   const lat = opts.lat != null ? opts.lat : DB_CENTER_LAT;
@@ -85,12 +90,10 @@ export function buildGsiProbeCoords(opts = {}) {
     { z, x, y: y + 1 },
   ];
 }
-export function buildGsiProbeUrls(tileBaseUrl, opts = {}) {
-  // ベース URL の末尾形を viewer の `${STATIC_TILE_BASE_URL}/tiles/gsi_dem/{z}/{x}/{y}.png` /
-  // bridge の `${BRIDGE_TILE_BASE_URL}/gsi_dem/{z}/{x}/{y}.png` の **どちらでも** 動くよう、
-  // caller は完成済の prefix (= "tile prefix") を渡す責務を持つ。
-  // ここは {z}/{x}/{y}.png を append するだけの薄い formatter.
-  return buildGsiProbeCoords(opts).map(({ z, x, y }) => `${tileBaseUrl}/${z}/${x}/${y}.png`);
+export function buildGsiProbeUrls(gsiDirectBase, opts = {}) {
+  // b69 で GSI 直 base 1 引数に統一。 caller は `GSI_DEM_DIRECT_BASE` (= dem5a_png) を渡す責務。
+  // ここは {z}/{x}/{y}.png を append するだけの薄い formatter。
+  return buildGsiProbeCoords(opts).map(({ z, x, y }) => `${gsiDirectBase}/${z}/${x}/${y}.png`);
 }
 
 // status snapshot を組み立てる純 helper. UI 側 (subscribe callback 内) で都度参照しても
@@ -117,12 +120,12 @@ function freezeStatus(label, done, total, error, rangeWarning) {
  * @param {object} cfg
  * @param {string} cfg.courseUrl        - course.json の URL (= ENV.courseUrl)
  * @param {string} [cfg.pmtilesUrl]     - pmtiles HEAD probe 用 URL (= static mode のみ)、 省略時は skip
- * @param {string} cfg.gsiTileBaseUrl   - GSI dem tile prefix (= bridge mode 用、 `${TILE_BASE}/[tiles/]gsi_dem`)
- * @param {string} [cfg.gsiDirectBase]  - b31: GSI direct base (= static mode 用、
- *                                        例 `https://cyberjapandata.gsi.go.jp/xyz/dem`)。
- *                                        指定時は bridge fetch 失敗で GSI direct に fallback。
- * @param {Promise<object>|object|null} [cfg.tileCache] - b31: TileCache instance (or its Promise)
+ * @param {string} cfg.gsiDirectBase    - GSI direct base (= `GSI_DEM_DIRECT_BASE`、
+ *                                        例 `https://cyberjapandata.gsi.go.jp/xyz/dem5a_png`)。
+ *                                        b69 で必須化、 chain は IndexedDB → GSI 直の 2 段。
+ * @param {Promise<object>|object|null} [cfg.tileCache] - TileCache instance (or its Promise)
  *                                        (= openTileCache() の戻り)。 指定時は hit/miss/set を経由。
+ *                                        未指定なら GSI 直のみ (= cache 効かないが probe 自体は動く)。
  * @param {(url:string, init?:object)=>Promise<Response>} [cfg.fetchImpl] - inject 可能 fetch (test 用)
  * @param {object} [cfg.probeOpts]      - buildGsiProbeUrls の opts (= lon/lat/z override)
  * @returns terrain loader instance
@@ -132,14 +135,16 @@ export function createTerrainLoader(cfg) {
   const subscribers = new Set();
   // 監視対象 step (= 取得元別の label を表示しつつ done 数を加算).
   // step 数の決定: course (1) + pmtiles (0 or 1) + gsi (3)
-  const gsiUrls = buildGsiProbeUrls(cfg.gsiTileBaseUrl, cfg.probeOpts || {});
+  const gsiDirectBase = cfg.gsiDirectBase || null;
+  const gsiUrls = gsiDirectBase
+    ? buildGsiProbeUrls(gsiDirectBase, cfg.probeOpts || {})
+    : [];
   const gsiCoords = buildGsiProbeCoords(cfg.probeOpts || {});
-  // b31: TileCache は Promise / instance / null を受ける、 内部で await して chain 経路の hit/miss を判定。
-  // null / undefined なら IndexedDB chain skip = backward compat (= 既存 26 件 test は無改変 PASS)。
+  // TileCache は Promise / instance / null を受ける、 内部で await して chain 経路の hit/miss を判定。
+  // null / undefined なら cache は使わず GSI 直のみで動く (= probe 自体は通る)。
   const tileCachePromise = cfg.tileCache != null
     ? Promise.resolve(cfg.tileCache).catch(() => null)
     : Promise.resolve(null);
-  const gsiDirectBase = cfg.gsiDirectBase || null;
   const usePmtiles = !!cfg.pmtilesUrl;
   let courseDone = false;
   let pmtilesDone = false;
@@ -245,28 +250,17 @@ export function createTerrainLoader(cfg) {
       // ここで warn を出すと false-positive 多発するため敢えて silent).
     }
   }
-  // b31: probe 1 枚分の chain 経路 (= TileCache hit → bridge fetch → GSI direct fetch).
-  // 既存 backward compat path (= gsiDirectBase / tileCache 未指定) は probeGsi 内で別 branch。
+  // b69: probe 1 枚分の chain 経路 = TileCache hit → GSI 直 fetch → cache.set の 2 段。
+  // 旧 bridge 段 (= `cfg.gsiTileBaseUrl` 経由) は撤去済 (= 配信物への DEM 同梱を生成する経路を止めた)。
   async function probeSingleTileWithChain({ z, x, y }, cache) {
     // 1. TileCache hit
     if (cache) {
       try {
         const hit = await cache.get('dem_png', z, x, y);
         if (hit) return true;
-      } catch { /* cache 失敗は silent skip、 直 fetch にfall back */ }
+      } catch { /* cache 失敗は silent skip、 直 fetch に fall back */ }
     }
-    // 2. bridge fetch (= gsiTileBaseUrl 経由)
-    if (cfg.gsiTileBaseUrl) {
-      const url = `${cfg.gsiTileBaseUrl}/${z}/${x}/${y}.png`;
-      const r = await tryFetchWithRetry(url);
-      if (r.ok) {
-        if (cache && r.bytes) {
-          try { await cache.set('dem_png', z, x, y, r.bytes); } catch {}
-        }
-        return true;
-      }
-    }
-    // 3. GSI direct fetch (= gsiDirectBase 経由、 static mode 用)
+    // 2. GSI direct fetch
     if (gsiDirectBase) {
       const url = `${gsiDirectBase}/${z}/${x}/${y}.png`;
       const r = await tryFetchWithRetry(url);
@@ -314,26 +308,13 @@ export function createTerrainLoader(cfg) {
 
   async function probeGsi() {
     const cache = await tileCachePromise;
-    const useChain = gsiDirectBase || cache;
-
-    if (!useChain) {
-      // backward compat: 既存挙動 (= 1 回 fetch、 retry なし、 fetchImpl のみ inject の test 互換).
-      // 既存 26 件 test はこの branch を通り無改変 PASS する。
-      const results = await Promise.allSettled(
-        gsiUrls.map((u) => fetchImpl(u, { method: 'GET' })),
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value && r.value.ok) {
-          gsiDone += 1;
-        }
-      }
-      if (gsiDone === 0) {
-        error = `GSI dem tile が 1 枚も取得できません (= URL prefix を確認してください)`;
-      }
+    if (!gsiDirectBase) {
+      // gsiDirectBase 未指定 = chain が GSI 直に到達できないため probe 失敗扱い。
+      // (= 通常運用では terrain_phase.js が `GSI_DEM_DIRECT_BASE` を渡すので発生しない)
+      error = `GSI dem tile が 1 枚も取得できません (= gsiDirectBase 未指定)`;
       return;
     }
-
-    // b31 chain: TileCache hit → bridge fetch → GSI direct fetch → tileCache.set.
+    // b69 chain: TileCache hit → GSI 直 fetch → tileCache.set の 2 段。
     // 3 枚を並列 probe (= 既存 Promise.allSettled 設計の踏襲、 並列度 3 < GSI_FETCH_LIMIT=6).
     const results = await Promise.allSettled(
       gsiCoords.map((c) => probeSingleTileWithChain(c, cache)),
@@ -344,7 +325,7 @@ export function createTerrainLoader(cfg) {
       }
     }
     if (gsiDone === 0) {
-      error = `GSI dem tile が 1 枚も取得できません (= URL prefix を確認してください)`;
+      error = `GSI dem tile が 1 枚も取得できません (= GSI 直叩きに失敗)`;
     }
   }
 
