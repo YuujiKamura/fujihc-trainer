@@ -170,17 +170,46 @@ export function createMapRenderer() {
     camera3d.resize(sz.width, sz.height);
   }
 
+  // 視点の永続化。 user が drag / wheel で合わせた orbit カメラ (bearing/pitch/radius)
+  // を localStorage に保存し、 次回起動で初期カメラとして復元する ── 「最後に置いた
+  // 視点が初期カメラになる」。 localStorage 不在環境 (= node テスト等) では黙って no-op。
+  const CAMERA_ORBIT_KEY = 'fujihill.cameraOrbit';
+  function loadSavedOrbit() {
+    try {
+      const raw = localStorage.getItem(CAMERA_ORBIT_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      // 3 値が揃った有限数のときだけ採用 (= 壊れた保存値は無視)。
+      if (Number.isFinite(s.bearing) && Number.isFinite(s.pitch) && Number.isFinite(s.radius)) {
+        return s;
+      }
+    } catch { /* localStorage 不可 / JSON 壊れ → 初期 default のまま */ }
+    return null;
+  }
+  function saveOrbit() {
+    if (!camera3d) return;
+    try {
+      localStorage.setItem(CAMERA_ORBIT_KEY, JSON.stringify(camera3d.getOrbitState()));
+    } catch { /* localStorage 不可は黙って諦める (= 永続化は best-effort) */ }
+  }
+
   // マウス操作を camera3d に流す。 drag / wheel は即座にカメラへ反映する
   // (= ride 前で updateCamera が apply=false の間も自由視点を効かせる)。
   function wireCameraInput(el) {
     let drag = null;
-    el.addEventListener('mousedown', (e) => { drag = { x: e.clientX, y: e.clientY }; e.preventDefault(); });
-    window.addEventListener('mouseup', () => { drag = null; });
+    let dragged = false;       // drag 中に実際に動いたか (= mouseup で保存するか判定)
+    let wheelSaveTimer = null; // wheel 連打を 1 回の保存にまとめる debounce
+    el.addEventListener('mousedown', (e) => { drag = { x: e.clientX, y: e.clientY }; dragged = false; e.preventDefault(); });
+    window.addEventListener('mouseup', () => {
+      if (drag && dragged) saveOrbit();  // drag 終了時に合わせた視点を保存
+      drag = null;
+    });
     window.addEventListener('mousemove', (e) => {
       if (!drag || !camera3d) return;
       const dx = e.clientX - drag.x;
       const dy = e.clientY - drag.y;
       drag.x = e.clientX; drag.y = e.clientY;
+      if (dx || dy) dragged = true;
       camera3d.onDrag(dx, dy);
       camera3d.update(lastTarget || terrainCenter(), lastForward || { x: 0, y: 0, z: -1 });
     });
@@ -189,6 +218,9 @@ export function createMapRenderer() {
       if (!camera3d) return;
       camera3d.onWheel(e.deltaY);
       camera3d.update(lastTarget || terrainCenter(), lastForward || { x: 0, y: 0, z: -1 });
+      // wheel は連続発火するので最後の 1 回だけ保存する。
+      if (wheelSaveTimer) clearTimeout(wheelSaveTimer);
+      wheelSaveTimer = setTimeout(saveOrbit, 400);
     }, { passive: false });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('resize', handleResize);
@@ -302,6 +334,9 @@ export function createMapRenderer() {
           if (pending.camZoom != null || pending.camPitch != null) {
             camera3d.setCameraDefaults({ zoom: pending.camZoom, pitch: pending.camPitch });
           }
+          // 前回 user が drag / wheel で合わせた orbit 視点があれば、 それを初期カメラ
+          // として復元する (= setCameraDefaults より後に適用して上書き)。
+          camera3d.applyOrbitState(loadSavedOrbit());
 
           wireCameraInput(container);
           handleResize();

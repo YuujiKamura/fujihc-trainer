@@ -187,6 +187,23 @@ export function createCamera3d(THREE, opts = {}) {
       radius = wheelRadius(radius, deltaY, RADIUS_MIN, RADIUS_MAX);
     },
 
+    // orbit カメラの現在状態 (bearing/pitch/radius) を読む / 復元する。
+    // 視点永続化用: facade が drag / wheel 後に getOrbitState() を localStorage に
+    // 保存し、 次回起動で applyOrbitState() に流し込むと「最後に置いた視点」が初期
+    // カメラになる。 radius は生成時と同じ [RADIUS_MIN, RADIUS_MAX] にクランプ、
+    // bearing は 0..360 に正規化する (= 壊れた保存値で異常な画角にならないように)。
+    getOrbitState() {
+      return { bearing, pitch, radius };
+    },
+    applyOrbitState(s) {
+      if (!s) return;
+      if (Number.isFinite(s.bearing)) bearing = ((s.bearing % 360) + 360) % 360;
+      if (Number.isFinite(s.pitch)) pitch = s.pitch;
+      if (Number.isFinite(s.radius)) {
+        radius = Math.min(RADIUS_MAX, Math.max(RADIUS_MIN, s.radius));
+      }
+    },
+
     // カメラモードを切り替える ('orbit' | 'top' | 'follow')。
     setMode(m) { mode = m; },
     getMode() { return mode; },

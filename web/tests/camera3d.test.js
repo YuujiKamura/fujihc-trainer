@@ -196,6 +196,56 @@ describe('createCamera3d: ファクトリ (THREE 注入)', () => {
   });
 });
 
+describe('createCamera3d: orbit 視点の永続化 (getOrbitState / applyOrbitState)', () => {
+  it('getOrbitState は現在の bearing/pitch/radius を返す', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
+    const s0 = c3d.getOrbitState();
+    expect(Number.isFinite(s0.bearing)).toBe(true);
+    expect(Number.isFinite(s0.pitch)).toBe(true);
+    expect(Number.isFinite(s0.radius)).toBe(true);
+    // onDrag / onWheel の結果が getOrbitState に反映される。
+    c3d.onDrag(200, -40);
+    c3d.onWheel(1);
+    const s1 = c3d.getOrbitState();
+    expect(s1.bearing).not.toBe(s0.bearing);
+    expect(s1.radius).not.toBe(s0.radius);
+  });
+
+  it('applyOrbitState で保存済み視点を復元するとカメラ位置がその状態になる', () => {
+    const a = createCamera3d(makeThreeStub(), { span: 1000 });
+    a.onDrag(150, -30);
+    a.onWheel(-1);
+    const saved = a.getOrbitState();
+    // 別インスタンスに saved を流し込むと同じカメラ位置が再現される。
+    const b = createCamera3d(makeThreeStub(), { span: 1000 });
+    b.applyOrbitState(saved);
+    a.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    b.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    expect(b.camera.position.x).toBeCloseTo(a.camera.position.x, 6);
+    expect(b.camera.position.y).toBeCloseTo(a.camera.position.y, 6);
+    expect(b.camera.position.z).toBeCloseTo(a.camera.position.z, 6);
+  });
+
+  it('applyOrbitState は radius を [5, 3000] にクランプ、 bearing を 0..360 に正規化', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
+    c3d.applyOrbitState({ bearing: 400, pitch: 50, radius: 999999 });
+    const s = c3d.getOrbitState();
+    expect(s.radius).toBe(3000);
+    expect(s.bearing).toBeCloseTo(40, 6);
+    c3d.applyOrbitState({ bearing: -30, pitch: 50, radius: 1 });
+    expect(c3d.getOrbitState().radius).toBe(5);
+    expect(c3d.getOrbitState().bearing).toBeCloseTo(330, 6);
+  });
+
+  it('applyOrbitState(null) / 壊れた値は no-op (= 初期 default を壊さない)', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
+    const before = c3d.getOrbitState();
+    c3d.applyOrbitState(null);
+    c3d.applyOrbitState({ bearing: NaN, pitch: 'x' });
+    expect(c3d.getOrbitState()).toEqual(before);
+  });
+});
+
 describe('zoomToRadius: MapLibre zoom → オービット半径', () => {
   it('基準 zoom は基準半径に一致する', () => {
     expect(zoomToRadius(ZOOM_RADIUS_REF_ZOOM)).toBeCloseTo(ZOOM_RADIUS_REF_M, 6);
