@@ -92,7 +92,10 @@ export function zoomToRadius(zoom) {
 //   mode    'orbit' (既定) | 'top' | 'follow'
 export function createCamera3d(THREE, opts = {}) {
   const span = opts.span || 1000;
-  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, span * 6);
+  // far 面は RADIUS_MAX (6000m) を必ず上回らせる ── orbit 半径が far を超えると、
+  // 最大ズームアウト時にシーン全体が far クリップ面の外へ出て画面が真っ暗になる
+  // (2026-05-22、RADIUS_MAX を 3000→6000 にしたとき far=span*6 を超えて発覚)。
+  const camera = new THREE.PerspectiveCamera(50, opts.aspect || 1, 1, Math.max(span * 6, 14000));
   const target = new THREE.Vector3(0, opts.targetY || 0, 0);
   const panOffset = new THREE.Vector3(0, 0, 0);
   // MapLibre 準拠のカメラ操作変数 (terrain3d.html L612-616)。
