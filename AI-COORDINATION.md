@@ -63,6 +63,36 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-23 Claude — b69 完了 (commit `b012754`、 ブリーフ
+  `~/.agents/scratch/fujihc-trainer-project/b69-indexeddb-only-tile-policy.md`)。
+  タイルを IndexedDB のみで保持する方針徹底のため、 取り残されていた
+  「静的同梱を生成する側」 3 つを撤去 ── (1) `scripts/export_static.py`
+  から GSI DEM 展開 (`export_gsi_dem_tree`) 撤去 (pmtiles / course.json
+  のコピーは残す)、 (2) `web/lib/terrain_phase.js` /
+  `web/lib/terrain_loader.js` の probe 経路から `gsiTileBaseUrl`
+  (= 旧 static/bridge 配信経路) 撤去、 chain を IndexedDB → GSI 直の
+  2 段に統一、 (3) 作業ツリーの `web/static/tiles/` ディレクトリ削除
+  (= git 管理外、 本 Worklog で記録)。 配布元保護の安全網
+  (`build_pages.py` の strip / verify、 `.gitignore:17`、 pre-commit /
+  pre-push hook) は残置。 b69 ブリーフを `multi-axis-draft-audit` で
+  7 軸 audit (Round 1 軸 4 テスト網羅 + 軸 6 マイグレ可逆性が
+  LOAD-BEARING、 改訂で既存テストのファイル名+行番号+件数名指し +
+  negative grep gate + 副作用 / 可逆性節 (sw.js network-first で bump
+  不要 + IDB schema 不変) を追加して Round 2 RESOLVED)、 LOAD-BEARING=0
+  + COSMETIC≤2 で CONVERGED (C12 ループ防止で round 上限 3 適用、
+  Round 2 で打ち切り)。 検証: vitest 1527 passed (新設 b69 pin 5 件 +
+  既存 30+ 件の引数構成 `gsiDirectBase` 統一書き換え)、 pytest 237 passed
+  / 4 skipped (test_fake_trainer は b59 / b68 と同じく --ignore)、
+  bridge 無し `python -m http.server 8091 --directory web` + playwright
+  キャプチャ (`scratch/fujihc-trainer-project/b69-shot.png`) を Read で
+  目視 ── 地形 3D メッシュ背景描画、 出典「© 国土地理院タイル」 「©
+  OpenStreetMap contributors」 生存、 ライド準備 overlay の段階バーで
+  「0. 地形データ準備 完了 (course.json ✓ | pmtiles ✓ | GSI 標高 3/3)」
+  ── probe 3 枚すべて GSI 直で取得成功、 コンソールに
+  `/tiles/gsi_dem` 404 ゼロ (= b67 worklog 残課題だった起動 probe の
+  死んだ往復が b69 で解消)。 配布元への影響: probe 取得元が
+  `static/tiles`→`GSI 直` に変わるだけで probe 枚数 (3 枚) 不変、
+  `GSI_FETCH_LIMIT=6` / `MAX_TILES=200` / `seamlessphoto` 固定も維持。
 - 2026-05-23 Claude — b67 完了 (commit `f9386c8` + `14b1e35`、 ブリーフ
   `~/.agents/scratch/fujihc-trainer-project/b67-pages-terrain-static-direct.md`)。
   3D 地形 (`loadDemStitched`) の DEM タイル取得を「IndexedDB タイルキャッシュ
