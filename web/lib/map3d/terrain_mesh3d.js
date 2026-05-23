@@ -42,13 +42,8 @@ export function buildTerrainMesh({ stitched, range, photoCanvas, exaggeration = 
   texture.anisotropy = 4;
 
   // roughness 1 / metalness 0 = つや消し ── 航空写真の地表が金属反射しないように。
-  // b71-fixup-8: GSI seamlessphoto は配信 1 種で撮影時期が秋寄りに見える (= user 指摘
-  // 「植生が枯れ始めてる秋富士」)。 viewer 側で multiplier color を緑微強調 (R 0.92 /
-  // G 1.0 / B 0.88) に振って「夏寄り」 にシフト ── R / B を抑えて G が相対的に強く出る
-  // = 茶色抑制 + 植生緑強調。 完全な季節差し替えはできないが、 視覚的に「夏」 寄りへ。
   const material = new THREE.MeshStandardMaterial({
     map: texture,
-    color: new THREE.Color(0.92, 1.0, 0.88),
     roughness: 1.0,
     metalness: 0.0,
     side: THREE.DoubleSide,
