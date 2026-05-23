@@ -180,11 +180,12 @@ describe('b59: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲)'
     expect(VIEWER).toMatch(/dbBounds:\s*fujihill\.demBounds/);
   });
 
-  // b67: 広域低精細メッシュ用 bbox。 高精細 demBounds の外側を dbBounds 22km四方の
-  // z12 dem_png で 12 タイルだけで覆う ── 富士山体の全景を背景に敷くため。
+  // b67/b70: 広域低精細メッシュ用 bbox。 b67 は dbBounds 全域 z12 = 12 タイル 1 枚で
+  // 覆っていた (= 高精細メッシュと overlap)、 b70 は ring topology に作り直して 4 strip
+  // + 高精細メッシュは demBoundsAligned に拡張、 dbBounds 全域 z12=12 自体は値根拠 pin
+  // として残置 (= dbBoundsAligned z12 タイル数とも一致する整合性確認、 値が変わったら
+  // course 定義 fujihill.dbBounds 側の変更を示唆)。
   it('dbBounds (= 広域メッシュ用 22km四方) の z12 タイル数は 12 で MAX_TILES (200) 以下', () => {
-    // b67: WIDE_DEM_ZOOM=12 の値根拠 pin。 値が 12 でなくなったら map3d/index.js の
-    // 広域メッシュ構築が壊れる、 ブリーフの根拠表も嘘になる ── 12 厳密一致で固定。
     expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBe(12);
     expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBeLessThanOrEqual(MAX_TILES);
   });

@@ -406,6 +406,29 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
   it('b67: loadDemStitched が zoom 引数を受ける (= 広域低精細メッシュ z12 と高精細 z15 で再利用)', () => {
     expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*zoom[^}]*\}/);
   });
+
+  // b70: ring topology 化で b67 の単一広域メッシュ + polygonOffset を撤去。
+  // 復活したら気づけるよう negative grep で物理 pin (= catalog C2(e) 撤去 brief 規律)。
+  it('b70: index.js から polygonOffset 設定が消えている (= ring topology で overlap 不在)', () => {
+    expect(map3dIndex).not.toMatch(/polygonOffset\s*=\s*true/);
+    expect(map3dIndex).not.toMatch(/polygonOffsetFactor/);
+    expect(map3dIndex).not.toMatch(/polygonOffsetUnits/);
+  });
+
+  it('b70: index.js から renderOrder = -1 (= b67 の widely-low 用) が消えている', () => {
+    expect(map3dIndex).not.toMatch(/renderOrder\s*=\s*-1/);
+  });
+
+  it('b70: index.js に「単一広域メッシュ経路」 (= bounds: opts.wideBounds の 1 回呼び出し) が残っていない', () => {
+    // 4 strip は個別 bbox で loadDemStitched を呼ぶので literal 一致しない。
+    expect(map3dIndex).not.toMatch(/bounds:\s*opts\.wideBounds/);
+  });
+
+  it('b70: index.js が 3 純関数 (alignDemBoundsToZ12Y / alignDbBoundsToZ12 / buildWideStripBboxes) を export', () => {
+    expect(map3dIndex).toMatch(/export\s+function\s+alignDemBoundsToZ12Y\s*\(/);
+    expect(map3dIndex).toMatch(/export\s+function\s+alignDbBoundsToZ12\s*\(/);
+    expect(map3dIndex).toMatch(/export\s+function\s+buildWideStripBboxes\s*\(/);
+  });
 });
 
 // brief 31: GitHub Pages 静的サイト化に伴う外部 URL gate の拡張。
