@@ -23,8 +23,12 @@ import { createAtmosphere } from './atmosphere3d.js';
 // b61: ACES tone mapping をグローバル有効化したため、 ACES で中間調が沈むぶんを見越して
 // 旧値 (zenith 0x3a7cc4 / horizon 0xe8f0f8) より明るめ・やや濃いめに再調整した
 // (= ACES 下で旧来の見えに寄せる、 地表の物理散乱と地平線で色が連続するように)。
-const SKY_ZENITH = 0x5a9fd8;    // 天頂の青 (ACES 再調整値)
-const SKY_HORIZON = 0xeef4fb;   // 地平線の青白 (ACES 再調整値)
+// b71 (2026-05-24): 天頂を「紺寄りの青」 に再調整 (= user 指摘「上空に行くほど青が濃く、
+// 紺になる」 のリアルな空感を default で出す)。 旧 0x5a9fd8 は HSL(202°, 0.60, L:0.60)
+// の中明度水色で「紺」 ではなく user 期待と乖離。 新値 0x1e5cb3 は HSL(215°, 0.71, L:0.41)
+// = 「紺寄りの深い青」、 SKY_HORIZON との明度差 0.55 でグラデーションがはっきり出る。
+const SKY_ZENITH = 0x1e5cb3;    // 天頂の紺寄り青 (b71 で 0x5a9fd8 から navy 寄りへ)
+const SKY_HORIZON = 0xeef4fb;   // 地平線の青白 (ACES 再調整値、 朝霞、 不変)
 // 遠景フォグの色 (= COMMON_SKY の fog-color)。 リボン / ラベル等の遠景をこの色へ溶かす。
 // b61: 地形メッシュは atmosphere3d.js の物理 aerial perspective に置き換わり、 この灰色
 // フォグは地形には効かない (= enableAtmosphere が地形 material の fog を false にする)。
