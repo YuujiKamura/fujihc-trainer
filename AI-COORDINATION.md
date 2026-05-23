@@ -63,6 +63,34 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-23 Claude — b70-X-FIX 完了 (commit `a458988`)。 b70 初版 (commit
+  `77f76f8`) に基本ミス: alignDemBoundsToZ12Y が Y 軸のみスナップで X 軸は
+  元 demBounds の生 lat/lon を保持していたため、 east/west strip の demBounds
+  側エッジが z12 タイル中央に落ち tileRangeForBounds の floor で z12 タイル
+  2 枚分 (= 約 6.6km) が demBounds 内部に食い込む overlap が残っていた。 user
+  が画面で「ぜんぜんオーバーラップしてる」 と指摘。 修正: (1) alignDemBoundsToZ12Y
+  → alignDemBoundsToZ12 へ rename + X 軸 snap 追加 (両軸 z12 タイル整数倍に
+  外向きスナップ)。 (2) buildWideStripBboxes 内部を「lat/lon ベース」 から
+  「z12 タイル番号ベース」 に書き換え (= demA / dbA を tileRangeForBounds で
+  z12 タイル範囲に変換、 タイル番号空間で disjoint な 4 strip 範囲を計算、
+  lat/lon 復元時に次タイル境界より EPS 内側にして floor を安定化)、 空 strip
+  は null で skip。 (3) z15 タイル数 96 → 256 (= 16×16) で MAX_TILES = 200 →
+  256 に引き上げ、 fujihc CLAUDE.md「上限 256、 さらなる引き上げは禁止」 規律
+  更新。 配布元配慮の本質 (1 回 fetch + IndexedDB 90 日 TTL + GSI_FETCH_LIMIT=6
+  + 自動再取得なし) は不変。 既存 7軸 audit を target=diff 相当で実行 (Round 1
+  で軸 5 設計境界 / 軸 4 テスト網羅 / 軸 7 セキュリティ境界 で LOAD-BEARING
+  多数、 X 軸 snap 欠落 + misleading test (中心 1 点のみ) + MAX_TILES trade-off
+  未確定 等を全数指摘)、 user 設計指示 (X+Y 両軸 snap) + 配布元配慮の trade-off
+  (MAX_TILES 256 引き上げ + cache + 1 回 fetch で吸収) で実装に反映。 検証:
+  vitest 1545 passed (新 map3d_wide_strips.test.js 全面書き換え、 X+Y 両軸
+  invariant + 9 点 negative + strip-demA z12 disjoint + 漏れ重複ゼロ完全分割)、
+  pytest 238 passed / 4 skipped、 bridge 無し http.server + playwright で 3 枚
+  キャプチャ目視 (= b70xfix-shot-{1-normal,2-wide,3-nohighres-wide}.png) → ?nohighres=1
+  で demA 内部が「白い大きな矩形領域」 として明瞭に空、 X 方向にもはっきり穴
+  が広がる ── b70 初版で曖昧だった「demA 内部が空」 が構造的視覚証明として
+  完全達成、 user 指摘の X 軸 overlap 解消。 実測 disjoint: demA z12=4 +
+  strip 合計 8 (北 3 / 南 3 / 東 2 / 西 null) = dbA z12=12 で完全分割、 4 strip
+  vs demA の z12 タイル集合は全 disjoint (= test で物理 pin)。
 - 2026-05-23 Claude — b70 完了 (commit `77f76f8`、 ブリーフ
   `~/.agents/scratch/fujihc-trainer-project/b70-wide-mesh-ring-topology.md`)。
   b67 が単一広域メッシュ + polygonOffset で「視覚的には ring に見えるが構造的
