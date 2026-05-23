@@ -144,9 +144,16 @@ export function createMapRenderer() {
   let currentRoadOffset = ROAD_OFFSET_M; // 現在の路面高さオフセット (m)
 
   // boot / renderCourse 前に呼ばれた set 系の値を保留し、 部品生成時に流し込む。
+  // b74: weatherClouds は volumetric clouds 生成後に setWeather で反映する。
   const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null,
                     riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null,
-                    riderShape: null, atmoParams: null };
+                    riderShape: null, atmoParams: null, weatherClouds: null };
+
+  // b74: volumetric clouds (= Perlin × Worley の density field を ray-march する box mesh)。
+  // boot 内で動的 import + 生成、 setWeatherClouds で uniform 更新、 render() で
+  // setCameraPosition + tick (= 風で雲が動く)。
+  let cloudInstance = null;
+  let lastRenderTime = null;
 
   function fireIdle() {
     if (idleFired) return;
@@ -358,6 +365,30 @@ export function createMapRenderer() {
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);
 
+          // b74: volumetric clouds を boot 内で動的 import + 生成 + scene.add。
+          // cloudVolume は terrain と同じ world XZ 範囲 (= demBounds 派生)、 別 SoT を作らない。
+          // 初期 cloudCover=0 (= 雲なし)、 viewer-maplibre.js が AMeDAS から setWeatherClouds で
+          // 流し込む。 boot 前に setWeatherClouds が呼ばれていれば pending から反映。
+          try {
+            const { createVolumetricClouds } = await import('./volumetric_clouds.js');
+            const cloudVolume = {
+              minX: -geoMeta.sizeX / 2,
+              maxX:  geoMeta.sizeX / 2,
+              minZ: -geoMeta.sizeZ / 2,
+              maxZ:  geoMeta.sizeZ / 2,
+            };
+            cloudInstance = createVolumetricClouds(THREE, {
+              cloudVolume,
+              cloudCover: 0,
+              cloudBaseM: 1500,
+              cloudTopM: 3500,
+            });
+            scene.add(cloudInstance.mesh);
+            if (pending.weatherClouds) cloudInstance.setWeather(pending.weatherClouds);
+          } catch (e) {
+            console.warn('[map3d] volumetric clouds 生成失敗 (= terrain と AMeDAS panel は維持):', e);
+          }
+
           // カメラ。 注視点は地形中心の標高に置く。
           const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
           camera3d = createCamera3d(THREE, {
@@ -474,6 +505,15 @@ export function createMapRenderer() {
       // 影オルソカメラを自機へ追従させてから描く。 自機倍率を渡し、 巨大ライダーでは
       // 錐台と光源距離を倍率比例で広げる (= 影が四角く切れず地形へ自然に落ちる)。
       if (rider3d) scene.focusShadowOn(rider3d.group.position, rider3d.group.scale.x);
+      // b74: volumetric clouds のカメラ位置 uniform を毎フレーム更新 (= ray-march の出発点)
+      // + tick で uTime を進めて風で雲を動かす。
+      if (cloudInstance) {
+        cloudInstance.setCameraPosition(camera3d.camera.position);
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const dt = lastRenderTime != null ? (now - lastRenderTime) / 1000 : 0;
+        lastRenderTime = now;
+        cloudInstance.tick(dt);
+      }
       scene.render(camera3d.camera);
       if (terrainReady && !idleFired) fireIdle();
     },
@@ -616,6 +656,24 @@ export function createMapRenderer() {
       } else {
         pending.skyIntensity = intensity;
       }
+    },
+
+    // b74: volumetric clouds の雲量・雲底・雲頂を実行時に差し替える ── viewer-maplibre.js が
+    // AMeDAS → cloud_estimator → 本メソッド で流し込む。 boot 前 (= cloudInstance 未生成)
+    // なら pending.weatherClouds にキー単位でマージ保留 (= setAtmosphereParams と同型)。
+    setWeatherClouds(weather) {
+      if (!weather) return;
+      if (cloudInstance) {
+        cloudInstance.setWeather(weather);
+      } else {
+        pending.weatherClouds = { ...(pending.weatherClouds || {}), ...weather };
+      }
+    },
+
+    // b74: volumetric clouds の現在 state を読む口 ── e2e 観測用 + debug 用 (= b62
+    // getAtmosphereUniforms と同 class)。 boot 前は null (= cloudInstance 未生成)。
+    getWeatherCloudsInfo() {
+      return cloudInstance ? cloudInstance.getWeather() : null;
     },
 
     // === 起点 / 終点マーカー ===

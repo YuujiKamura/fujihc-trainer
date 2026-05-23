@@ -694,8 +694,9 @@
   </div>
   <div id="control-sliders"></div>
   <div id="bike-shape-sliders"></div>
-  <!-- b72 weather: 富士山周辺 AMeDAS の現在気象 (= 起動時 1 回 fetch、 5 観測点) -->
-  <div id="weather-panel" style="margin-top:0.6rem; font-size:12px; color:#ccc; border-top:1px solid #333; padding-top:0.4rem;">
+  <!-- b72 weather + b74 volumetric clouds: AMeDAS 現在気象 + 雲量/雲底/雲頂 行 -->
+  <!-- data-clouds-state: pending (= 初期、 AMeDAS fetch 前) / rendered (= setWeatherClouds 後) / error -->
+  <div id="weather-panel" data-clouds-state="pending" style="margin-top:0.6rem; font-size:12px; color:#ccc; border-top:1px solid #333; padding-top:0.4rem;">
     <div style="color:#ffd54a; font-weight:bold; margin-bottom:0.3rem;">現在気象 (気象庁 アメダス)</div>
     <div id="weather-status">取得中…</div>
     <div id="weather-rows" style="font-family:monospace; font-size:11px; line-height:1.4;"></div>

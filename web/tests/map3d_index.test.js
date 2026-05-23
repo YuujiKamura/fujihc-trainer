@@ -10,7 +10,8 @@ import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/ma
 
 // map_renderer.js が定める意味メソッド (= b39 で setLandmarks、 b62 で大気散乱の
 // setAtmosphereParams / getAtmosphereUniforms を追加、 b71 で背景スフィア用の
-// setSkyIntensity を追加して 25 個)。
+// setSkyIntensity を追加、 b74 で volumetric clouds の setWeatherClouds /
+// getWeatherCloudsInfo を追加して 27 個)。
 // Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
   'isBooted', 'boot', 'onceIdle',
@@ -25,17 +26,18 @@ const CONTRACT_METHODS = [
   'setLandmarks',  // b39 富士ヒル区間名標識 (= 7 件、 createLandmarks3d 経由)
   'setAtmosphereParams', 'getAtmosphereUniforms',  // b62 大気散乱の調整 / 観測口
   'setSkyIntensity',  // b71 背景スフィアの天頂色濃度
+  'setWeatherClouds', 'getWeatherCloudsInfo',  // b74 volumetric clouds の配線 / 観測口
 ];
 
-describe('createMapRenderer — 差し替え口25メソッド', () => {
-  it('25個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口27メソッド', () => {
+  it('27個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (25個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (27個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
@@ -90,6 +92,18 @@ describe('createMapRenderer — 差し替え口25メソッド', () => {
     expect(() => r.setRoadHeight(3)).not.toThrow();
     expect(() => r.setLabelHeight(6)).not.toThrow();
     expect(() => r.setRiderShape({ wheelR: 0.3 })).not.toThrow();
+  });
+
+  it('b74: boot 前に setWeatherClouds を呼んでも例外にならない (= pending 経路)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setWeatherClouds({ cloudCover: 0.5, cloudBaseM: 1500, cloudTopM: 3500 })).not.toThrow();
+    expect(() => r.setWeatherClouds(null)).not.toThrow();
+    expect(() => r.setWeatherClouds(undefined)).not.toThrow();
+  });
+
+  it('b74: boot 前は getWeatherCloudsInfo() が null (= cloudInstance 未生成)', () => {
+    const r = createMapRenderer();
+    expect(r.getWeatherCloudsInfo()).toBe(null);
   });
 });
 

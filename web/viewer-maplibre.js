@@ -2278,14 +2278,44 @@ const BIKE_SHAPE_DEFS = [
 ];
 mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
-// b72 weather step 1: AMeDAS の現在気象を 1 回だけ fetch して #weather-panel に populate。
-// 配布元 (気象庁 bosai) への通信は 1 起動 2 req (= latest_time + map)、 出典「気象庁
-// アメダス」 をパネルに表示。 DOM は textContent + createElement で組む (= XSS 安全)。
-import('./lib/weather/jma_amedas.js').then(async ({ fetchFujiWeather }) => {
+// b72 + b74 weather: AMeDAS の現在気象を 1 起動 1 回 fetch して #weather-panel に populate +
+// 気温・湿度・標高 から雲量・雲底・雲頂を算出して mapRenderer.setWeatherClouds に流す。
+// 配布元 (気象庁 bosai) への通信は 1 起動 2 req (= latest_time + map、 b72 既存)、 b74 で
+// 新規 fetch 追加なし。 出典「気象庁 アメダス」 をパネルに表示。 DOM は textContent +
+// createElement のみ (= XSS 安全)。 #weather-panel の data-clouds-state 属性で雲表示状態
+// (= "pending" / "rendered" / "error") を expose、 e2e + integration test で観測可能。
+//
+// b74: URL gate ?weather=fixed&cloudCover=...&cloudBaseM=...&cloudTopM=... が指定されていれば
+// AMeDAS fetch を skip して固定値を流す (= e2e screenshot 用、 既存 ?cam= / ?cap= URL gate と
+// 同型)。 配布元負荷を増やさない設計。
+(async () => {
   const statusEl = document.getElementById('weather-status');
   const rowsEl = document.getElementById('weather-rows');
-  if (!statusEl || !rowsEl) return;
+  const panelEl = document.getElementById('weather-panel');
+  if (!statusEl || !rowsEl || !panelEl) return;
+
+  let wirelib = null;
   try {
+    wirelib = await import('./lib/weather/weather_panel_wire.js');
+  } catch (e) {
+    console.warn('[weather] weather_panel_wire module load failed:', e);
+    panelEl.setAttribute('data-clouds-state', 'error');
+    return;
+  }
+  const { parseForceWeatherFromUrl, applyForceWeatherToPanel, applyAmedasCloudsToPanel } = wirelib;
+
+  // URL gate ?weather=fixed: AMeDAS fetch skip して固定値を流す (= e2e screenshot 用)
+  let urlParams = null;
+  try { urlParams = new URLSearchParams(location.search); } catch { /* skip */ }
+  const forceWeather = parseForceWeatherFromUrl(urlParams);
+  if (forceWeather) {
+    applyForceWeatherToPanel({ mapRenderer, panelEl, rowsEl, statusEl, forceWeather });
+    return;
+  }
+
+  // 通常 AMeDAS path (= b72 既存 panel populate + b74 雲行追加)
+  try {
+    const { fetchFujiWeather } = await import('./lib/weather/jma_amedas.js');
     const { timestamp, stations } = await fetchFujiWeather();
     const t = `${timestamp.slice(4,6)}/${timestamp.slice(6,8)} ${timestamp.slice(8,10)}:${timestamp.slice(10,12)}`;
     statusEl.textContent = `${t} 取得`;
@@ -2309,11 +2339,15 @@ import('./lib/weather/jma_amedas.js').then(async ({ fetchFujiWeather }) => {
       }
       rowsEl.appendChild(row);
     }
+    // b74: 観測点 → 雲量・雲底・雲頂 算出 → mapRenderer.setWeatherClouds + 雲行追加 +
+    //       data-clouds-state="rendered" or "error"
+    applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, stations });
   } catch (e) {
     statusEl.textContent = `取得失敗: ${e.message}`;
+    panelEl.setAttribute('data-clouds-state', 'error');
     console.warn('[weather] AMeDAS fetch failed:', e);
   }
-}).catch((e) => console.warn('[weather] module load failed:', e));
+})();
 
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
