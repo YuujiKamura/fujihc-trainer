@@ -13,15 +13,17 @@ import { estimateClouds } from './cloud_estimator.js';
 /**
  * AMeDAS station から雲を算出して mapRenderer に流し、 panel に「雲量 N% 底N m 頂N m」 行を
  * 追加 (= 既存行があれば textContent 更新)、 #weather-panel の data-clouds-state を更新する。
+ * miniEl が渡されていれば mini-overlay (= 観るモード / ride mode で常時 visible) も同期更新。
  *
  * @param {object} args
  * @param {object} args.mapRenderer - createMapRenderer 戻り (= facade)。 null 可 (= test 用)
  * @param {object} args.panelEl - #weather-panel (data-clouds-state を書く対象)
  * @param {object} args.rowsEl - #weather-rows (雲行を追加する親)
+ * @param {object} [args.miniEl] - #weather-cloud-mini (= 観るモード visible な mini-overlay、 任意)
  * @param {Array<object>|null} args.stations - pickFujiStations 戻り、 null で error 扱い
  * @returns {object|null} estimateClouds 戻り (= weather)、 失敗時 null
  */
-export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, stations }) {
+export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl, stations }) {
   if (!panelEl || !rowsEl) return null;
   const weather = Array.isArray(stations) ? estimateClouds(stations) : null;
   if (weather) {
@@ -29,10 +31,14 @@ export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, station
       mapRenderer.setWeatherClouds(weather);
     }
     appendCloudRow(rowsEl, weather);
+    updateMiniOverlay(miniEl, weather);
     panelEl.setAttribute('data-clouds-state', 'rendered');
     return weather;
   }
   panelEl.setAttribute('data-clouds-state', 'error');
+  if (miniEl && typeof miniEl.setAttribute === 'function') {
+    miniEl.setAttribute('data-clouds-state', 'error');
+  }
   return null;
 }
 
@@ -68,14 +74,28 @@ export function parseForceWeatherFromUrl(params) {
  * @param {object} [args.statusEl] - #weather-status (任意)
  * @param {{cloudCover, cloudBaseM, cloudTopM}} args.forceWeather
  */
-export function applyForceWeatherToPanel({ mapRenderer, panelEl, rowsEl, statusEl, forceWeather }) {
+export function applyForceWeatherToPanel({ mapRenderer, panelEl, rowsEl, statusEl, miniEl, forceWeather }) {
   if (!panelEl || !rowsEl || !forceWeather) return;
   if (mapRenderer && typeof mapRenderer.setWeatherClouds === 'function') {
     mapRenderer.setWeatherClouds(forceWeather);
   }
   appendCloudRow(rowsEl, forceWeather);
+  updateMiniOverlay(miniEl, forceWeather);
   panelEl.setAttribute('data-clouds-state', 'rendered');
   if (statusEl) statusEl.textContent = '(URL gate fixed weather)';
+}
+
+function updateMiniOverlay(miniEl, weather) {
+  if (!miniEl || !weather) return;
+  const coverPct = Math.round(weather.cloudCover * 100);
+  const baseM = Math.round(weather.cloudBaseM);
+  const topM = Math.round(weather.cloudTopM);
+  miniEl.textContent = `雲量 ${coverPct}% / 雲底 ${baseM} m / 雲頂 ${topM} m`;
+  if (typeof miniEl.setAttribute === 'function') {
+    miniEl.setAttribute('data-clouds-state', 'rendered');
+  }
+  // CSS display を block に切替 (= 初期は display:none、 rendered で visible)
+  if (miniEl.style) miniEl.style.display = 'block';
 }
 
 function appendCloudRow(rowsEl, weather) {

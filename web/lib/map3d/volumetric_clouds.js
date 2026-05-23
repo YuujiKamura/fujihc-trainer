@@ -187,14 +187,14 @@ void main() {
   float cosTheta = dot(rd, normalize(uSunDir));
   float phase = hgPhase(cosTheta, HG_G);
 
-  // 雲の base color (= 白)、 太陽光の照射で明暗
-  vec3 sunColor = vec3(1.0, 0.96, 0.88);
-  vec3 ambientColor = vec3(0.45, 0.5, 0.6);  // 影部分の青みがかった環境光
+  // 雲の base color。 真夏の白い積雲質感を狙い、 sun は warm white、 ambient は明るい青み
+  // (= ACES tone mapping 下で「白く飽和した雲」 に見える)。
+  vec3 sunColor = vec3(1.0, 0.97, 0.9);
+  vec3 ambientColor = vec3(0.7, 0.75, 0.8);  // 影部分も白に寄せて「暗灰色塊」 回避
 
-  // density 積算 multiplier (= alpha 蓄積の感度)。 stepLen が大 (= AABB / RAY_MARCH_STEPS で
-  // 700-800m スケール)、 density は threshold + scale で sharp 化済 (= 塊 0.5..1.0 / 隙間 0)。
-  // multiplier 0.003 で塊の中心が full coverage、 隙間で transmittance 維持 ── 雲の「縁」 が立つ。
-  float densityMul = 0.003;
+  // density 積算 multiplier。 0.003 だと暗灰色塊で蓄積、 0.002 に下げて雲を細く + ambient
+  // 強化と組み合わせて「真夏の白い積雲」 質感に。 塊の中心でも light transmit を残す。
+  float densityMul = 0.002;
   for (int i = 0; i < 64; i++) {
     if (i >= RAY_MARCH_STEPS) break;
     float t = tNear + (float(i) + 0.5) * stepLen;
@@ -211,8 +211,10 @@ void main() {
         float ld = density(lp);
         lightTransmit *= exp(-ld * lightStepLen * densityMul);
       }
-      // 散乱寄与: 太陽光 × HG × 透過率 + 環境光
-      vec3 inScatter = sunColor * phase * lightTransmit + ambientColor * 0.3;
+      // 散乱寄与: sunColor の base 寄与 + 太陽方向の前方散乱 (HG × lightTransmit) + 環境光。
+      // 「真夏の白い積雲」 質感は雲全体が white に飽和、 太陽方向で更に明るく光るのが基準。
+      // phase (= 0.0001..0.1) だけだと雲全体が暗くなるため、 sunColor base 0.6 を常時加算。
+      vec3 inScatter = sunColor * (0.6 + phase * lightTransmit * 4.0) + ambientColor * 0.6;
       float dStep = d * stepLen * densityMul;
       // 累積色 (= alpha-premultiplied で blend、 dStep を 1.0 で clamp して overflow 防止)
       accumColor += inScatter * (1.0 - exp(-dStep)) * transmittance;

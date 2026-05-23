@@ -2292,6 +2292,8 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
   const statusEl = document.getElementById('weather-status');
   const rowsEl = document.getElementById('weather-rows');
   const panelEl = document.getElementById('weather-panel');
+  // b74: 観るモード / ride mode でも雲量行が常時 visible な mini-overlay (= body 直下 fixed)
+  const miniEl = document.getElementById('weather-cloud-mini');
   if (!statusEl || !rowsEl || !panelEl) return;
 
   let wirelib = null;
@@ -2309,7 +2311,7 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
   try { urlParams = new URLSearchParams(location.search); } catch { /* skip */ }
   const forceWeather = parseForceWeatherFromUrl(urlParams);
   if (forceWeather) {
-    applyForceWeatherToPanel({ mapRenderer, panelEl, rowsEl, statusEl, forceWeather });
+    applyForceWeatherToPanel({ mapRenderer, panelEl, rowsEl, statusEl, miniEl, forceWeather });
     return;
   }
 
@@ -2340,8 +2342,8 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
       rowsEl.appendChild(row);
     }
     // b74: 観測点 → 雲量・雲底・雲頂 算出 → mapRenderer.setWeatherClouds + 雲行追加 +
-    //       data-clouds-state="rendered" or "error"
-    applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, stations });
+    //       data-clouds-state="rendered" or "error" + mini-overlay 更新
+    applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl, stations });
   } catch (e) {
     statusEl.textContent = `取得失敗: ${e.message}`;
     panelEl.setAttribute('data-clouds-state', 'error');

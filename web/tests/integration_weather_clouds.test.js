@@ -50,6 +50,33 @@ function makeMockPanel() {
   return { panelEl, rowsEl, statusEl };
 }
 
+describe('applyAmedasCloudsToPanel — mini-overlay 同期 (= 観るモードで visible)', () => {
+  it('miniEl 渡すと textContent + data-clouds-state="rendered" + display="block" が同期更新', () => {
+    const mr = makeMockMapRenderer();
+    const { panelEl, rowsEl } = makeMockPanel();
+    const miniEl = makeMockElement('div');
+    miniEl.style = { display: 'none' };
+    miniEl.setAttribute('data-clouds-state', 'pending');
+    const stations = [
+      { code: '49251', alt: 860, temp: 20, humidity: 95 },
+      { code: '49256', alt: 992, temp: 18, humidity: 95 },
+    ];
+    applyAmedasCloudsToPanel({ mapRenderer: mr, panelEl, rowsEl, miniEl, stations });
+    expect(miniEl.textContent).toMatch(/雲量 \d+%/);
+    expect(miniEl.getAttribute('data-clouds-state')).toBe('rendered');
+    expect(miniEl.style.display).toBe('block');
+  });
+
+  it('miniEl: stations=null → data-clouds-state="error" (= display は変えない)', () => {
+    const mr = makeMockMapRenderer();
+    const { panelEl, rowsEl } = makeMockPanel();
+    const miniEl = makeMockElement('div');
+    miniEl.style = { display: 'none' };
+    applyAmedasCloudsToPanel({ mapRenderer: mr, panelEl, rowsEl, miniEl, stations: null });
+    expect(miniEl.getAttribute('data-clouds-state')).toBe('error');
+  });
+});
+
 describe('applyAmedasCloudsToPanel — happy path (= data-clouds-state="rendered")', () => {
   it('4 観測点 → setWeatherClouds 1 回呼ばれる、 data-clouds-state="rendered"、 panel に雲行 1 件追加', () => {
     const mr = makeMockMapRenderer();
