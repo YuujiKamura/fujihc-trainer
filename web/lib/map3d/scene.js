@@ -23,12 +23,19 @@ import { createAtmosphere } from './atmosphere3d.js';
 // b61: ACES tone mapping をグローバル有効化したため、 ACES で中間調が沈むぶんを見越して
 // 旧値 (zenith 0x3a7cc4 / horizon 0xe8f0f8) より明るめ・やや濃いめに再調整した
 // (= ACES 下で旧来の見えに寄せる、 地表の物理散乱と地平線で色が連続するように)。
-// b71 (2026-05-24): 天頂を「真夏のガツンとした青」 に再再調整 (= user 反復指摘「まだ薄い、
-// 夏富士の山体に対して真夏のコバルトブルーが欲しい」)。 0x5a9fd8 (旧、 水色) → 0x1e5cb3
-// (紺寄り、 S 0.71 / L 0.41) → 0x0066cc (= HSL 210°, S 1.0, L 0.40) と段階的に深く飽和へ。
-// 0x0066cc は「コバルト青空」 = 真夏快晴の天頂色、 saturation 飽和で「ガツン感」 を出す。
-const SKY_ZENITH = 0x0066cc;    // 天頂の真夏コバルト青 (b71 で 0x5a9fd8→0x1e5cb3→0x0066cc と濃度反復)
-const SKY_HORIZON = 0xeef4fb;   // 地平線の青白 (ACES 再調整値、 朝霞、 不変)
+// b71 (2026-05-24): 「真夏快晴」 の HTML 標準色 defacto を採用 (= user 反復指摘「真夏の
+// ガツンとした青さが出ない」 への対応)。 wiki commons / google img 自動トレースは
+// anti-bot / rate limit で 1 起動内に成功せず、 暫定で標準色相を採用:
+//
+//   SKY_ZENITH:  0x1e90ff (= dodgerblue、 HSL 210° / S 1.00 / L 0.56) ── 真夏快晴の defacto、
+//                明度を 0.40 → 0.56 に上げて「明るく飽和した夏空」 感を出す
+//   SKY_HORIZON: 0x87cefa (= lightskyblue、 HSL 203° / S 0.92 / L 0.75) ── 薄水色、
+//                真夏の地平線に滲む水色、 旧 0xeef4fb 朝霞よりも青寄り
+//
+// 両者とも CSS named color。 user の手元 chrome で確認後、 「もっと深く」 「もっと淡く」
+// 等あれば iteration で SKY_ZENITH / SKY_HORIZON を調整する分岐に持ち込む。
+const SKY_ZENITH = 0x1e90ff;    // 天頂 = dodgerblue (= HSL 210° / S 1.00 / L 0.56)
+const SKY_HORIZON = 0x87cefa;   // 地平線 = lightskyblue (= HSL 203° / S 0.92 / L 0.75)
 // 遠景フォグの色 (= COMMON_SKY の fog-color)。 リボン / ラベル等の遠景をこの色へ溶かす。
 // b61: 地形メッシュは atmosphere3d.js の物理 aerial perspective に置き換わり、 この灰色
 // フォグは地形には効かない (= enableAtmosphere が地形 material の fog を false にする)。
