@@ -365,9 +365,9 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(tileLoader3d).not.toMatch(/\/xyz\/dem\/[0-9]/);
   });
 
-  it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=200 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在', () => {
+  it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=256 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在 (= b70-X-FIX で 200→256)', () => {
     expect(tileLoader3d).toMatch(/export\s+const\s+GSI_FETCH_LIMIT\s*=\s*6/);
-    expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*200/);
+    expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*256/);
     expect(tileLoader3d).toMatch(/GSI_SEAMLESSPHOTO_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/seamlessphoto['"]/);
   });
 
@@ -424,10 +424,20 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(map3dIndex).not.toMatch(/bounds:\s*opts\.wideBounds/);
   });
 
-  it('b70: index.js が 3 純関数 (alignDemBoundsToZ12Y / alignDbBoundsToZ12 / buildWideStripBboxes) を export', () => {
-    expect(map3dIndex).toMatch(/export\s+function\s+alignDemBoundsToZ12Y\s*\(/);
+  it('b70-X-FIX: index.js が 3 純関数 (alignDemBoundsToZ12 / alignDbBoundsToZ12 / buildWideStripBboxes) を export', () => {
+    expect(map3dIndex).toMatch(/export\s+function\s+alignDemBoundsToZ12\s*\(/);
     expect(map3dIndex).toMatch(/export\s+function\s+alignDbBoundsToZ12\s*\(/);
     expect(map3dIndex).toMatch(/export\s+function\s+buildWideStripBboxes\s*\(/);
+  });
+
+  it('b70-X-FIX: index.js から旧 alignDemBoundsToZ12Y (= Y のみ snap) が消えている', () => {
+    // 旧 Y のみ snap は X 軸 overlap が残る欠陥実装、 復活したら気づけるよう物理 pin。
+    expect(map3dIndex).not.toMatch(/alignDemBoundsToZ12Y\s*\(/);
+    expect(map3dIndex).not.toMatch(/function\s+alignDemBoundsToZ12Y/);
+  });
+
+  it('b70-X-FIX: index.js に ?nohighres=1 debug ハンドル (= 実画面検証で demA 内が空であることを構造目視) が存在', () => {
+    expect(map3dIndex).toMatch(/URLSearchParams\(location\.search\)\.has\(['"]nohighres['"]\)/);
   });
 });
 

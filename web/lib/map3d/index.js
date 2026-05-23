@@ -50,12 +50,13 @@ const M_PER_DEG_LAT = 111320;
 const WIDE_DEM_ZOOM = 12;
 
 // b70: 広域低精細メッシュを「単一 dbBounds で覆い polygonOffset で高精細を上に出す」 (b67)
-// → 4 外周ストリップで dbBounds から demBounds を引いた ring 形に作り直す。 ただし
-// naive な 4 分割では z12 タイル境界が strip 辺と揃わず隙間 / 重複が残るため、 demBounds
-// を Y 軸のみ z12 タイル整数倍に外向きスナップしてから 4 strip を取る。 z15 と z12 は倍率
-// 8 で入れ子になっている性質を利用 ── z15 タイル番号を 8 の倍数に揃えれば z12 タイル
-// 境界とぴったり揃う。 X 軸まで揃えると z15 タイル数が 16×16=256 で MAX_TILES 超過、
-// Y のみ揃えれば 8×16=128 で MAX_TILES 内 (= b70 brief §根拠4 実測)。
+// → 4 外周ストリップで dbBounds から demBounds を引いた ring 形に作り直す。 z12 タイル
+// 境界が strip 辺と揃わないと隙間 / 重複が残るため、 demBounds を X+Y 両軸 z12 タイル
+// 整数倍に外向きスナップしてから 4 strip を取る。 z15 と z12 は倍率 8 で入れ子になっている
+// 性質を利用 ── z15 タイル番号を 8 の倍数に揃えれば z12 タイル境界とぴったり揃う。
+// b70 初版は Y 軸のみスナップで X 軸 overlap (= east/west strip が demA 内側に約 6.6km
+// 張り出し) が残っていた (b70-X-FIX で修正)。 X+Y 両軸スナップ後の z15 タイル数 = 16×16
+// = 256 (= MAX_TILES 256 丁度、 fujihc CLAUDE.md で 200 → 256 引き上げ済)。
 const Z15_TO_Z12_RATIO = 1 << (15 - 12);  // = 8
 // 次タイル境界の lon/lat を bbox として使うと tileRangeForBounds が境界エッジを次タイル
 // として +1 タイル余分に数える (= 浮動小数の floor アーティファクト)、 微小に内側へ戻す。
@@ -63,23 +64,28 @@ const Z15_TO_Z12_RATIO = 1 << (15 - 12);  // = 8
 const SNAP_EPS = 1e-9;
 
 /**
- * demBounds を Y 軸のみ z12 タイル整数倍に外向きスナップした [W,S,E,N] を返す純関数.
+ * demBounds を X+Y 両軸 z12 タイル整数倍に外向きスナップした [W,S,E,N] を返す純関数.
  *
- * X 軸は元 demBounds のまま (= 経度方向の高精細メッシュ範囲不変)。 Y 軸の lat 境界を
- * z12 タイル境界に揃えることで、 外周 z12 ストリップ (= `buildWideStripBboxes`) の
- * 北辺・南辺と高精細 z15 メッシュの北辺・南辺が同じ lat 線になり、 隙間/重複ゼロ。
+ * b70 初版は Y 軸のみスナップだったが、 X 軸を生 lat/lon のままにすると east/west strip
+ * の z12 タイル境界が demA の対辺と揃わず、 strip の z12 タイルが demA 内側に約 6.6km
+ * (= z12 タイル 1〜2 枚) 食い込む overlap が残った (= b70-X-FIX で修正)。 X+Y 両軸を
+ * z12 タイル境界に揃えることで、 strip と demA の z12 タイル集合が完全に disjoint に
+ * なり、 真の数学的隙間/重複ゼロを達成する。 z15 タイル数は 8×12=96 → 16×16=256
+ * (= MAX_TILES 引き上げ済、 256 ぴったり)。
  *
  * @param {[number,number,number,number]} demBounds - [W, S, E, N]
  * @returns {[number,number,number,number]}
  */
-export function alignDemBoundsToZ12Y(demBounds) {
+export function alignDemBoundsToZ12(demBounds) {
   const r15 = tileRangeForBounds(demBounds, 15);
+  const xMinS = Math.floor(r15.xMin / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO;
+  const xMaxS = Math.ceil((r15.xMax + 1) / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO - 1;
   const yMinS = Math.floor(r15.yMin / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO;
   const yMaxS = Math.ceil((r15.yMax + 1) / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO - 1;
   return [
-    demBounds[0],
+    tileXToLon(xMinS,     15),
     tileYToLat(yMaxS + 1, 15) + SNAP_EPS,
-    demBounds[2],
+    tileXToLon(xMaxS + 1, 15) - SNAP_EPS,
     tileYToLat(yMinS,     15) - SNAP_EPS,
   ];
 }
@@ -103,23 +109,50 @@ export function alignDbBoundsToZ12(dbBounds) {
 /**
  * dbA から demA を引いた 4 外周ストリップ (北・南・東・西) の bbox を返す純関数.
  *
- * 規約: 角は北・南ストリップに含めて重複なく分割 (= 北・南が経度 dbA 全幅で取り、
- * 東・西は緯度 demA 範囲に閉じる)。
+ * b70-X-FIX: 内部実装を z12 タイル番号ベースに書き換え。 旧実装は demA / dbA の lat/lon
+ * をそのまま strip の bbox に使っていたが、 tileRangeForBounds の floor 挙動 (= lat/lon
+ * が z12 タイル境界ちょうど or 微小に内側だと「上の tile」 も含めて余分カウント) で
+ * strip と demA の z12 タイル集合が disjoint にならない問題があった (= overlap 残存)。
+ * 本実装は demA / dbA を z12 タイル範囲に変換し、 タイル番号空間で disjoint な 4 strip
+ * を組み、 lat/lon 復元時に次タイル境界より EPS 内側にして floor を安定化する。
  *
- * @param {[number,number,number,number]} demA - alignDemBoundsToZ12Y の戻り
+ * 規約: 角は北・南ストリップに含めて重複なく分割 (= 北・南が経度 dbA 全幅で取り、
+ * 東・西は緯度 demA 範囲に閉じる)。 strip と demA の z12 タイル集合は完全に disjoint、
+ * dbA = demA ∪ 4 strip の z12 タイル分割。
+ *
+ * 空 strip (= demA が dbA の端に接して 1 軸 strip が幅ゼロ) は null を返し、 caller で skip。
+ *
+ * @param {[number,number,number,number]} demA - alignDemBoundsToZ12 の戻り
  * @param {[number,number,number,number]} dbA  - alignDbBoundsToZ12 の戻り
- * @returns {{north:[number,number,number,number], south:..., east:..., west:...}}
+ * @returns {{north, south, east, west}} 各 strip の bbox [W,S,E,N] か null
  */
 export function buildWideStripBboxes(demA, dbA) {
   if (demA[0] < dbA[0] || demA[2] > dbA[2]
    || demA[1] < dbA[1] || demA[3] > dbA[3]) {
     throw new RangeError('buildWideStripBboxes: demA が dbA に内包されない');
   }
+  const demT = tileRangeForBounds(demA, 12);
+  const dbT  = tileRangeForBounds(dbA,  12);
+  // z12 タイル番号範囲 → bbox lat/lon。 east/south 端は次タイル境界 - EPS で内側に
+  // 戻し、 tileRangeForBounds の floor が「次のタイル」 を余分に含めないように。
+  const tileToBbox = (xMin, xMax, yMin, yMax) => {
+    if (xMax < xMin || yMax < yMin) return null;  // 空 strip
+    return [
+      tileXToLon(xMin,     12),
+      tileYToLat(yMax + 1, 12) + SNAP_EPS,
+      tileXToLon(xMax + 1, 12) - SNAP_EPS,
+      tileYToLat(yMin,     12) - SNAP_EPS,
+    ];
+  };
   return {
-    north: [dbA[0],  demA[3], dbA[2],  dbA[3]],
-    south: [dbA[0],  dbA[1],  dbA[2],  demA[1]],
-    east:  [demA[2], demA[1], dbA[2],  demA[3]],
-    west:  [dbA[0],  demA[1], demA[0], demA[3]],
+    // 北: dbA 経度全幅、 緯度は dbA 北端 〜 demA 北端の 1 つ上 (= demT.yMin - 1)
+    north: tileToBbox(dbT.xMin,       dbT.xMax,     dbT.yMin,     demT.yMin - 1),
+    // 南: dbA 経度全幅、 緯度は demA 南端の 1 つ下 (= demT.yMax + 1) 〜 dbA 南端
+    south: tileToBbox(dbT.xMin,       dbT.xMax,     demT.yMax + 1, dbT.yMax),
+    // 東: 経度は demA 東端の 1 つ右 〜 dbA 東端、 緯度 demA 範囲
+    east:  tileToBbox(demT.xMax + 1,  dbT.xMax,     demT.yMin,    demT.yMax),
+    // 西: 経度 dbA 西端 〜 demA 西端の 1 つ左、 緯度 demA 範囲
+    west:  tileToBbox(dbT.xMin,       demT.xMin - 1, demT.yMin,   demT.yMax),
   };
 }
 
@@ -414,10 +447,11 @@ export function createMapRenderer() {
           // ロード overlay の進捗数値 / バーを更新する。 未指定なら従来挙動 (= silent fetch)。
           // b41: opts.skipTerrain (= viewer の ?noterrain) なら DEM / 航空写真とも
           // 配布元を叩かず、 平坦な標高ゼログリッド + 下地一色テクスチャで地形を組む。
-          // b70: 高精細メッシュ範囲を z12 タイル境界に揃った demBoundsAligned (= Y のみ
-          // 8 の倍数スナップ) に置換。 これで外周 4 ストリップの z12 タイル境界と
-          // 数学的に一致 (= 隙間/重複ゼロ)。 z15 タイル数 96 → 128 (+33%、 MAX_TILES 内)。
-          const demA = alignDemBoundsToZ12Y(opts.dbBounds);
+          // b70: 高精細メッシュ範囲を X+Y 両軸 z12 タイル境界に揃った demBoundsAligned に
+          // 置換。 これで外周 4 ストリップの z12 タイル境界と数学的に完全一致 (= 隙間 /
+          // 重複ゼロ、 strip と demA の z12 タイル集合が disjoint)。 z15 タイル数 96 →
+          // 256 (= 16×16、 MAX_TILES 256 引き上げで丁度収まる)。
+          const demA = alignDemBoundsToZ12(opts.dbBounds);
           const dem = await loadDemStitched({
             bounds: demA, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
             onProgress: opts.onProgress, skipFetch: opts.skipTerrain,
@@ -498,6 +532,7 @@ export function createMapRenderer() {
               // 各 strip を並列で構築。 strip 単位 try/catch で 1 strip 死亡時も他 3 strip
               // + 高精細メッシュは続行 (= 局所粒度、 視覚的欠落は 1 方位のみ)。
               await Promise.all(Object.entries(strips).map(async ([dir, bbox]) => {
+                if (bbox === null) return;  // b70-X-FIX: 空 strip は skip
                 try {
                   const stripDem = await loadDemStitched({
                     bounds: bbox, tileCache,

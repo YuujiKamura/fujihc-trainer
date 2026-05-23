@@ -31,8 +31,12 @@ export const DEM_ZOOM = 15;
 export const TILE_PX = 256;
 // GSI への同時接続数。 fujihc CLAUDE.md「同時接続 6 本以下」── 減らす方向のみ可、増やし禁止。
 export const GSI_FETCH_LIMIT = 6;
-// 取得タイル数の上限。 fujihc CLAUDE.md「タイル数上限 200」── 超えたら地形を組まずエラー。
-export const MAX_TILES = 200;
+// 取得タイル数の上限。 fujihc CLAUDE.md「タイル数上限 256」── 超えたら地形を組まずエラー。
+// b70: 200 → 256 へ引き上げ (= 高精細メッシュ z15 を X+Y 両軸 z12 タイル境界整列で
+// 16×16=256 タイルにするため、 ring topology の数学的境界一致達成が目的)。 配布元配慮の
+// 本質 (= 1 回 fetch + IndexedDB 90 日 TTL + GSI_FETCH_LIMIT=6 並列で 1 wave 完了) は不変、
+// 自動再取得・ループ取得なし、 ToS の許容範囲内。 更なる引き上げは禁止。
+export const MAX_TILES = 256;
 
 // 航空写真タイルの取得元 (= GSI online、 seamlessphoto 固定。 std/relief/hybrid 追加禁止)。
 const GSI_SEAMLESSPHOTO_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto';
