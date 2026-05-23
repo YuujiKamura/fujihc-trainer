@@ -35,17 +35,20 @@ function numField(line, field) {
   return m ? Number(m[1]) : NaN;
 }
 
-const ATMO_KEYS = ['atmoMie', 'atmoG', 'atmoDensity', 'atmoRayleigh', 'atmoSun'];
+// b71: 大気散乱 4 本 (= setAtmosphereParams 経由) + 背景スフィア 1 本 (= setSkyIntensity 経由)。
+const ATMO_KEYS = ['atmoMie', 'atmoG', 'atmoDensity', 'atmoSun'];
+const SKY_KEYS = ['skyIntensity'];
+const ALL_KEYS = [...ATMO_KEYS, ...SKY_KEYS];
 
-describe('b62/b71: CONTROL_DEFS の大気散乱スライダー 5 本', () => {
-  it('5 本すべてが CONTROL_DEFS に存在する (= b71 で atmoRayleigh = 空の青さ を追加)', () => {
-    for (const key of ATMO_KEYS) {
+describe('b62/b71: CONTROL_DEFS の大気・空関連スライダー 5 本', () => {
+  it('5 本すべてが CONTROL_DEFS に存在する (= b71 で skyIntensity = 空の青さ を追加)', () => {
+    for (const key of ALL_KEYS) {
       expect(defLine(key), `${key} の def が無い`).not.toBeNull();
     }
   });
 
   it('各 def が isValidControlDef 相当を満たす (min<max / step>0 / value∈[min,max])', () => {
-    for (const key of ATMO_KEYS) {
+    for (const key of ALL_KEYS) {
       const line = defLine(key);
       const min = numField(line, 'min');
       const max = numField(line, 'max');
@@ -60,10 +63,14 @@ describe('b62/b71: CONTROL_DEFS の大気散乱スライダー 5 本', () => {
     }
   });
 
-  it('各 def の apply が mapRenderer.setAtmosphereParams を呼ぶ (= 配線の入口)', () => {
+  it('大気散乱 4 本の apply が mapRenderer.setAtmosphereParams を呼ぶ (= 配線の入口)', () => {
     for (const key of ATMO_KEYS) {
       expect(defLine(key)).toMatch(/mapRenderer\.setAtmosphereParams\(/);
     }
+  });
+
+  it('空関連 1 本 (skyIntensity) の apply が mapRenderer.setSkyIntensity を呼ぶ (= b71 別配線)', () => {
+    expect(defLine('skyIntensity')).toMatch(/mapRenderer\.setSkyIntensity\(/);
   });
 
   it('apply が流す setAtmosphereParams のキーが atmosphere3d.js の setParams 対応キー', () => {

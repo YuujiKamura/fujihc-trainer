@@ -353,6 +353,7 @@ export function createMapRenderer() {
           // 起動時に localStorage 値由来の apply が走る。 scene 未生成のあいだに保留した
           // 散乱パラメータを、 ここで一括反映する (= sunDir / sunStrength と同じ並び)。
           if (pending.atmoParams) scene.setAtmosphereParams(pending.atmoParams);
+          if (Number.isFinite(pending.skyIntensity)) scene.setSkyIntensity(pending.skyIntensity);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);
@@ -605,6 +606,16 @@ export function createMapRenderer() {
     // b62: 大気散乱の uniform を読む口 (= e2e の観測用)。 scene 未生成なら null。
     getAtmosphereUniforms() {
       return scene ? scene.getAtmosphereUniforms() : null;
+    },
+
+    // b71: 背景スフィアの天頂色濃度を変える ── 機器設定パネル「大気 空の青さ」 配線口。
+    // scene 未生成なら pending に保留 (= setSunlightStrength と同型)。
+    setSkyIntensity(intensity) {
+      if (scene) {
+        scene.setSkyIntensity(intensity);
+      } else {
+        pending.skyIntensity = intensity;
+      }
     },
 
     // === 起点 / 終点マーカー ===

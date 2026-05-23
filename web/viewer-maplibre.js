@@ -2250,10 +2250,12 @@ const CONTROL_DEFS = [
   { key:'atmoG',       label:'大気 Mie異方性 g',  min:0,   max:95,   step:5,  value:0,   unit:'g',      format:raw=>(raw/100).toFixed(2),         apply(raw){ mapRenderer.setAtmosphereParams({ mieG: raw/100 }); } },
   // atmoDensity: raw = ATMO_DENSITY ×10 (raw 10 = density 1.0)。 b71 で user 画面値 1.0 に (= 3.5 から)。
   { key:'atmoDensity', label:'大気 散乱密度',     min:5,   max:80,   step:1,  value:10,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setAtmosphereParams({ density: raw/10 }); } },
-  // atmoRayleigh: raw = ATMO_RAYLEIGH_SCALE ×100 (raw 100 = 1.0 倍)。 b71 で user 指示「空の青の濃さ
-  //   調整スライダー」 として追加。 0 = 青散乱ゼロ (太陽周りだけ明るい黒い空)、 100 = 標準大気、
-  //   300 = 青を 3 倍濃く (= 遠景が青く飽和)。 Mie 散乱とは独立に空の青さだけ動かせる。
-  { key:'atmoRayleigh',label:'大気 空の青さ',     min:0,   max:300,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ rayleighScale: raw/100 }); } },
+  // skyIntensity: raw 0..200 = 天頂色濃度の倍率 ×100。 0 = 天頂が白 (空の青さゼロ)、
+  //   100 = 標準 (= SKY_ZENITH の現状色)、 200 = 深い夜空寄りの濃紺。 背景スフィア
+  //   (= scene.js buildSkyDome の vertex color グラデーション) の天頂色だけ動かす。
+  //   地平線色 (SKY_HORIZON、 朝霞) は不変。 大気散乱 (atmoMie / atmoRayleighScale) とは
+  //   別レイヤー (= 背景球の塗り) なので独立に動く。
+  { key:'skyIntensity',label:'大気 空の青さ',     min:0,   max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSkyIntensity(raw/100); } },
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
 ];

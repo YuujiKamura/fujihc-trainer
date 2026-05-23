@@ -74,25 +74,41 @@ function sunPosition(azimuthDeg, elevationDeg, dist) {
  *
  * @returns {THREE.Mesh} 青空ドームメッシュ (単位球、 呼び出し側が span に応じて scale する)
  */
+// b71: skyIntensity スライダーで使う「天頂の濃さ」 を白 ↔ SKY_ZENITH ↔ 飽和深青 で
+// 動かす純関数。 intensity = 0 で天頂が白 (= 空の青さゼロ)、 1.0 で現状の SKY_ZENITH、
+// 2.0 で深い夜空寄りの青に振る。 horizon (地平線) はモヤの色なので不変、 zenith だけ動く。
+function zenithColorForIntensity(intensity) {
+  const t = Number.isFinite(intensity) ? Math.max(0, Math.min(2, intensity)) : 1;
+  const base = new THREE.Color(SKY_ZENITH);
+  if (t <= 1) {
+    return new THREE.Color(0xffffff).lerp(base, t);
+  }
+  // intensity > 1 では SKY_ZENITH を深い青 (= 高高度の濃紺) 方向に lerp。
+  return base.clone().lerp(new THREE.Color(0x102060), t - 1);
+}
+
+// b71: 頂点カラーを再生成する純関数 (= dome rebuild、 setSkyIntensity から呼ぶ)。
+// geometry の color attribute を in-place 更新、 needsUpdate true でフレーム反映。
+function paintSkyDomeColors(dome, intensity) {
+  const geo = dome.geometry;
+  const pos = geo.attributes.position;
+  const attr = geo.attributes.color;
+  const zenith = zenithColorForIntensity(intensity);
+  const horizon = new THREE.Color(SKY_HORIZON);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i += 1) {
+    const t = Math.max(0, Math.min(1, pos.getY(i))) ** 0.4;
+    c.copy(horizon).lerp(zenith, t);
+    attr.setXYZ(i, c.r, c.g, c.b);
+  }
+  attr.needsUpdate = true;
+}
+
 function buildSkyDome() {
   // 単位球。 高さ方向の分割を多めにしてグラデーションのバンディングを抑える。
   const geo = new THREE.SphereGeometry(1, 32, 64);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const zenith = new THREE.Color(SKY_ZENITH);
-  const horizon = new THREE.Color(SKY_HORIZON);
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i += 1) {
-    // 単位球なので頂点 y は -1..1 = そのまま仰角の sin。 地平線 (y<=0) は horizon 色、
-    // 天頂 (y=1) に向かって zenith 色へ補間する。 ** 0.4 のカーブで青を低空まで効かせる
-    // ── 線形だと地平線の白っぽい色が低空を支配し、 やや見下ろし視点のこの viewer では
-    // 空がほぼ白く見えてしまう。 MapLibre の sky も地平線の細い光帯以外はほぼ青。
-    const t = Math.max(0, Math.min(1, pos.getY(i))) ** 0.4;
-    c.copy(horizon).lerp(zenith, t);
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.MeshBasicMaterial({
     vertexColors: true,
@@ -104,6 +120,8 @@ function buildSkyDome() {
   dome.renderOrder = -1;       // 最初に描く純粋な背景
   dome.frustumCulled = false;  // 常にカメラを包むのでカリング対象外
   dome.scale.setScalar(DEFAULT_SPAN_M * SKY_DOME_SPAN_FACTOR);  // configureScale で実 span に更新
+  // 初期色は intensity=1.0 (= 現状の SKY_ZENITH / SKY_HORIZON グラデーション)。
+  paintSkyDomeColors(dome, 1);
   return dome;
 }
 
@@ -217,6 +235,13 @@ export function createScene({ container, capture = false }) {
     // 変わったことを観測するため)。createAtmosphere の uniforms をそのまま返す。
     getAtmosphereUniforms() {
       return atmosphere.uniforms;
+    },
+
+    // b71: 背景スフィア (= skyDome) の天頂色濃度を実行時に変える ── 機器設定パネル
+    // スライダー「大気 空の青さ」 の配線口。 intensity = 0 で天頂白 (青なし)、 1.0 で現状、
+    // 2.0 で深い青。 頂点カラー attribute を in-place 更新、 needsUpdate で次フレーム反映。
+    setSkyIntensity(intensity) {
+      paintSkyDomeColors(skyDome, intensity);
     },
 
     // 影オルソカメラを自機 (pos) 中心へ寄せる。 太陽光の向き (= hillshade) は変えず、
