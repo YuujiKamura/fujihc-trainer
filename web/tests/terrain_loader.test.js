@@ -41,10 +41,12 @@ function makeFetch(map) {
 }
 
 describe('buildGsiProbeUrls (b69: gsiDirectBase 1 引数)', () => {
-  it('default lon/lat (= 富士山中央) で z=15 タイル 3 枚を生成 (b59: dem5a z15)', () => {
+  it('default lon/lat (= 富士山中央) で terrainConfig.zoom タイル 3 枚を生成 (b71: 「設定 1 箇所」 派生)', async () => {
+    const { fujihill } = await import('../courses/fujihill.js');
+    const z = fujihill.terrainConfig.zoom;
     const urls = buildGsiProbeUrls(TEST_DIRECT_BASE);
     expect(urls.length).toBe(3);
-    expect(urls[0]).toMatch(/\/15\/\d+\/\d+\.png$/);
+    expect(urls[0]).toMatch(new RegExp(`\\/${z}\\/\\d+\\/\\d+\\.png$`));
   });
 
   it('opts.lon / opts.lat で別座標の tile を計算', () => {
@@ -56,9 +58,11 @@ describe('buildGsiProbeUrls (b69: gsiDirectBase 1 引数)', () => {
     expect(bx).toBeGreaterThan(ax);
   });
 
-  it('gsiDirectBase prefix を尊重 (= GSI 公式 endpoint へ直接 append)', () => {
-    expect(buildGsiProbeUrls('https://example.test/dem')[0]).toMatch(/^https:\/\/example\.test\/dem\/15\//);
-    expect(buildGsiProbeUrls('https://other.test/x')[0]).toMatch(/^https:\/\/other\.test\/x\/15\//);
+  it('gsiDirectBase prefix を尊重 (= GSI 公式 endpoint へ直接 append)', async () => {
+    const { fujihill } = await import('../courses/fujihill.js');
+    const z = fujihill.terrainConfig.zoom;
+    expect(buildGsiProbeUrls('https://example.test/dem')[0]).toMatch(new RegExp(`^https:\\/\\/example\\.test\\/dem\\/${z}\\/`));
+    expect(buildGsiProbeUrls('https://other.test/x')[0]).toMatch(new RegExp(`^https:\\/\\/other\\.test\\/x\\/${z}\\/`));
   });
 });
 
@@ -371,13 +375,14 @@ describe('createTerrainLoader: IndexedDB chain (b69: 2 段に統一)', () => {
     expect(urls[2]).toMatch(new RegExp(`/${coords[2].z}/${coords[2].x}/${coords[2].y}\\.png$`));
   });
 
-  it('probe zoom は DEM 取得 zoom (= dem5a z15) と一致する (b59)', () => {
-    // b59: GSI_PROBE_Z は module-scope const で export されないため、 probe coords 経由で
-    // pin する。 probe zoom が DEM 取得 zoom (tile_loader3d.js DEM_ZOOM / GSI_DEM_ZOOMS)
-    // とずれると、 Python prefetch 済 DB に無いタイルを probe して terrainReady 永久 false。
+  it('probe zoom は terrainConfig.zoom と一致する (b71: 「設定 1 箇所」 派生 pin)', async () => {
+    // GSI_PROBE_Z は module-scope const で export されないため、 probe coords 経由で pin。
+    // probe zoom が DEM 取得 zoom (= fujihill.terrainConfig.zoom) とずれると、 Python prefetch
+    // 済 DB に無いタイルを probe して terrainReady 永久 false。
+    const { fujihill } = await import('../courses/fujihill.js');
     const coords = buildGsiProbeCoords();
     for (const c of coords) {
-      expect(c.z).toBe(15);
+      expect(c.z).toBe(fujihill.terrainConfig.zoom);
     }
   });
 

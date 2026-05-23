@@ -23,20 +23,24 @@
 //     取得はしない。
 
 import { tileRangeForBounds, stitchHeightGrid, decodeGsiHeightGrid } from '../terrain3d.js';
+import { fujihill } from '../../courses/fujihill.js';
 
-// DEM タイルの取得 zoom。 b59 で dem_png z14 (= 10m メッシュ相当) から dem5a_png z15
-// (= 5m メッシュ、 256x256) へ引上げて地形を高精細化。 dem5a_png は z15 が native 上限。
-// dem_png と dem5a_png は同一の標高 PNG エンコードなので decodeGsiHeightGrid は不変。
-export const DEM_ZOOM = 15;
+// DEM タイルの取得 zoom。 b71 で「設定 1 箇所」 (= fujihill.terrainConfig.zoom) からの派生に
+// 統一 ── ここに数字を書かない。 zoom を変えたい場合は `web/courses/fujihill.js` の
+// `TERRAIN_CONFIG.zoom` を書き換えるだけで、 viewer / Python prefetch / test 全部追随する。
+// dem5a_png は z9-15 配信、 値はその範囲内に保つ。 dem_png と dem5a_png は同一の標高 PNG
+// エンコードなので decodeGsiHeightGrid は不変。 b71 で高精細 / 外周 2 段構成は廃止、 全 mesh
+// を単一 zoom (本定数) で作る ── ring topology 関連は撤去。
+export const DEM_ZOOM = fujihill.terrainConfig.zoom;
 export const TILE_PX = 256;
 // GSI への同時接続数。 fujihc CLAUDE.md「同時接続 6 本以下」── 減らす方向のみ可、増やし禁止。
 export const GSI_FETCH_LIMIT = 6;
-// 取得タイル数の上限。 fujihc CLAUDE.md「タイル数上限 256」── 超えたら地形を組まずエラー。
-// b70: 200 → 256 へ引き上げ (= 高精細メッシュ z15 を X+Y 両軸 z12 タイル境界整列で
-// 16×16=256 タイルにするため、 ring topology の数学的境界一致達成が目的)。 配布元配慮の
-// 本質 (= 1 回 fetch + IndexedDB 90 日 TTL + GSI_FETCH_LIMIT=6 並列で 1 wave 完了) は不変、
-// 自動再取得・ループ取得なし、 ToS の許容範囲内。 更なる引き上げは禁止。
-export const MAX_TILES = 256;
+// 取得タイル数の上限。 fujihc CLAUDE.md「タイル数上限 200」── 超えたら地形を組まずエラー。
+// b70 は ring topology 境界整列達成のため 200 → 256 に一時引き上げていたが、 b71 で外周
+// ストリップ廃止 + z14 化により単一メッシュ 約 42 タイルで余裕、 200 に戻す (= 「緩めた gate
+// は必要消滅で戻す」 規律)。 配布元配慮の本質 (= 1 回 fetch + IndexedDB 90 日 TTL +
+// GSI_FETCH_LIMIT=6 並列で 1 wave 完了、 自動再取得・ループ取得なし、 ToS 内) は不変。
+export const MAX_TILES = 200;
 
 // 航空写真タイルの取得元 (= GSI online、 seamlessphoto 固定。 std/relief/hybrid 追加禁止)。
 const GSI_SEAMLESSPHOTO_BASE = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto';
@@ -177,13 +181,31 @@ export async function loadDemStitched({ bounds, tileCache, gsiDirectBase, zoom, 
         }
       } catch { /* cache 失敗は silent skip、 GSI 直 fetch にfall back */ }
     }
-    // 2. GSI 直 fetch (= b67 で唯一の取得経路、 bridge 段は撤去済)
+    // 2. GSI 直 fetch ── dem5a_png は富士山周辺で全カバーではなく、 周辺端 (= 河口湖 /
+    // 山中湖外側等) で 404 を返す穴がある。 404 のときは dem_png (= 全国 10m メッシュ
+    // カバー、 z0-14 配信) に fallback して穴埋め (= viewer の「陥没」 を解消)。
+    // b71: dem5a 主経路 + dem_png fallback の 2 段。 配布元負荷の本質は不変
+    // (= 1 ユーザーの cold load 1 回、 dem5a 成功率分は dem_png に流れず、 失敗率分
+    // だけ dem_png 追加 fetch、 IndexedDB に persist し TTL 内は再取得ゼロ)。
     const directResult = await tryFetchDemTile(`${gsiDirectBase}/${z}/${tx}/${ty}.png`);
     if (directResult.grid) {
       if (tileCache && directResult.bytes) {
         try { await tileCache.set('dem_png', z, tx, ty, directResult.bytes); } catch {}
       }
       return { tx, ty, grid: directResult.grid };
+    }
+    // 3. dem5a 404 のとき dem_png に fallback (= 同 zoom、 同 tile 番号で再取得)。
+    // URL は gsiDirectBase の 'dem5a_png' を 'dem_png' に置換するだけ ── endpoint 知識を
+    // tile_loader3d.js 外に増やさないため (= terrain_loader.js の 2 export 復活を避ける)。
+    const fallbackUrl = `${gsiDirectBase.replace('dem5a_png', 'dem_png')}/${z}/${tx}/${ty}.png`;
+    if (fallbackUrl !== `${gsiDirectBase}/${z}/${tx}/${ty}.png`) {
+      const fallbackResult = await tryFetchDemTile(fallbackUrl);
+      if (fallbackResult.grid) {
+        if (tileCache && fallbackResult.bytes) {
+          try { await tileCache.set('dem_png', z, tx, ty, fallbackResult.bytes); } catch {}
+        }
+        return { tx, ty, grid: fallbackResult.grid };
+      }
     }
     return { tx, ty, grid: null };
   }, onProgress);

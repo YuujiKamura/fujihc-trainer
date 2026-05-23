@@ -28,7 +28,8 @@
 
 - **取得は 1 回だけ**: ページを開いた 1 回、コース外接矩形を覆う数十枚のみ。自動再取得・ループ取得は禁止。
 - **同時接続 6 本以下**: `GSI_FETCH_LIMIT = 6` を減らす方向にのみ変更可、増やし禁止。
-- **タイル数上限 256**: `MAX_TILES = 256` を超えたら地形を組まずエラー。 b70 で ring topology の X+Y 両軸 z12 タイル境界整列達成のため 200 → 256 に引き上げ (= 高精細 z15 = 16×16 = 256 タイル丁度)。 配布元配慮の本質 (= 1 回 fetch + IndexedDB 90 日 TTL + GSI_FETCH_LIMIT=6 並列で 1 wave 完了、 自動再取得・ループ取得なし、 ToS 内) は不変。 さらなる引き上げは禁止。
+- **タイル数上限 200**: `MAX_TILES = 200` を超えたら地形を組まずエラー。 b70 は ring topology 境界整列達成のため一時 256 に引き上げたが、 b71 で外周ストリップ廃止 + 単一 zoom 統合でタイル数約 42 で余裕、 200 に戻した (= 「緩めた gate は必要消滅で戻す」 規律)。 配布元配慮の本質 (= 1 回 fetch + IndexedDB 90 日 TTL + GSI_FETCH_LIMIT=6 並列で 1 wave 完了、 自動再取得・ループ取得なし、 ToS 内) は不変。 さらなる引き上げは禁止。
+- **「設定 1 箇所」 SoT**: 地形タイルの zoom / bbox は `web/courses/fujihill.js:TERRAIN_CONFIG` (JS) と `src/fujihill/tile_constants.py:TERRAIN_CONFIG` (Python) の 2 SoT、 `DEM_ZOOM` / `GSI_PROBE_Z` / `GSI_DEM_ZOOMS` / `demBounds` / `FUJI_TERRAIN_BBOX` は全てそこからの派生。 zoom や bbox を変えたい時は **JS / Python の TERRAIN_CONFIG を同値で書き換えるだけ**で全部追随する設計。 cross-language 同期は `tests/test_b59_dem5a.py` で値同値性 pin。
 - **seamlessphoto 固定**: `std` / `relief` / `hybrid` はサーバ負荷が倍増するため封印。追加禁止。
 - **Python スクリプト**: `GSI_RATE_LIMIT_SEC = 1.0` (1 req/s)。速くするな。
 - **IndexedDB キャッシュ必須**: `openTileCache()` を外さない。TTL 内は GSI に再アクセスしない設計を壊さない。

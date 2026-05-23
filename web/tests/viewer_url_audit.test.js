@@ -365,9 +365,9 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(tileLoader3d).not.toMatch(/\/xyz\/dem\/[0-9]/);
   });
 
-  it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=256 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在 (= b70-X-FIX で 200→256)', () => {
+  it('tile_loader3d.js に GSI_FETCH_LIMIT=6 / MAX_TILES=200 / seamlessphoto 固定 (= CLAUDE.md 規律) の物理 gate が同時存在 (= b71 で 256 → 200 戻し)', () => {
     expect(tileLoader3d).toMatch(/export\s+const\s+GSI_FETCH_LIMIT\s*=\s*6/);
-    expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*256/);
+    expect(tileLoader3d).toMatch(/export\s+const\s+MAX_TILES\s*=\s*200/);
     expect(tileLoader3d).toMatch(/GSI_SEAMLESSPHOTO_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/seamlessphoto['"]/);
   });
 
@@ -407,37 +407,27 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(tileLoader3d).toMatch(/export\s+async\s+function\s+loadDemStitched\s*\(\s*\{[^}]*zoom[^}]*\}/);
   });
 
-  // b70: ring topology 化で b67 の単一広域メッシュ + polygonOffset を撤去。
-  // 復活したら気づけるよう negative grep で物理 pin (= catalog C2(e) 撤去 brief 規律)。
-  it('b70: index.js から polygonOffset 設定が消えている (= ring topology で overlap 不在)', () => {
+  // b71: ring topology (= 外周ストリップ / WIDE / align*ToZ12 / buildWideStripBboxes) は
+  // 撤去済、 復活したら気づけるよう negative grep で物理 pin。 単一 zoom (= terrainConfig.zoom)
+  // で `opts.dbBounds` を直接覆う 1 mesh のみ作る設計に統一。
+  it('b71: index.js から polygonOffset 設定が消えている', () => {
     expect(map3dIndex).not.toMatch(/polygonOffset\s*=\s*true/);
     expect(map3dIndex).not.toMatch(/polygonOffsetFactor/);
     expect(map3dIndex).not.toMatch(/polygonOffsetUnits/);
   });
 
-  it('b70: index.js から renderOrder = -1 (= b67 の widely-low 用) が消えている', () => {
-    expect(map3dIndex).not.toMatch(/renderOrder\s*=\s*-1/);
+  it('b71: index.js から ring topology / align*ToZ12 / buildWideStripBboxes / WIDE_DEM_ZOOM / wideBounds 全削除', () => {
+    expect(map3dIndex).not.toMatch(/alignDemBoundsToZ12/);
+    expect(map3dIndex).not.toMatch(/alignDbBoundsToZ12/);
+    expect(map3dIndex).not.toMatch(/buildWideStripBboxes/);
+    expect(map3dIndex).not.toMatch(/WIDE_DEM_ZOOM/);
+    expect(map3dIndex).not.toMatch(/opts\.wideBounds/);
+    expect(map3dIndex).not.toMatch(/GSI_DEM_PNG_DIRECT_BASE/);
+    expect(map3dIndex).not.toMatch(/Z15_TO_Z12_RATIO/);
   });
 
-  it('b70: index.js に「単一広域メッシュ経路」 (= bounds: opts.wideBounds の 1 回呼び出し) が残っていない', () => {
-    // 4 strip は個別 bbox で loadDemStitched を呼ぶので literal 一致しない。
-    expect(map3dIndex).not.toMatch(/bounds:\s*opts\.wideBounds/);
-  });
-
-  it('b70-X-FIX: index.js が 3 純関数 (alignDemBoundsToZ12 / alignDbBoundsToZ12 / buildWideStripBboxes) を export', () => {
-    expect(map3dIndex).toMatch(/export\s+function\s+alignDemBoundsToZ12\s*\(/);
-    expect(map3dIndex).toMatch(/export\s+function\s+alignDbBoundsToZ12\s*\(/);
-    expect(map3dIndex).toMatch(/export\s+function\s+buildWideStripBboxes\s*\(/);
-  });
-
-  it('b70-X-FIX: index.js から旧 alignDemBoundsToZ12Y (= Y のみ snap) が消えている', () => {
-    // 旧 Y のみ snap は X 軸 overlap が残る欠陥実装、 復活したら気づけるよう物理 pin。
-    expect(map3dIndex).not.toMatch(/alignDemBoundsToZ12Y\s*\(/);
-    expect(map3dIndex).not.toMatch(/function\s+alignDemBoundsToZ12Y/);
-  });
-
-  it('b70-X-FIX: index.js に ?nohighres=1 debug ハンドル (= 実画面検証で demA 内が空であることを構造目視) が存在', () => {
-    expect(map3dIndex).toMatch(/URLSearchParams\(location\.search\)\.has\(['"]nohighres['"]\)/);
+  it('b71: index.js は loadDemStitched に opts.dbBounds を直接渡す (= 単一 mesh 構成)', () => {
+    expect(map3dIndex).toMatch(/loadDemStitched\([\s\S]{0,80}bounds:\s*opts\.dbBounds/);
   });
 });
 

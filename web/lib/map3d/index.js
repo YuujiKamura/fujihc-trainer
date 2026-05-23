@@ -25,8 +25,7 @@ import { createLabels3d, LABEL_BASE_HEIGHT_M } from './labels3d.js';
 import { createLandmarks3d } from './landmarks3d.js';
 import { ROAD_OFFSET_M } from './terrain_surface.js';
 import { loadDemStitched, loadPhotoCanvas } from './tile_loader3d.js';
-import { sampleHeightBilinear, tileRangeForBounds } from '../terrain3d.js';
-import { tileXToLon, tileYToLat } from '../tile_math.js';
+import { sampleHeightBilinear } from '../terrain3d.js';
 import { buildGradeColoredRoadPolygons } from '../road_polygon.js';
 import { computeTravelHeading } from '../heading.js';
 import { resampleCourse } from '../rider_placement.js';
@@ -34,127 +33,11 @@ import { openTileCache } from '../tile_cache.js';
 // b31: GSI dem direct base は terrain_loader.js 側で定義 (= literal を本体に書かない、
 // viewer_url_audit.test.js が viewer-maplibre.js 単体 scan する scope と整合させる用 ── 本 file は
 // scan 対象外だが、 source-of-truth を 1 箇所に集約しておくことで dead URL constant の散在を避ける)。
-// b67: GSI_DEM_PNG_DIRECT_BASE は広域低精細メッシュ (= dbBounds 22km四方を z12 で覆う背景) 用、
-// 同じく terrain_loader.js が SoT。
-import { GSI_DEM_DIRECT_BASE, GSI_DEM_PNG_DIRECT_BASE } from '../terrain_loader.js';
+// b71: 外周ストリップ用 dem_png 経路は廃止 (= 単一 zoom 構成へ統合)、 dem5a_png 経路のみ使う。
+import { GSI_DEM_DIRECT_BASE } from '../terrain_loader.js';
 
 // 緯度 1 度あたりのメートル (= terrain3d.js と同値)。
 const M_PER_DEG_LAT = 111320;
-
-// b67: 広域低精細メッシュの取得 zoom。 値は 12 ── dbBounds (22km四方) を z12 なら 12 タイルで
-// 覆える (実測 `tileRangeForBounds(fujihill.dbBounds, 12).count === 12`、 zoom_bounds.test.js
-// で pin)。 z15 で 437 タイル MAX_TILES 超過、 z14=120、 z13=35 と比べて z12=12 が最少。
-// 1 タイルが約 4 倍の面積を覆い、 GSI_FETCH_LIMIT=6 並列で 2 wave、 配布元負荷最小。 値を
-// 1 行定数にしてあるので将来 zoom を変えるのは値 1 つの変更で済む (配布元配慮上、 上げる
-// 方向の変更は慎重に ── 1 段上げると枚数が約 4 倍に増える)。
-const WIDE_DEM_ZOOM = 12;
-
-// b70: 広域低精細メッシュを「単一 dbBounds で覆い polygonOffset で高精細を上に出す」 (b67)
-// → 4 外周ストリップで dbBounds から demBounds を引いた ring 形に作り直す。 z12 タイル
-// 境界が strip 辺と揃わないと隙間 / 重複が残るため、 demBounds を X+Y 両軸 z12 タイル
-// 整数倍に外向きスナップしてから 4 strip を取る。 z15 と z12 は倍率 8 で入れ子になっている
-// 性質を利用 ── z15 タイル番号を 8 の倍数に揃えれば z12 タイル境界とぴったり揃う。
-// b70 初版は Y 軸のみスナップで X 軸 overlap (= east/west strip が demA 内側に約 6.6km
-// 張り出し) が残っていた (b70-X-FIX で修正)。 X+Y 両軸スナップ後の z15 タイル数 = 16×16
-// = 256 (= MAX_TILES 256 丁度、 fujihc CLAUDE.md で 200 → 256 引き上げ済)。
-const Z15_TO_Z12_RATIO = 1 << (15 - 12);  // = 8
-// 次タイル境界の lon/lat を bbox として使うと tileRangeForBounds が境界エッジを次タイル
-// として +1 タイル余分に数える (= 浮動小数の floor アーティファクト)、 微小に内側へ戻す。
-// 1e-9 度 ≒ 0.1 mm 相当で実害ゼロ。
-const SNAP_EPS = 1e-9;
-
-/**
- * demBounds を X+Y 両軸 z12 タイル整数倍に外向きスナップした [W,S,E,N] を返す純関数.
- *
- * b70 初版は Y 軸のみスナップだったが、 X 軸を生 lat/lon のままにすると east/west strip
- * の z12 タイル境界が demA の対辺と揃わず、 strip の z12 タイルが demA 内側に約 6.6km
- * (= z12 タイル 1〜2 枚) 食い込む overlap が残った (= b70-X-FIX で修正)。 X+Y 両軸を
- * z12 タイル境界に揃えることで、 strip と demA の z12 タイル集合が完全に disjoint に
- * なり、 真の数学的隙間/重複ゼロを達成する。 z15 タイル数は 8×12=96 → 16×16=256
- * (= MAX_TILES 引き上げ済、 256 ぴったり)。
- *
- * @param {[number,number,number,number]} demBounds - [W, S, E, N]
- * @returns {[number,number,number,number]}
- */
-export function alignDemBoundsToZ12(demBounds) {
-  const r15 = tileRangeForBounds(demBounds, 15);
-  const xMinS = Math.floor(r15.xMin / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO;
-  const xMaxS = Math.ceil((r15.xMax + 1) / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO - 1;
-  const yMinS = Math.floor(r15.yMin / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO;
-  const yMaxS = Math.ceil((r15.yMax + 1) / Z15_TO_Z12_RATIO) * Z15_TO_Z12_RATIO - 1;
-  return [
-    tileXToLon(xMinS,     15),
-    tileYToLat(yMaxS + 1, 15) + SNAP_EPS,
-    tileXToLon(xMaxS + 1, 15) - SNAP_EPS,
-    tileYToLat(yMinS,     15) - SNAP_EPS,
-  ];
-}
-
-/**
- * dbBounds を両軸 z12 タイル整数倍に外向きスナップした [W,S,E,N] を返す純関数.
- *
- * @param {[number,number,number,number]} dbBounds - [W, S, E, N]
- * @returns {[number,number,number,number]}
- */
-export function alignDbBoundsToZ12(dbBounds) {
-  const r12 = tileRangeForBounds(dbBounds, 12);
-  return [
-    tileXToLon(r12.xMin,     12),
-    tileYToLat(r12.yMax + 1, 12) + SNAP_EPS,
-    tileXToLon(r12.xMax + 1, 12) - SNAP_EPS,
-    tileYToLat(r12.yMin,     12) - SNAP_EPS,
-  ];
-}
-
-/**
- * dbA から demA を引いた 4 外周ストリップ (北・南・東・西) の bbox を返す純関数.
- *
- * b70-X-FIX: 内部実装を z12 タイル番号ベースに書き換え。 旧実装は demA / dbA の lat/lon
- * をそのまま strip の bbox に使っていたが、 tileRangeForBounds の floor 挙動 (= lat/lon
- * が z12 タイル境界ちょうど or 微小に内側だと「上の tile」 も含めて余分カウント) で
- * strip と demA の z12 タイル集合が disjoint にならない問題があった (= overlap 残存)。
- * 本実装は demA / dbA を z12 タイル範囲に変換し、 タイル番号空間で disjoint な 4 strip
- * を組み、 lat/lon 復元時に次タイル境界より EPS 内側にして floor を安定化する。
- *
- * 規約: 角は北・南ストリップに含めて重複なく分割 (= 北・南が経度 dbA 全幅で取り、
- * 東・西は緯度 demA 範囲に閉じる)。 strip と demA の z12 タイル集合は完全に disjoint、
- * dbA = demA ∪ 4 strip の z12 タイル分割。
- *
- * 空 strip (= demA が dbA の端に接して 1 軸 strip が幅ゼロ) は null を返し、 caller で skip。
- *
- * @param {[number,number,number,number]} demA - alignDemBoundsToZ12 の戻り
- * @param {[number,number,number,number]} dbA  - alignDbBoundsToZ12 の戻り
- * @returns {{north, south, east, west}} 各 strip の bbox [W,S,E,N] か null
- */
-export function buildWideStripBboxes(demA, dbA) {
-  if (demA[0] < dbA[0] || demA[2] > dbA[2]
-   || demA[1] < dbA[1] || demA[3] > dbA[3]) {
-    throw new RangeError('buildWideStripBboxes: demA が dbA に内包されない');
-  }
-  const demT = tileRangeForBounds(demA, 12);
-  const dbT  = tileRangeForBounds(dbA,  12);
-  // z12 タイル番号範囲 → bbox lat/lon。 east/south 端は次タイル境界 - EPS で内側に
-  // 戻し、 tileRangeForBounds の floor が「次のタイル」 を余分に含めないように。
-  const tileToBbox = (xMin, xMax, yMin, yMax) => {
-    if (xMax < xMin || yMax < yMin) return null;  // 空 strip
-    return [
-      tileXToLon(xMin,     12),
-      tileYToLat(yMax + 1, 12) + SNAP_EPS,
-      tileXToLon(xMax + 1, 12) - SNAP_EPS,
-      tileYToLat(yMin,     12) - SNAP_EPS,
-    ];
-  };
-  return {
-    // 北: dbA 経度全幅、 緯度は dbA 北端 〜 demA 北端の 1 つ上 (= demT.yMin - 1)
-    north: tileToBbox(dbT.xMin,       dbT.xMax,     dbT.yMin,     demT.yMin - 1),
-    // 南: dbA 経度全幅、 緯度は demA 南端の 1 つ下 (= demT.yMax + 1) 〜 dbA 南端
-    south: tileToBbox(dbT.xMin,       dbT.xMax,     demT.yMax + 1, dbT.yMax),
-    // 東: 経度は demA 東端の 1 つ右 〜 dbA 東端、 緯度 demA 範囲
-    east:  tileToBbox(demT.xMax + 1,  dbT.xMax,     demT.yMin,    demT.yMax),
-    // 西: 経度 dbA 西端 〜 demA 西端の 1 つ左、 緯度 demA 範囲
-    west:  tileToBbox(dbT.xMin,       demT.xMin - 1, demT.yMin,   demT.yMax),
-  };
-}
 
 /**
  * curIdx と実測 lat/lon から、 コース始点からの走行距離 (m) を求める純関数.
@@ -440,20 +323,14 @@ export function createMapRenderer() {
               + '(E>=W, N>=S) が必要。 受領: ' + JSON.stringify(opts.dbBounds));
           }
           const tileCache = await openTileCache().catch(() => null);
-          // b31: DEM 経路を seamlessphoto と同パターンに揃える ── bridge mode (= ${origin}/tiles/gsi_dem)
-          // → GSI direct fallback (= GSI_DEM_DIRECT_BASE) → TileCache hit/set。
-          // 既存呼出 (= tileCache / gsiDirectBase 引数なし) は bridge fetch のみで挙動不変。
-          // brief 35: onProgress (= (done, total) => void) を viewer から bind して
-          // ロード overlay の進捗数値 / バーを更新する。 未指定なら従来挙動 (= silent fetch)。
-          // b41: opts.skipTerrain (= viewer の ?noterrain) なら DEM / 航空写真とも
-          // 配布元を叩かず、 平坦な標高ゼログリッド + 下地一色テクスチャで地形を組む。
-          // b70: 高精細メッシュ範囲を X+Y 両軸 z12 タイル境界に揃った demBoundsAligned に
-          // 置換。 これで外周 4 ストリップの z12 タイル境界と数学的に完全一致 (= 隙間 /
-          // 重複ゼロ、 strip と demA の z12 タイル集合が disjoint)。 z15 タイル数 96 →
-          // 256 (= 16×16、 MAX_TILES 256 引き上げで丁度収まる)。
-          const demA = alignDemBoundsToZ12(opts.dbBounds);
+          // DEM 経路: IndexedDB (= TileCache) hit → GSI 直 (= GSI_DEM_DIRECT_BASE) の 2 段。
+          // b71: 外周ストリップ / 高精細 2 段構成は廃止、 単一 zoom (= fujihill.terrainConfig.zoom)
+          // で `opts.dbBounds` (= viewer-maplibre.js が fujihill.demBounds を渡す、
+          // = 12 km 四方の正方形) を直接覆う 1 mesh のみ。
+          // brief 35: onProgress (= (done, total) => void) で進捗 cb。 b41: opts.skipTerrain
+          // なら DEM / 航空写真とも配布元を叩かず平坦標高ゼロ + 下地一色で組む。
           const dem = await loadDemStitched({
-            bounds: demA, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
+            bounds: opts.dbBounds, tileCache, gsiDirectBase: GSI_DEM_DIRECT_BASE,
             onProgress: opts.onProgress, skipFetch: opts.skipTerrain,
           });
           stitched = dem.stitched;
@@ -469,14 +346,7 @@ export function createMapRenderer() {
           // 地形メッシュは自機の影を受けない ── 自機の影が地形の山肌へ伸びるのが
           // 不自然なため、 受け手にしない (2026-05-21 指摘、 Three.js 既定 false)。
           // 自機の影はコースリボン上 (ribbon の receiveShadow) でのみ受ける。
-          // b70: debug ハンドル ?nohighres=1 で高精細メッシュを scene から外す
-          // (完了条件 §実画面確認 = 外周ストリップだけ描いて demA 内部が空である
-          // ことを構造で目視するため、 dev only)。
-          const noHighres = (() => {
-            try { return new URLSearchParams(location.search).has('nohighres'); }
-            catch { return false; }
-          })();
-          if (!noHighres) scene.add(terrainMesh);
+          scene.add(terrainMesh);
           // b61: 地形 material に物理ベース大気散乱 (aerial perspective) を注入する。
           scene.enableAtmosphere(terrainMesh.material);
           // b62: 機器設定パネルの atmosphere スライダーは boot より早く mount され、
@@ -515,59 +385,6 @@ export function createMapRenderer() {
           fireOnLoaded();
           // ?cap=1 のとき画面送信ループを開始する (= 開発時に実画面を観るための入口)。
           if (captureEnabled()) startFrameCapture();
-
-          // b70: 広域低精細メッシュを ring topology (= 外周 4 ストリップ) に作り直す。
-          // b67 は単一広域メッシュ + polygonOffset で「視覚的には ring」 だが構造的には
-          // demBounds 直下に 2 層が同居する設計だった ── 本当に外周だけを覆う 4 strip に
-          // 置換する。 dbBoundsAligned (z12 タイル整数倍に外向きスナップ) から
-          // demBoundsAligned (= 高精細メッシュ範囲) を引いた 4 矩形 (北・南・東・西)、
-          // 角は北・南に寄せる規約。 strip 境界は demA と数学的に一致 (= 隙間/重複ゼロ)。
-          // polygonOffset は不要 (= overlap が無い)。
-          if (isValidBounds(opts.wideBounds) && !opts.skipTerrain && geoMeta) {
-            console.time('[map3d] wideStrips build');
-            try {
-              const dbA = alignDbBoundsToZ12(opts.wideBounds);
-              const strips = buildWideStripBboxes(demA, dbA);
-              const mPerDegLon = M_PER_DEG_LAT * Math.cos((geoMeta.centerLat * Math.PI) / 180);
-              // 各 strip を並列で構築。 strip 単位 try/catch で 1 strip 死亡時も他 3 strip
-              // + 高精細メッシュは続行 (= 局所粒度、 視覚的欠落は 1 方位のみ)。
-              await Promise.all(Object.entries(strips).map(async ([dir, bbox]) => {
-                if (bbox === null) return;  // b70-X-FIX: 空 strip は skip
-                try {
-                  const stripDem = await loadDemStitched({
-                    bounds: bbox, tileCache,
-                    gsiDirectBase: GSI_DEM_PNG_DIRECT_BASE, zoom: WIDE_DEM_ZOOM,
-                  });
-                  // 無地マテリアル (= 航空写真の配布元取得ゼロ、 skipFetch:true で
-                  // tile_loader3d.js が GSI を叩かず #3b424c の canvas を返す)。
-                  const stripPhoto = await loadPhotoCanvas({
-                    range: stripDem.range, tileCache, skipFetch: true,
-                  });
-                  const stripBuilt = buildTerrainMesh({
-                    stitched: stripDem.stitched, range: stripDem.range, photoCanvas: stripPhoto,
-                  });
-                  // 座標原点を高精細メッシュ (geoMeta) に揃える平行移動。
-                  const dLon = stripBuilt.geo.centerLon - geoMeta.centerLon;
-                  const dLat = stripBuilt.geo.centerLat - geoMeta.centerLat;
-                  stripBuilt.mesh.position.x = dLon * mPerDegLon;
-                  stripBuilt.mesh.position.z = -dLat * M_PER_DEG_LAT;
-                  // 大気散乱は共有 (= 高精細と同じ aerial perspective で遠景が霞む)。
-                  scene.enableAtmosphere(stripBuilt.mesh.material);
-                  // polygonOffset / renderOrder は設定しない ── ring topology + 境界数学
-                  // 一致で overlap が無く、 設定すると将来の z-fighting デバッグを誤誘導する。
-                  scene.add(stripBuilt.mesh);
-                } catch (e) {
-                  console.warn(`[map3d] 広域 ${dir} ストリップ build 失敗:`, e);
-                }
-              }));
-            } catch (e) {
-              // strip 算出 (= buildWideStripBboxes の throw 等) で全 strip skip。
-              // 高精細メッシュと viewer 起動は既に fireOnLoaded() で完了済、 失敗時の
-              // 劣化は本 brief 着手前の状態 (= 外側虚空) にロールバックされるだけ。
-              console.warn('[map3d] 広域ストリップ群の構築に失敗 (= 背景のみ欠落、 viewer 続行):', e);
-            }
-            console.timeEnd('[map3d] wideStrips build');
-          }
         } catch (e) {
           // 例外時も viewer をロード画面で止めないよう onLoaded は呼ぶ。 terrainReady は
           // false のまま ── idle 発火・renderCourse の gate は地形が本当に組めたかを見る。

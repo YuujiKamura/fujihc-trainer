@@ -115,17 +115,25 @@ describe('brief 34 ε-7 integration: course.json と DB bbox の整合 (= 課題
   });
 });
 
-describe('b59: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲)', () => {
-  // src/fujihill/tile_constants.py の FUJI_TERRAIN_BBOX の写し [W, S, E, N]。
-  // 片方を動かしたら必ず両方を同期しろ ── 対になる pytest 側 pin は
-  // tests/test_b59_dem5a.py。
-  const PY_FUJI_TERRAIN_BBOX = [138.6845, 35.3561, 138.7642, 35.4566];
+describe('b71: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲、 terrainConfig 派生)', () => {
   // 富士山頂 (tile_constants.py / dbinit の covers_fuji_summit と同じ点)。
   const FUJI_SUMMIT = [138.7274, 35.3606];
   const COURSE = JSON.parse(readFileSync(resolve(__dirname, '..', 'course.json'), 'utf8'));
+  // b71: demBounds は fujihill.terrainConfig からの算出値、 値は変わりうるので
+  // 範囲条件 (= 富士山頂・コース全点を覆う、 dbBounds 内、 MAX_TILES 内) で pin する。
+  // terrainConfig.zoom / bboxKm を変えれば demBounds も連動して変わる。
 
-  it('fujihill.demBounds が存在し [138.6845, 35.3561, 138.7642, 35.4566]', () => {
-    expect(fujihill.demBounds).toEqual([138.6845, 35.3561, 138.7642, 35.4566]);
+  it('fujihill.terrainConfig が SoT として存在 (= zoom / bboxKm / 中央点 を持つ)', () => {
+    expect(fujihill.terrainConfig).toBeDefined();
+    expect(typeof fujihill.terrainConfig.zoom).toBe('number');
+    expect(typeof fujihill.terrainConfig.bboxKm).toBe('number');
+    expect(typeof fujihill.terrainConfig.centerLon).toBe('number');
+    expect(typeof fujihill.terrainConfig.centerLat).toBe('number');
+  });
+
+  it('fujihill.demBounds が computeDemBounds(terrainConfig) と一致 (= 派生関係 pin)', async () => {
+    const { computeDemBounds } = await import('../courses/fujihill.js');
+    expect(fujihill.demBounds).toEqual(computeDemBounds(fujihill.terrainConfig));
   });
 
   it('demBounds は dbBounds に内包される (= MapLibre source 範囲の内側)', () => {
@@ -155,44 +163,13 @@ describe('b59: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲)'
     expect(FUJI_SUMMIT[1]).toBeLessThanOrEqual(n);
   });
 
-  it('demBounds の z15 タイル数が MAX_TILES (200) 以下 (= loadDemStitched が RangeError を投げない)', () => {
-    // b59 の肝: dbBounds 全域 (22km四方) を z15 で取ると 437 枚で MAX_TILES 超過。
-    // course 外接 ∪ 富士山頂 に絞ることで z15 でも 200 内 (= 96 枚) に収める。
-    const range = tileRangeForBounds(fujihill.demBounds, 15);
+  it('demBounds の terrainConfig.zoom タイル数が MAX_TILES 以下 (= loadDemStitched が RangeError を投げない)', () => {
+    const range = tileRangeForBounds(fujihill.demBounds, fujihill.terrainConfig.zoom);
     expect(range.count).toBeGreaterThan(0);
     expect(range.count).toBeLessThanOrEqual(MAX_TILES);
   });
 
-  it('demBounds は Python の FUJI_TERRAIN_BBOX に内包される (= cross-language 二重定義 drift 検出)', () => {
-    // FUJI_TERRAIN_BBOX (Python prefetch 範囲) ⊇ demBounds (JS request 範囲) でないと、
-    // bridge mode で DB に無いタイルを viewer が要求して地形が欠ける。
-    const [jw, js, je, jn] = fujihill.demBounds;
-    const [pw, ps, pe, pn] = PY_FUJI_TERRAIN_BBOX;
-    expect(jw).toBeGreaterThanOrEqual(pw);
-    expect(js).toBeGreaterThanOrEqual(ps);
-    expect(je).toBeLessThanOrEqual(pe);
-    expect(jn).toBeLessThanOrEqual(pn);
-  });
-
   it('viewer-maplibre.js の bootMap は DEM 範囲に fujihill.demBounds を渡す (= dbBounds 流用への回帰防止)', () => {
-    // b59: map3d boot に渡す DEM 範囲は demBounds。 dbBounds (22km四方) に戻すと
-    // z15 で 437 枚 → MAX_TILES 超過 → 地形が組めない。
     expect(VIEWER).toMatch(/dbBounds:\s*fujihill\.demBounds/);
-  });
-
-  // b67/b70: 広域低精細メッシュ用 bbox。 b67 は dbBounds 全域 z12 = 12 タイル 1 枚で
-  // 覆っていた (= 高精細メッシュと overlap)、 b70 は ring topology に作り直して 4 strip
-  // + 高精細メッシュは demBoundsAligned に拡張、 dbBounds 全域 z12=12 自体は値根拠 pin
-  // として残置 (= dbBoundsAligned z12 タイル数とも一致する整合性確認、 値が変わったら
-  // course 定義 fujihill.dbBounds 側の変更を示唆)。
-  it('dbBounds (= 広域メッシュ用 22km四方) の z12 タイル数は 12 で MAX_TILES (200) 以下', () => {
-    expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBe(12);
-    expect(tileRangeForBounds(fujihill.dbBounds, 12).count).toBeLessThanOrEqual(MAX_TILES);
-  });
-
-  it('viewer-maplibre.js の bootMap は wideBounds に fujihill.dbBounds を渡す (= 広域メッシュ用)', () => {
-    // b67: 広域低精細メッシュは map3d/index.js boot 内で opts.wideBounds を読む。
-    // viewer 側 bootMap は course 定義 fujihill.dbBounds をそのまま渡すだけで literal は持たない。
-    expect(VIEWER).toMatch(/wideBounds:\s*fujihill\.dbBounds/);
   });
 });

@@ -13,22 +13,53 @@ DEFAULT_CORRIDOR_TILES = 3
 # 余白 (corridor とは別、 外接矩形に対する余白)
 DEFAULT_BUFFER_M = 1000  # 1 km
 
-# zoom 範囲 (brief 15/16 で source 別に override 可)
-# b59: dem5a (5mメッシュ) は z15 が native 上限。dem_png (10m相当) z14 から引上げて
-# 地形を高精細化。描画は Three.js 地形メッシュで、MapLibre terrain は使っていない。
-GSI_DEM_ZOOMS = [15]
-
-# DEM タイル事前取得 (bridge SQLite DB 用) の bbox.
-# (lon_min, lat_min, lon_max, lat_max).
+# ────────────────────────────────────────────────────────────────────────────
+# TERRAIN_CONFIG: 地形タイル取得の単一設定 (= SoT、 ここを変えれば全部追随する)
+# ────────────────────────────────────────────────────────────────────────────
 #
-# b59: viewer の Three.js 地形ローダーは web/courses/fujihill.js の demBounds 定数を
-# loadDemStitched に渡す。この FUJI_TERRAIN_BBOX は demBounds と同値に保つ
-# (= 二重定義、 ずれると bridge DB が JS 要求タイルを hit しきれず地形が欠ける、
-# test で FUJI_TERRAIN_BBOX ⊇ demBounds を pin する)。
-# demBounds = 富士ヒルコース外接 ∪ 富士山頂 + 500m buffer。 富士山頂 (138.7274,
-# 35.3606) はコース南端より南にあり、 これを含めないと 3D 地形メッシュに富士の山体が
-# 乗らず南で地形が切れる。 z15 で 96 tiles (corridor との和集合込、 MAX_TILES 200 内)。
-FUJI_TERRAIN_BBOX = (138.6845, 35.3561, 138.7642, 35.4566)
+# JS 側 `web/courses/fujihill.js:TERRAIN_CONFIG` と同値に保つ (= cross-language drift
+# 防止、 test_b59_dem5a.py で同値性 pin)。 zoom や bbox_km を変えたい場合は本 dict と
+# JS 側の両方を同じ値に揃える ── 各 1 箇所、 計 2 箇所変更で全部追随する設計。
+#
+#   zoom    : GSI dem5a_png 取得 zoom (= z9-15 配信範囲内)
+#   bbox_km : demBounds 正方形 1 辺 (km)
+#   center_lon / center_lat : demBounds 中央点
+TERRAIN_CONFIG = {
+    'zoom': 15,
+    'bbox_km': 12.0,
+    'center_lon': 138.7244,
+    'center_lat': 35.4063,
+}
+
+
+def _compute_terrain_bbox(config):
+    """TERRAIN_CONFIG から FUJI_TERRAIN_BBOX (lon_min, lat_min, lon_max, lat_max) を算出。
+
+    緯度 1 度 ≒ 111.32 km、 経度 1 度は cos(lat) 倍率。 ±(bbox_km / 2) km を度に変換。
+    JS の `web/courses/fujihill.js:computeDemBounds` と同じ式で再現可能 (= cross-language
+    pin の前提)。
+    """
+    import math
+    half_km = config['bbox_km'] / 2
+    d_lat = half_km / 111.32
+    d_lon = half_km / (111.32 * math.cos(math.radians(config['center_lat'])))
+    return (
+        config['center_lon'] - d_lon,
+        config['center_lat'] - d_lat,
+        config['center_lon'] + d_lon,
+        config['center_lat'] + d_lat,
+    )
+
+
+# zoom 範囲 (= TERRAIN_CONFIG から派生)。 brief 15/16 で source 別に override 可。
+# b71: 外周ストリップ / 高精細 2 段構成は廃止、 全 mesh を単一 zoom (TERRAIN_CONFIG.zoom)
+# で作る ── ring topology 関連は撤去。 dem5a_png z9-15 配信範囲内に保つこと。
+GSI_DEM_ZOOMS = [TERRAIN_CONFIG['zoom']]
+
+# DEM タイル事前取得 (bridge SQLite DB 用) の bbox = TERRAIN_CONFIG から算出。
+# JS 側の `fujihill.demBounds` (= computeDemBounds(TERRAIN_CONFIG)) と同値に保つ
+# (= cross-language drift 防止、 bridge DB が JS 要求タイルを hit する前提)。
+FUJI_TERRAIN_BBOX = _compute_terrain_bbox(TERRAIN_CONFIG)
 
 # OSM は zoom 13/14/15 の 3 段持つ (2026-05-15 再改).
 # 理由: viewer は minzoom=13/maxzoom=15 で OSM source を declare、 ride 開始前の

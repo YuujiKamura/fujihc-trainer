@@ -81,12 +81,13 @@ describe('mapLimit', () => {
 });
 
 describe('GSI 配慮の定数 (fujihc CLAUDE.md ── 変更禁止の pin)', () => {
-  it('同時接続上限は 6、タイル上限は 256 (b70 で 200→256)、DEM zoom は 15、タイルは 256px', () => {
+  it('同時接続上限は 6、 タイル上限は 200 (b71 で b70 256→戻し)、 DEM zoom は terrainConfig.zoom 派生、 タイルは 256px', async () => {
     expect(GSI_FETCH_LIMIT).toBe(6);
-    expect(MAX_TILES).toBe(256);
-    // b59: dem5a (5mメッシュ) は z15 が native 上限。dem_png z14 から引上げて高精細化。
+    expect(MAX_TILES).toBe(200);
+    // b71: DEM_ZOOM は fujihill.terrainConfig.zoom からの派生 (= 「設定 1 箇所」 SoT)。
     // GSI_FETCH_LIMIT / MAX_TILES は配布元配慮の上限で変更禁止のまま。
-    expect(DEM_ZOOM).toBe(15);
+    const { fujihill } = await import('../courses/fujihill.js');
+    expect(DEM_ZOOM).toBe(fujihill.terrainConfig.zoom);
     expect(TILE_PX).toBe(256);
   });
 });
@@ -115,7 +116,7 @@ describe('loadDemStitched (b67: bridge 段撤去 + zoom 引数)', () => {
     expect(seen.every((u) => u.startsWith('https://example.test/dem'))).toBe(true);
   });
 
-  it('zoom: 12 を渡すと URL に /12/ が出る (= 広域低精細メッシュ用)', async () => {
+  it('zoom: 12 を渡すと URL に /12/ が出る (= 関数 zoom 引数の汎用性)', async () => {
     const seen = [];
     globalThis.fetch = vi.fn(async (url) => { seen.push(url); return { ok: false, status: 404 }; });
     await expect(loadDemStitched({
@@ -126,14 +127,16 @@ describe('loadDemStitched (b67: bridge 段撤去 + zoom 引数)', () => {
     expect(seen.every((u) => /\/12\//.test(u))).toBe(true);
   });
 
-  it('zoom 未指定で DEM_ZOOM (= 15) が使われる (= 既定値の後方互換)', async () => {
+  it('zoom 未指定で DEM_ZOOM (= terrainConfig.zoom 派生) が使われる (= 既定値の後方互換)', async () => {
+    const { fujihill } = await import('../courses/fujihill.js');
+    const z = fujihill.terrainConfig.zoom;
     const seen = [];
     globalThis.fetch = vi.fn(async (url) => { seen.push(url); return { ok: false, status: 404 }; });
     await expect(loadDemStitched({
       bounds: SMALL_BBOX, tileCache: null,
       gsiDirectBase: 'https://example.test/dem',
     })).rejects.toThrow();
-    expect(seen.every((u) => /\/15\//.test(u))).toBe(true);
+    expect(seen.every((u) => new RegExp(`\\/${z}\\/`).test(u))).toBe(true);
   });
 
   it('gsiDirectBase 未指定で呼ぶと早期エラー (= 異常呼び出しを silent fallback しない)', async () => {

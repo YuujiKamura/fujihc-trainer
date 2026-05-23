@@ -67,10 +67,10 @@ function latToTileY(lat, z) {
 // 値は従来の inline literal (138.75 / 35.40) と完全同一、 動作は不変。
 const DB_CENTER_LON = fujihill.dbCenter[0];
 const DB_CENTER_LAT = fujihill.dbCenter[1];
-// b59: probe zoom は DEM 取得 zoom (= GSI_DEM_ZOOMS / tile_loader3d.js DEM_ZOOM) と
-// 必ず一致させる。 ずれると Python prefetch 済の DB に無いタイルを probe して全 miss し、
-// terrainReady が永遠 false になり viewer がローダー画面で停止する。 dem5a z15 に統一。
-const GSI_PROBE_Z = 15;
+// probe zoom は DEM 取得 zoom (= fujihill.terrainConfig.zoom と必ず一致)。 ずれると
+// Python prefetch 済の DB に無いタイルを probe して全 miss し、 terrainReady が永遠
+// false になり viewer がローダー画面で停止する。 b71 で「設定 1 箇所」 派生に統一。
+const GSI_PROBE_Z = fujihill.terrainConfig.zoom;
 
 // z=15 の中央タイル + 隣 2 枚 (= 同 z の x±0, y±0 + x+1, y+1) を probe する。
 // 1 枚でも fetch 成功すれば gsi_dem source が DB として実在することを確認できる軽量 sample。
