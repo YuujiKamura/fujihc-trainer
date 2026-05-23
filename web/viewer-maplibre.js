@@ -2278,6 +2278,43 @@ const BIKE_SHAPE_DEFS = [
 ];
 mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
+// b72 weather step 1: AMeDAS の現在気象を 1 回だけ fetch して #weather-panel に populate。
+// 配布元 (気象庁 bosai) への通信は 1 起動 2 req (= latest_time + map)、 出典「気象庁
+// アメダス」 をパネルに表示。 DOM は textContent + createElement で組む (= XSS 安全)。
+import('./lib/weather/jma_amedas.js').then(async ({ fetchFujiWeather }) => {
+  const statusEl = document.getElementById('weather-status');
+  const rowsEl = document.getElementById('weather-rows');
+  if (!statusEl || !rowsEl) return;
+  try {
+    const { timestamp, stations } = await fetchFujiWeather();
+    const t = `${timestamp.slice(4,6)}/${timestamp.slice(6,8)} ${timestamp.slice(8,10)}:${timestamp.slice(10,12)}`;
+    statusEl.textContent = `${t} 取得`;
+    while (rowsEl.firstChild) rowsEl.removeChild(rowsEl.firstChild);
+    const span = (text, color) => {
+      const e = document.createElement('span');
+      e.textContent = text;
+      if (color) e.style.color = color;
+      return e;
+    };
+    for (const s of stations) {
+      const row = document.createElement('div');
+      row.appendChild(span(`${s.name}  `));
+      row.appendChild(span(`${s.alt}m `, '#999'));
+      row.appendChild(span(s.temp != null ? `${s.temp.toFixed(1)}℃ ` : '気温- ', '#ffaa66'));
+      if (s.humidity != null) row.appendChild(span(`湿${s.humidity}% `, '#88ccff'));
+      if (s.wind != null) row.appendChild(span(`風${s.wind.toFixed(1)}m/s `, '#ccc'));
+      if (s.pressure != null) row.appendChild(span(`${s.pressure.toFixed(0)}hPa `, '#aaa'));
+      if (s.precipitation10m != null && s.precipitation10m > 0) {
+        row.appendChild(span(`☂${s.precipitation10m}mm`, '#66ddff'));
+      }
+      rowsEl.appendChild(row);
+    }
+  } catch (e) {
+    statusEl.textContent = `取得失敗: ${e.message}`;
+    console.warn('[weather] AMeDAS fetch failed:', e);
+  }
+}).catch((e) => console.warn('[weather] module load failed:', e));
+
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
 if (btnFetchGsi) btnFetchGsi.addEventListener('click', startGsiFetch);
