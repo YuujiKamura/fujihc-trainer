@@ -15,7 +15,7 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main, master, b11-phase5-tile-cache]
+    branches: [main, master, b46-terrain-loader-screen]
   workflow_dispatch:
 
 permissions:
