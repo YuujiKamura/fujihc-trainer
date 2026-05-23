@@ -220,11 +220,39 @@ export function createScene({ container, capture = false }) {
   let sunAzimuthDeg = DEFAULT_SUN_AZIMUTH_DEG;
   let sunStrength = 1.0;   // MapLibre hillshade-exaggeration 相当 (0..1)、 既定 1.0
   let span = DEFAULT_SPAN_M;
+  // b75: 仰角 override。 null なら sun_model.sunElevationFromAzimuth(sunAzimuthDeg)
+  // 派生 (= 既存 lightDir スライダー手動操作経路)、 数値なら NOAA 注入値で上書き
+  // (= setSolarPosition 経由)。 1 軸 SoT を 2 軸に拡張する選択経路 (= C7 二重定義回避)。
+  let sunElevationOverrideDeg = null;
+  // b75: volumetric clouds (= subscriber)。 setCloudInstance で配線、 applySun 末尾と
+  // setCloudInstance 内部で emitSunToCloud を呼び sun direction を雲に流す。
+  let cloudInstanceRef = null;
+
+  // b75: 現在の elevation を返す純関数 (= override null なら派生、 数値なら override)。
+  // applySun / focusShadowOn / getSolarPosition / emitSunToCloud の 4 箇所で参照する
+  // ことで SoT 単一性を保つ (= 同じ分岐式を 4 箇所に書き散らさない)。
+  function currentElevationDeg() {
+    return (sunElevationOverrideDeg != null)
+      ? sunElevationOverrideDeg
+      : sunElevationFromAzimuth(sunAzimuthDeg);
+  }
+
+  // b75: cloud の uSunDir に現在の (方位 + 仰角) 由来 direction を流す。
+  // setCloudInstance / applySun の両方から呼ばれる ── どちらが先でも最新値が流れる。
+  function emitSunToCloud() {
+    if (!cloudInstanceRef) return;
+    const el = currentElevationDeg();
+    // shadow と同じ Math.max(el, 2) クランプは「光源 y が地中に潜らない」 ための制限、
+    // cloud light direction は地平線下 (夜) の方向ベクトルを素直に流して shader 側で
+    // HG lighting が暗くなるに任せる (= 雲の陰影が時刻連動して暗くなる)。
+    const p = sunPosition(sunAzimuthDeg, el, 1);
+    cloudInstanceRef.setSunDir(p.x, p.y, p.z);
+  }
 
   function applySun() {
-    // 仰角は方位 (= 時間帯) から日周で計算する。 太陽が地平線下 (夜) でも光源の y が
-    // マイナスだと地中から照らすので、 位置計算は最低 2° でクランプ。
-    const elevation = sunElevationFromAzimuth(sunAzimuthDeg);
+    // b75: elevation は override-aware (= sun_model 派生 or NOAA 注入)。 太陽が地平線下
+    // (夜) でも光源 y がマイナスだと地中から照らすので、 位置計算は最低 2° でクランプ。
+    const elevation = currentElevationDeg();
     const p = sunPosition(sunAzimuthDeg, Math.max(elevation, 2), span);
     sun.position.set(p.x, p.y, p.z);
     // exaggeration 0..1 を光の強度 0..2 に線形マップ。 さらに太陽が地平線下 (夜) は
@@ -232,9 +260,12 @@ export function createScene({ container, capture = false }) {
     const daylight = elevation > 0 ? 1 : 0.18;
     // b61: ACES tone mapping で中間調が沈むぶん、 旧基準 2.0 から 2.6 に持ち上げた。
     sun.intensity = Math.max(0, sunStrength) * 2.6 * daylight;
-    // b61: 大気散乱の太陽を地表照明と同じ太陽へ同期する。 太陽の SoT は sunAzimuthDeg
-    // + sun_model.js の sunElevationFromAzimuth 一本 ── atmosphere は受け取るだけ。
+    // b61: 大気散乱の太陽を地表照明と同じ太陽へ同期する。
+    // b75: SoT は sunAzimuthDeg + sunElevationOverrideDeg、 currentElevationDeg() で
+    // 一本化。 atmosphere は受け取るだけ。
     atmosphere.setSun(sunAzimuthDeg, Math.max(elevation, 2), daylight);
+    // b75: cloud subscriber へ sun direction を流す (= 配線済なら propagate)。
+    emitSunToCloud();
   }
   applySun();
 
@@ -283,7 +314,9 @@ export function createScene({ container, capture = false }) {
       // 影オルソカメラの半幅と光源距離は自機倍率に比例させる (= shadowCameraConfig)。
       // riderScale 3.6 基準で測った錐台・光源距離を k=riderScale/3.6 倍する ── 巨大
       // ライダーでも影が錐台に収まって四角く切れず、 光源が自機の全高より高く保たれる。
-      const elevation = sunElevationFromAzimuth(sunAzimuthDeg);
+      // b75: elevation は override-aware (= applySun と同 currentElevationDeg() 経由で
+      // 太陽光本体と shadow camera setup の elevation を常に一致させる、 SoT 二重定義回避)。
+      const elevation = currentElevationDeg();
       const elevForCalc = Math.max(elevation, 2);
       const { reach, lightDist } = shadowCameraConfig(riderScale, elevation);
       const cam = sun.shadow.camera;
@@ -337,11 +370,46 @@ export function createScene({ container, capture = false }) {
     },
 
     // 太陽の方位 (0..360°)。 差し替え口 setSunlightDirection の実装。
+    // b75: 手動操作経路 ── elevation override をリセットして sun_model 派生に戻す。
+    // user が lightDir スライダーを触ったら NOAA 注入値を破棄して従来挙動 (= 方位 1 軸 SoT
+    // + 派生仰角) に戻る、 という user 期待を encode する。
     setSunlightDirection(deg) {
       if (Number.isFinite(deg)) {
         sunAzimuthDeg = ((deg % 360) + 360) % 360;
+        sunElevationOverrideDeg = null;
         applySun();
       }
+    },
+
+    // b75: NOAA 注入経路 ── 方位と仰角を独立に受ける。 viewer-maplibre.js が boot 後に
+    // computeSolarPosition の戻りをそのまま流す。 null / undefined / 非 object は安全
+    // no-op (= map3d_index.test.js が pin)、 azimuth / elevation のどちらか非数の場合も
+    // 既存値を保つ (= NaN 防御)。
+    setSolarPosition(pos) {
+      if (!pos || typeof pos !== 'object') return;
+      const az = pos.azimuthDeg;
+      const el = pos.elevationDeg;
+      if (Number.isFinite(az)) sunAzimuthDeg = ((az % 360) + 360) % 360;
+      if (Number.isFinite(el)) sunElevationOverrideDeg = el;
+      applySun();
+    },
+
+    // b75: 現在の太陽位置を返す (= e2e + debug 用、 integration test が override
+    // リセットの挙動を pin する経路)。 override が null なら sun_model 派生値、 数値
+    // なら override 値を返す。
+    getSolarPosition() {
+      return {
+        azimuthDeg: sunAzimuthDeg,
+        elevationDeg: currentElevationDeg(),
+      };
+    },
+
+    // b75: volumetric clouds を subscriber として配線 ── facade boot 内で cloud 生成後に
+    // 1 回だけ呼ぶ。 配線時に「現在の sun 状態を即 emit」 ── boot 順序 (= pending
+    // solarPosition 反映が cloud 配線より先) でも sun が cloud に流れる。
+    setCloudInstance(inst) {
+      cloudInstanceRef = inst;
+      emitSunToCloud();
     },
 
     // 陰影の強さ (0..1、 MapLibre hillshade-exaggeration 相当)。

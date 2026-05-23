@@ -2351,6 +2351,46 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
   }
 })();
 
+// b75: 太陽位置を NOAA 算法で現在 JST から計算 → mapRenderer.setSolarPosition に流す。
+// URL gate ?datetime= で時刻固定 (e2e 3 視点 朝/昼/夕 用、 offset 必須、 不正値は warn +
+// 現在時刻 fallback)。 weather panel に「☀ 太陽 方位 N°、 高度 N°」 1 行追加。
+// 配布元への新規 fetch なし (= NOAA は純 JS 計算、 外部 API 不要)。
+(async () => {
+  const panelEl = document.getElementById('weather-panel');
+  if (!panelEl) return;
+  let sunlib = null;
+  try {
+    sunlib = await import('./lib/weather/sun_position.js');
+  } catch (e) {
+    console.warn('[sun] sun_position module load failed:', e);
+    return;
+  }
+  const { computeSolarPosition, parseDatetimeFromUrl } = sunlib;
+  let urlParams = null;
+  try { urlParams = new URLSearchParams(location.search); } catch { /* skip */ }
+  const overrideDate = parseDatetimeFromUrl(urlParams);
+  const nowJst = overrideDate || new Date();
+  let solarPos;
+  try {
+    solarPos = computeSolarPosition({ lat: 35.36, lon: 138.72, dateJst: nowJst });
+  } catch (e) {
+    console.warn('[sun] computeSolarPosition failed:', e);
+    return;
+  }
+  // viewer の facade へ流す ── scene が生成済なら即反映、 未生成なら pending 保留。
+  if (typeof mapRenderer?.setSolarPosition === 'function') {
+    mapRenderer.setSolarPosition(solarPos);
+  }
+  // weather panel に「☀ 太陽 方位 N°、 高度 N°」 行を追加 (XSS 安全: textContent +
+  // createElement のみ、 b72/b74 既存規律承継)。 panel 末尾に append。
+  const sunRow = document.createElement('div');
+  const sunSpan = document.createElement('span');
+  sunSpan.textContent = `☀ 太陽 方位 ${Math.round(solarPos.azimuthDeg)}°、 高度 ${Math.round(solarPos.elevationDeg)}°`;
+  sunSpan.style.color = '#ffdd66';
+  sunRow.appendChild(sunSpan);
+  panelEl.appendChild(sunRow);
+})();
+
 // brief 26b: dbinit-overlay buttons
 const btnFetchGsi = document.getElementById('btnFetchGsi');
 if (btnFetchGsi) btnFetchGsi.addEventListener('click', startGsiFetch);

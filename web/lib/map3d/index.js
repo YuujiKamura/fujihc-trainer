@@ -147,7 +147,8 @@ export function createMapRenderer() {
   // b74: weatherClouds は volumetric clouds 生成後に setWeather で反映する。
   const pending = { camZoom: null, camPitch: null, sunDir: null, sunStrength: null, labelScale: null,
                     riderScale: null, courseWidth: null, roadHeight: null, labelHeight: null,
-                    riderShape: null, atmoParams: null, weatherClouds: null };
+                    riderShape: null, atmoParams: null, weatherClouds: null,
+                    solarPosition: null };
 
   // b74: volumetric clouds (= Perlin × Worley の density field を ray-march する box mesh)。
   // boot 内で動的 import + 生成、 setWeatherClouds で uniform 更新、 render() で
@@ -361,6 +362,9 @@ export function createMapRenderer() {
           // 散乱パラメータを、 ここで一括反映する (= sunDir / sunStrength と同じ並び)。
           if (pending.atmoParams) scene.setAtmosphereParams(pending.atmoParams);
           if (Number.isFinite(pending.skyIntensity)) scene.setSkyIntensity(pending.skyIntensity);
+          // b75: NOAA 注入 solarPosition の保留反映 ── boot 前に viewer-maplibre.js から
+          // setSolarPosition({az, el}) が呼ばれていれば、 scene 生成直後にここで流す。
+          if (pending.solarPosition) scene.setSolarPosition(pending.solarPosition);
 
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);
@@ -385,6 +389,10 @@ export function createMapRenderer() {
             });
             scene.add(cloudInstance.mesh);
             if (pending.weatherClouds) cloudInstance.setWeather(pending.weatherClouds);
+            // b75: cloud を scene の sun subscriber として配線 ── scene.applySun 時に
+            // cloudInstance.setSunDir(...) が呼ばれる。 setCloudInstance 内部で即 emit
+            // するので、 pending.solarPosition 反映が cloud 配線より先でも最新値が流れる。
+            scene.setCloudInstance(cloudInstance);
           } catch (e) {
             console.warn('[map3d] volumetric clouds 生成失敗 (= terrain と AMeDAS panel は維持):', e);
           }
@@ -674,6 +682,26 @@ export function createMapRenderer() {
     // getAtmosphereUniforms と同 class)。 boot 前は null (= cloudInstance 未生成)。
     getWeatherCloudsInfo() {
       return cloudInstance ? cloudInstance.getWeather() : null;
+    },
+
+    // b75: NOAA 由来の太陽位置 (方位 + 仰角) を流す ── viewer-maplibre.js が boot 後に
+    // computeSolarPosition で出した値をそのまま渡す。 scene 未生成なら pending に保留、
+    // 生成済なら scene.setSolarPosition に直叩き。 既存 lightDir スライダー手動操作との
+    // 共存は scene 側で override リセットの形で encode。 null / undefined / 非 object は
+    // 安全 no-op (= map3d_index.test.js が pin)。
+    setSolarPosition(pos) {
+      if (!pos || typeof pos !== 'object') return;
+      if (scene) {
+        scene.setSolarPosition(pos);
+      } else {
+        pending.solarPosition = { ...pos };
+      }
+    },
+
+    // b75: 現在の太陽位置 (= override null なら sun_model 派生、 数値なら override 値)
+    // を読む口。 boot 前は null (= scene 未生成)、 integration test + e2e + debug 用。
+    getSolarPosition() {
+      return scene ? scene.getSolarPosition() : null;
     },
 
     // === 起点 / 終点マーカー ===

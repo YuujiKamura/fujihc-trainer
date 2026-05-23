@@ -11,7 +11,8 @@ import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/ma
 // map_renderer.js が定める意味メソッド (= b39 で setLandmarks、 b62 で大気散乱の
 // setAtmosphereParams / getAtmosphereUniforms を追加、 b71 で背景スフィア用の
 // setSkyIntensity を追加、 b74 で volumetric clouds の setWeatherClouds /
-// getWeatherCloudsInfo を追加して 27 個)。
+// getWeatherCloudsInfo を追加、 b75 で太陽位置時刻連動の setSolarPosition /
+// getSolarPosition を追加して 29 個)。
 // Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
   'isBooted', 'boot', 'onceIdle',
@@ -20,6 +21,7 @@ const CONTRACT_METHODS = [
   'updateRider',
   'setLabelScale', 'updateLabelWindow',
   'setSunlightDirection', 'setSunlightStrength',
+  'setSolarPosition', 'getSolarPosition',  // b75 太陽位置時刻連動 (= NOAA 注入)
   'setStartGoalVisible',
   'setRiderScale', 'setCourseWidth', 'setRoadHeight', 'setLabelHeight',
   'setRiderShape', 'setShadowBoardEnabled',
@@ -29,15 +31,15 @@ const CONTRACT_METHODS = [
   'setWeatherClouds', 'getWeatherCloudsInfo',  // b74 volumetric clouds の配線 / 観測口
 ];
 
-describe('createMapRenderer — 差し替え口27メソッド', () => {
-  it('27個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口29メソッド', () => {
+  it('29個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (27個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (29個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
@@ -104,6 +106,35 @@ describe('createMapRenderer — 差し替え口27メソッド', () => {
   it('b74: boot 前は getWeatherCloudsInfo() が null (= cloudInstance 未生成)', () => {
     const r = createMapRenderer();
     expect(r.getWeatherCloudsInfo()).toBe(null);
+  });
+
+  it('b75: boot 前に setSolarPosition を呼んでも例外にならない (= pending 経路)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setSolarPosition({ azimuthDeg: 175, elevationDeg: 78 })).not.toThrow();
+  });
+
+  it('b75: boot 前は getSolarPosition() が null (= scene 未生成)', () => {
+    const r = createMapRenderer();
+    expect(r.getSolarPosition()).toBe(null);
+  });
+
+  it('b75: setSolarPosition(null) / setSolarPosition(undefined) で例外にならない (= 安全 no-op)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setSolarPosition(null)).not.toThrow();
+    expect(() => r.setSolarPosition(undefined)).not.toThrow();
+  });
+
+  it('b75: setSolarPosition({azimuthDeg: NaN, elevationDeg: 78}) で例外にならない (= NaN 防御)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setSolarPosition({ azimuthDeg: NaN, elevationDeg: 78 })).not.toThrow();
+    expect(() => r.setSolarPosition({ azimuthDeg: 175, elevationDeg: NaN })).not.toThrow();
+  });
+
+  it('b75: setSolarPosition({azimuthDeg: 175, elevationDeg: 200}) で例外にならない (= 範囲外 accept、 clamp は scene.applySun の Math.max で吸収)', () => {
+    const r = createMapRenderer();
+    expect(() => r.setSolarPosition({ azimuthDeg: 175, elevationDeg: 200 })).not.toThrow();
+    expect(() => r.setSolarPosition({ azimuthDeg: 175, elevationDeg: -200 })).not.toThrow();
+    expect(() => r.setSolarPosition({ azimuthDeg: 9999, elevationDeg: 78 })).not.toThrow();
   });
 });
 
