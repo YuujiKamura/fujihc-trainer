@@ -74,17 +74,33 @@ function sunPosition(azimuthDeg, elevationDeg, dist) {
  *
  * @returns {THREE.Mesh} 青空ドームメッシュ (単位球、 呼び出し側が span に応じて scale する)
  */
-// b71: skyIntensity スライダーで使う「天頂の濃さ」 を白 ↔ SKY_ZENITH ↔ 飽和深青 で
-// 動かす純関数。 intensity = 0 で天頂が白 (= 空の青さゼロ)、 1.0 で現状の SKY_ZENITH、
-// 2.0 で深い夜空寄りの青に振る。 horizon (地平線) はモヤの色なので不変、 zenith だけ動く。
+// b71: skyIntensity スライダーで使う「天頂の青の濃さ」 を HSL 経由で動かす純関数。
+// 直感: 上げると「青が濃く飽和」、 下げると「白く彩度が抜ける」。 単純な RGB lerp で
+// 黒紺方向に振ると視覚的に「色味が消えて灰色っぽく」 見えて user 期待と逆になるため、
+// saturation × lightness の組合せで「青の彩度と深さ」 を同時に動かす。
+//
+//   intensity = 0: saturation 0 + lightness 1.0 = 白 (空の青さゼロ)
+//   intensity = 1: 現状の SKY_ZENITH (= HSL(~202°, 0.60, 0.60) の水色)
+//   intensity = 2: saturation を 1.0 へ飽和 + lightness を base の半分まで下げる
+//                  = HSL(~202°, 1.0, 0.30) ≒ 深く濃い青
+//
+// horizon (= SKY_HORIZON、 地平線の朝霞色) は固定、 zenith だけ動く ── 「空の青さ」 は
+// 天頂部分の調整、 地平線は霞の色なので分離する。
 function zenithColorForIntensity(intensity) {
   const t = Number.isFinite(intensity) ? Math.max(0, Math.min(2, intensity)) : 1;
   const base = new THREE.Color(SKY_ZENITH);
+  const hsl = { h: 0, s: 0, l: 0 };
+  base.getHSL(hsl);
+  // saturation: t に比例で 0 → base.s → min(1, base.s * t)。 t=0 で無彩色、 t=2 で飽和。
+  const s = Math.min(1, hsl.s * t);
+  // lightness: t<=1 では 1.0 (= 白) → base.l へ、 t>1 では base.l → base.l * 0.5 (深い青) へ。
+  let l;
   if (t <= 1) {
-    return new THREE.Color(0xffffff).lerp(base, t);
+    l = 1.0 * (1 - t) + hsl.l * t;
+  } else {
+    l = hsl.l * (1 - (t - 1) * 0.5);
   }
-  // intensity > 1 では SKY_ZENITH を深い青 (= 高高度の濃紺) 方向に lerp。
-  return base.clone().lerp(new THREE.Color(0x102060), t - 1);
+  return new THREE.Color().setHSL(hsl.h, s, l);
 }
 
 // b71: 頂点カラーを再生成する純関数 (= dome rebuild、 setSkyIntensity から呼ぶ)。
