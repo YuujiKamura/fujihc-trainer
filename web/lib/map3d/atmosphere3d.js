@@ -25,23 +25,26 @@
 export const ATMO_BETA_RAYLEIGH = [5.8e-6, 13.5e-6, 33.1e-6];
 // Mie 散乱係数 (1/m、波長非依存 = 灰)。GLSL uniform へはこの scalar を RGB 3 成分に
 // broadcast する ── 波長非依存ゆえ散乱光を灰色に寄せる「白濁」の源。
-// b62: b61 は標準大気の晴天 aerosol 値 21e-6 を既定にしたが、青 Rayleigh 係数 33.1e-6 の
-// 63% と大きく、内部散乱の灰色寄与が Rayleigh の青さを薄めて富士遠景が白っぽく霞んだ
-// (user 指摘「白っぽくし過ぎ」)。Rayleigh 優位 = 青い透明感に寄せるため 21e-6 → 5e-6
-// (青 Rayleigh 係数の約 1/7) に下げた。実画面 ?cap=1 目視で白濁を脱し遠景が青く澄む値。
-// 「かすみの日」を見たいときは atmoMie スライダーを上げる (CONTROL_DEFS, 0..42e-6)。
-export const ATMO_BETA_MIE = 5e-6;
+// b71 (2026-05-24): user 手元 viewer の実画面 slider で Mie を 0 に絞った値を新 default に。
+// b62 で 5e-6 (= 青い透明感の値) を既定にしたが、 user は富士山をフォトリアルにクリアに
+// 見せたい志向で大気散乱を切る方向に調整、 これを新 default として固定。 「かすみの日」 を
+// 見たいときは atmoMie スライダーを上げる (CONTROL_DEFS, 0..42e-6)。
+export const ATMO_BETA_MIE = 0;
 // Mie 単散乱アルベド。Mie 消散 (extinction) = 散乱 / albedo ── 吸収ぶんを含めた減衰。
 export const ATMO_MIE_ALBEDO = 0.9;
-// Mie 異方性 g (前方散乱)。標準大気値。0 = 等方。この値で太陽周りに緩いハローが出る程度。
-// b61「Mie 控えめ Rayleigh 優位」── βMie が βRayleigh 比で小さいので Rayleigh 優位は保たれる。
-export const ATMO_MIE_G = 0.76;
-// 散乱係数の全体倍率 (視認性スケール、唯一の非物理つまみ)。物理係数そのままだと水平
-// 8 km 程度では霞が淡く遠景効果が見えない。density の導出: 実効消散
-//   βExt_blue = (βR_blue + βM/albedo)·density = (33.1e-6 + 23.3e-6)·3.5 = 197e-6 [1/m]、
-// 8 km 地点で透過 T_blue = exp(-197e-6·8000) ≈ 0.21、同 T_red ≈ 0.44 ── 遠景が「青く
-// 霞むが透けて見える」値。実画面目視で 2.5→3.5 に調整 (= 富士遠景で霞みが視認できる量)。
-export const ATMO_DENSITY = 3.5;
+// Mie 異方性 g (前方散乱)。 b71 で user 画面値 0 (= 等方) を default に (= b62 の 0.76 から)。
+// 0 でも βMie = 0 と組み合わせるので Mie 散乱は実質ゼロ、 太陽周りのハローも出ない。
+export const ATMO_MIE_G = 0;
+// 散乱係数の全体倍率 (視認性スケール、唯一の非物理つまみ)。 b71 で user 画面値 1.0 を
+// default に (= b62 の 3.5 から、 大気散乱効果を最小にしてフォトリアル寄りに調整)。
+// 「霞ませたい日」 は atmoDensity スライダーを上げる (CONTROL_DEFS, 0.5..8.0)。
+export const ATMO_DENSITY = 1.0;
+// Rayleigh 散乱係数 (= 空の青さ) の倍率。 b71 で user 指示「空の青の濃さを調整できる
+// スライダーを追加」 で導入。 1.0 が標準大気値、 0 で青散乱ゼロ (= 太陽周りだけ明るい黒い空)、
+// 1.0 超で青が濃く (= 散乱光増、 遠景が青く飽和)。 物理的には Rayleigh 係数は空気分子由来
+// で定数だが、 viewer の見栄え調整つまみとして倍率を可変にする (Mie が日々の気象、 Rayleigh は
+// 「見たい青の濃さ」 の好み調整)。
+export const ATMO_RAYLEIGH_SCALE = 1.0;
 // 太陽の linear HDR 放射輝度。大きさ (>1) が露出に相当 ── 内部散乱は加算 HDR で 1 を
 // 超え、ACES tone mapping (scene.js) が最終段で畳む。物理的には別個の倍率ではなく
 // 「太陽の放射輝度」そのもの。遠景の霞の色 (内部散乱の飽和値) は sunColor·βScat/βExt で
@@ -190,10 +193,13 @@ export function sunDirection(azimuthDeg, elevationDeg) {
  */
 export function effectiveCoefficients(density, opts = {}) {
   const betaMieScalar = Number.isFinite(opts.betaMie) ? opts.betaMie : ATMO_BETA_MIE;
+  // b71: rayleighScale = 空の青さの倍率 (default ATMO_RAYLEIGH_SCALE = 1.0)。
+  // ATMO_BETA_RAYLEIGH に掛けてから density 倍する ── 順序は乗算可換なので意味は同じ。
+  const rayleighScale = Number.isFinite(opts.rayleighScale) ? opts.rayleighScale : ATMO_RAYLEIGH_SCALE;
   const betaRayleigh = [
-    ATMO_BETA_RAYLEIGH[0] * density,
-    ATMO_BETA_RAYLEIGH[1] * density,
-    ATMO_BETA_RAYLEIGH[2] * density,
+    ATMO_BETA_RAYLEIGH[0] * density * rayleighScale,
+    ATMO_BETA_RAYLEIGH[1] * density * rayleighScale,
+    ATMO_BETA_RAYLEIGH[2] * density * rayleighScale,
   ];
   const mieEff = betaMieScalar * density;
   const betaMie = [mieEff, mieEff, mieEff];
@@ -275,6 +281,8 @@ export function createAtmosphere(THREE, opts = {}) {
   let density = Number.isFinite(opts.density) ? opts.density : ATMO_DENSITY;
   let betaMie = Number.isFinite(opts.betaMie) ? opts.betaMie : ATMO_BETA_MIE;
   let mieG = Number.isFinite(opts.mieG) ? opts.mieG : ATMO_MIE_G;
+  // b71: rayleighScale = 空の青さの倍率 (default 1.0)。 user 調整スライダー atmoRayleigh から流れる。
+  let rayleighScale = Number.isFinite(opts.rayleighScale) ? opts.rayleighScale : ATMO_RAYLEIGH_SCALE;
   // 太陽放射輝度 (ATMO_SUN_COLOR) に掛ける倍率 = 露出相当の非物理つまみ。
   let sunScale = Number.isFinite(opts.sunScale) ? opts.sunScale : 1;
   // 直近 setSun が受けた昼夜係数。sunScale 変更時に太陽色を再計算するため保持する。
@@ -291,9 +299,9 @@ export function createAtmosphere(THREE, opts = {}) {
     uAtmoMieG: { value: ATMO_MIE_G },
   };
 
-  // density / betaMie / mieG から散乱係数 uniform を再計算する。
+  // density / betaMie / mieG / rayleighScale から散乱係数 uniform を再計算する。
   function recalcEffective() {
-    const eff = effectiveCoefficients(density, { betaMie });
+    const eff = effectiveCoefficients(density, { betaMie, rayleighScale });
     uniforms.uAtmoBetaRayleigh.value.set(...eff.betaRayleigh);
     uniforms.uAtmoBetaMie.value.set(...eff.betaMie);
     uniforms.uAtmoBetaExt.value.set(...eff.betaExt);
@@ -397,6 +405,8 @@ export function createAtmosphere(THREE, opts = {}) {
       if (Number.isFinite(params.density)) { density = params.density; effDirty = true; }
       if (Number.isFinite(params.betaMie)) { betaMie = params.betaMie; effDirty = true; }
       if (Number.isFinite(params.mieG)) { mieG = params.mieG; effDirty = true; }
+      // b71: rayleighScale (= 空の青さ) も scattering 再計算で uniform に反映。
+      if (Number.isFinite(params.rayleighScale)) { rayleighScale = params.rayleighScale; effDirty = true; }
       if (Number.isFinite(params.sunScale)) { sunScale = params.sunScale; sunDirty = true; }
       if (effDirty) recalcEffective();
       if (sunDirty) recalcSunColor();

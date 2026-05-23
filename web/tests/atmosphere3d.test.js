@@ -207,10 +207,15 @@ describe('effectiveCoefficients — density から実効散乱係数', () => {
     }
   });
 
-  it('betaExt は betaRayleigh より大 (Mie の消散ぶん加算)', () => {
+  it('betaExt は betaRayleigh 以上 (Mie の消散ぶん加算、 b71 default は Mie=0 で等値)', () => {
     const e = effectiveCoefficients(ATMO_DENSITY);
     for (let i = 0; i < 3; i += 1) {
-      expect(e.betaExt[i]).toBeGreaterThan(e.betaRayleigh[i]);
+      expect(e.betaExt[i]).toBeGreaterThanOrEqual(e.betaRayleigh[i]);
+    }
+    // Mie > 0 を渡せば betaExt > betaRayleigh が回復する (= 物理性は不変、 b71 で default のみ 0 化)。
+    const eMie = effectiveCoefficients(ATMO_DENSITY, { betaMie: 5e-6 });
+    for (let i = 0; i < 3; i += 1) {
+      expect(eMie.betaExt[i]).toBeGreaterThan(eMie.betaRayleigh[i]);
     }
   });
 

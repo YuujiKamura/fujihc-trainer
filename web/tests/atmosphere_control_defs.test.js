@@ -35,17 +35,13 @@ function numField(line, field) {
   return m ? Number(m[1]) : NaN;
 }
 
-const ATMO_KEYS = ['atmoMie', 'atmoG', 'atmoDensity', 'atmoSun'];
+const ATMO_KEYS = ['atmoMie', 'atmoG', 'atmoDensity', 'atmoRayleigh', 'atmoSun'];
 
-describe('b62: CONTROL_DEFS の大気散乱スライダー 4 本', () => {
-  it('4 本すべてが CONTROL_DEFS に存在する', () => {
+describe('b62/b71: CONTROL_DEFS の大気散乱スライダー 5 本', () => {
+  it('5 本すべてが CONTROL_DEFS に存在する (= b71 で atmoRayleigh = 空の青さ を追加)', () => {
     for (const key of ATMO_KEYS) {
       expect(defLine(key), `${key} の def が無い`).not.toBeNull();
     }
-  });
-
-  it('Rayleigh (青み) のスライダーは無い (= 物理定数なので調整つまみにしない)', () => {
-    expect(defLine('atmoRayleigh'), 'atmoRayleigh def が残っている').toBeNull();
   });
 
   it('各 def が isValidControlDef 相当を満たす (min<max / step>0 / value∈[min,max])', () => {

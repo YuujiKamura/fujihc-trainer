@@ -2243,13 +2243,17 @@ const CONTROL_DEFS = [
   //   同期する) ので方位/仰角スライダーは足さない。 Rayleigh (青み) は空気分子由来の
   //   物理定数なのでスライダーにしない ── 日々変わるのは Mie (もや) なので調整は Mie に
   //   絞る。 各 def の raw 値の表現はコメント参照。
-  // atmoMie: raw = ATMO_BETA_MIE 生値 ×10⁶ (raw 5 = 5e-6)。 value 5 は const ATMO_BETA_MIE
-  //   と同 default ── 変えたら両方。 0 = 純 Rayleigh、 42 = 旧 b61 既定 21 の 2 倍 (白濁端)。
-  { key:'atmoMie',     label:'大気 かすみ(Mie)',  min:0,   max:42,   step:1,  value:5,   unit:'×10⁻⁶', format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ betaMie: raw*1e-6 }); } },
-  // atmoG: raw = ATMO_MIE_G ×100 (raw 76 = g 0.76)。 0 = 等方、 95 で止める (HG は g→1 で発散)。
-  { key:'atmoG',       label:'大気 Mie異方性 g',  min:0,   max:95,   step:5,  value:76,  unit:'g',      format:raw=>(raw/100).toFixed(2),         apply(raw){ mapRenderer.setAtmosphereParams({ mieG: raw/100 }); } },
-  // atmoDensity: raw = ATMO_DENSITY ×10 (raw 35 = density 3.5)。 散乱の視認性スケール (全体倍率)。
-  { key:'atmoDensity', label:'大気 散乱密度',     min:5,   max:80,   step:1,  value:35,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setAtmosphereParams({ density: raw/10 }); } },
+  // atmoMie: raw = ATMO_BETA_MIE 生値 ×10⁶ (raw 0 = 0)。 value 0 は const ATMO_BETA_MIE
+  //   と同 default (= b71 で user 画面値に合わせて 5 → 0)。 0 = 純 Rayleigh、 42 = 白濁端。
+  { key:'atmoMie',     label:'大気 かすみ(Mie)',  min:0,   max:42,   step:1,  value:0,   unit:'×10⁻⁶', format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ betaMie: raw*1e-6 }); } },
+  // atmoG: raw = ATMO_MIE_G ×100 (raw 0 = g 0)。 b71 で user 画面値 0 に。 95 で止める (HG は g→1 で発散)。
+  { key:'atmoG',       label:'大気 Mie異方性 g',  min:0,   max:95,   step:5,  value:0,   unit:'g',      format:raw=>(raw/100).toFixed(2),         apply(raw){ mapRenderer.setAtmosphereParams({ mieG: raw/100 }); } },
+  // atmoDensity: raw = ATMO_DENSITY ×10 (raw 10 = density 1.0)。 b71 で user 画面値 1.0 に (= 3.5 から)。
+  { key:'atmoDensity', label:'大気 散乱密度',     min:5,   max:80,   step:1,  value:10,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setAtmosphereParams({ density: raw/10 }); } },
+  // atmoRayleigh: raw = ATMO_RAYLEIGH_SCALE ×100 (raw 100 = 1.0 倍)。 b71 で user 指示「空の青の濃さ
+  //   調整スライダー」 として追加。 0 = 青散乱ゼロ (太陽周りだけ明るい黒い空)、 100 = 標準大気、
+  //   300 = 青を 3 倍濃く (= 遠景が青く飽和)。 Mie 散乱とは独立に空の青さだけ動かせる。
+  { key:'atmoRayleigh',label:'大気 空の青さ',     min:0,   max:300,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ rayleighScale: raw/100 }); } },
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
 ];
