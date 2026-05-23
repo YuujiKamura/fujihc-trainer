@@ -63,6 +63,32 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 
 ## Worklog (append-only、新しいものを上に)
 
+- 2026-05-23 Claude — b70 完了 (commit `77f76f8`、 ブリーフ
+  `~/.agents/scratch/fujihc-trainer-project/b70-wide-mesh-ring-topology.md`)。
+  b67 が単一広域メッシュ + polygonOffset で「視覚的には ring に見えるが構造的
+  には demBounds 直下に 2 層が同居する」 overlap topology で landed していた
+  のを、 user 設計指示 (= z15 と z12 の倍率 8 入れ子性を利用、 demBounds を
+  Y 軸のみ z12 タイル整数倍に外向きスナップ + dbBounds を両軸スナップ) に
+  基づいて本物の ring (= 外周 4 strip 北・南・東・西) に作り直した。 strip
+  境界 lat/lon は demA の対辺と数学的に一致 (隙間/重複ゼロ)、 polygonOffset
+  撤去。 純関数 3 つ (alignDemBoundsToZ12Y / alignDbBoundsToZ12 /
+  buildWideStripBboxes) を index.js から export、 ?nohighres=1 debug ハンドル
+  で高精細メッシュを scene から外す経路を追加。 タイル数 (実測 pin): 高精細
+  z15 元 96 → demA で 128 (+33%、 MAX_TILES 内)、 4 strip z12 = 北 6 / 南 6 /
+  東 4 / 西 2、 合計 18。 b70 brief を multi-axis-draft-audit (round 上限 3)
+  で 2 round 7軸 audit (Round 1 軸 3/4 LOAD-BEARING、 user 設計修正受領で
+  根拠 4 + §直すこと + §テスト節を全面 redraft、 Round 2 で軸 3/4/7 全
+  RESOLVED)、 LOAD-BEARING=0 で CONVERGED (C12 規律)。 検証: vitest 1543
+  passed (新規 map3d_wide_strips.test.js 12 件 + viewer_url_audit b70 negative
+  grep 4 件)、 pytest 238 passed / 4 skipped、 bridge 無し
+  `python -m http.server 8090 --directory web` + playwright で 3 枚キャプチャ
+  目視 (= scratch 配下の b70-shot-{1-normal,2-wide,3-nohighres-wide}.png)
+  → 完了条件 (a) z15 高精細 (b) 外周 4 strip 富士山体全景 (c) ?nohighres=1 で
+  demA 内部の航空写真テクスチャが完全消失して 4 strip ring が demA を覆わない
+  構造を視覚で確認 ── b67 で missed した「demA 内部が空であること」 の構造証明
+  を回収。 配布元配慮: b67 (z12 単一 12) から増加方向だが、 z12/z15 軽量 +
+  IndexedDB 90 日 TTL + MAX_TILES 余裕 + 1 wave で完了、 物理 gate
+  (GSI_FETCH_LIMIT=6 / MAX_TILES=200 / seamlessphoto 固定) すべて不変。
 - 2026-05-23 Claude — b69 完了 (commit `b012754`、 ブリーフ
   `~/.agents/scratch/fujihc-trainer-project/b69-indexeddb-only-tile-policy.md`)。
   タイルを IndexedDB のみで保持する方針徹底のため、 取り残されていた
