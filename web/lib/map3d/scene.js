@@ -34,8 +34,11 @@ import { createAtmosphere } from './atmosphere3d.js';
 //
 // 両者とも CSS named color。 user の手元 chrome で確認後、 「もっと深く」 「もっと淡く」
 // 等あれば iteration で SKY_ZENITH / SKY_HORIZON を調整する分岐に持ち込む。
-const SKY_ZENITH = 0x1e90ff;    // 天頂 = dodgerblue (= HSL 210° / S 1.00 / L 0.56)
-const SKY_HORIZON = 0x87cefa;   // 地平線 = lightskyblue (= HSL 203° / S 0.92 / L 0.75)
+// b71-fixup-7: user 指示「赤成分がもう少し増えていい」 ── R を +30 程度上げて青に紫味を
+// 足す (= 群青 / ultramarine 寄りの夏空)。 dodgerblue (R=30) → 0x4090ff (R=64) で
+// hue を 210° (= 純青) から 217° (= わずか紫寄り) へシフト。 同様に horizon も R 増で紫味。
+const SKY_ZENITH = 0x4090ff;    // 天頂 (= R 30→64 で紫寄り、 HSL ~217° / S 1.00 / L 0.62)
+const SKY_HORIZON = 0xa7d0fa;   // 地平線 (= R 135→167 で薄紫寄り水色、 HSL ~209° / S 0.91 / L 0.82)
 // 遠景フォグの色 (= COMMON_SKY の fog-color)。 リボン / ラベル等の遠景をこの色へ溶かす。
 // b61: 地形メッシュは atmosphere3d.js の物理 aerial perspective に置き換わり、 この灰色
 // フォグは地形には効かない (= enableAtmosphere が地形 material の fog を false にする)。
