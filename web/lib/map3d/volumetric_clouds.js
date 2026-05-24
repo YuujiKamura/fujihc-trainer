@@ -174,6 +174,11 @@ bool intersectAABB(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax, out float tNear, out 
 }
 
 void main() {
+  // b79 guard: cloudCover が極小 (= slider 0、 雲オミット) なら ray-march outer loop と
+  // noise sampling を完全 skip。 GPU の box mesh fragment は依然 rasterize されるが、
+  // perlin3d / worley3d / heightMask 計算と 16 step loop は走らない (= 過負荷ゼロに近づく)。
+  // 完全な fragment skip は viewer 側で mesh.visible = false を立てる別 path。
+  if (cloudCover < 0.001) { discard; }
   vec3 ro = uCameraPos;
   vec3 rd = normalize(vWorldPos - uCameraPos);
   float tNear, tFar;
