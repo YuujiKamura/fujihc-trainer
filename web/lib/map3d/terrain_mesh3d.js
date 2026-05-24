@@ -41,9 +41,19 @@ export function buildTerrainMesh({ stitched, range, photoCanvas, exaggeration = 
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
 
+  // b76-polish-2: photo の luminance を bumpMap に流用して細部凹凸を太陽方向の
+  // 陰影に乗せる (= DEM 由来法線では出ない木々・岩肌の質感)。 photo に既存陰影が
+  // 乗ってるので bumpScale は控えめ (= 過剰だと shading 二重で破綻)、 観て調整。
+  const bumpCanvas = buildBumpCanvasFromPhoto(photoCanvas);
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.colorSpace = THREE.NoColorSpace;  // 高さマップは linear、 sRGB 変換不要
+  bumpMap.anisotropy = 4;
+
   // roughness 1 / metalness 0 = つや消し ── 航空写真の地表が金属反射しないように。
   const material = new THREE.MeshStandardMaterial({
     map: texture,
+    bumpMap,
+    bumpScale: 8,  // 試行値、 過剰なら下げる
     roughness: 1.0,
     metalness: 0.0,
     side: THREE.DoubleSide,
@@ -51,6 +61,38 @@ export function buildTerrainMesh({ stitched, range, photoCanvas, exaggeration = 
 
   const mesh = new THREE.Mesh(geometry, material);
   return { mesh, geo };
+}
+
+/**
+ * photoCanvas から luminance ベースの高さ近似 canvas を作る純関数.
+ *
+ * RGB → ITU-R BT.709 luminance (= 0.2126R + 0.7152G + 0.0722B) を抽出して 1ch
+ * grayscale を返す。 Three.js の bumpMap が内部 sobel で normal を計算するので、
+ * ここでは平滑化せず原色 luminance のまま渡す (= 平滑化したいなら GPU shader 側で)。
+ *
+ * @param {HTMLCanvasElement|OffscreenCanvas} photoCanvas
+ * @returns {HTMLCanvasElement} 同サイズの grayscale canvas
+ */
+export function buildBumpCanvasFromPhoto(photoCanvas) {
+  const w = photoCanvas.width;
+  const h = photoCanvas.height;
+  const src = photoCanvas.getContext('2d').getImageData(0, 0, w, h);
+  const dst = document.createElement('canvas');
+  dst.width = w;
+  dst.height = h;
+  const dstCtx = dst.getContext('2d');
+  const out = dstCtx.createImageData(w, h);
+  const s = src.data;
+  const d = out.data;
+  for (let i = 0; i < s.length; i += 4) {
+    const lum = Math.round(0.2126 * s[i] + 0.7152 * s[i + 1] + 0.0722 * s[i + 2]);
+    d[i] = lum;
+    d[i + 1] = lum;
+    d[i + 2] = lum;
+    d[i + 3] = 255;
+  }
+  dstCtx.putImageData(out, 0, 0);
+  return dst;
 }
 
 /**
@@ -63,6 +105,7 @@ export function disposeTerrainMesh(mesh) {
   if (mesh.geometry) mesh.geometry.dispose();
   if (mesh.material) {
     if (mesh.material.map) mesh.material.map.dispose();
+    if (mesh.material.bumpMap) mesh.material.bumpMap.dispose();
     mesh.material.dispose();
   }
 }
