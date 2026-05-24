@@ -1115,18 +1115,14 @@ function renderSectionList(courseArr, onSelect) {
     const label = document.createElement('span');
     label.className = 'sec-label';
     label.textContent = `区間 ${sec.index + 1}: ${startKm}-${endKm} km`;
-    // 2026-05-15 fix: 区間勾配は「平均」と「最大」を 2 行で表示 (= max は登坂時の体感差を伝える).
-    // sec-grade を flex-column 化、 中身を 2 span に分け右寄せで縦並べる。
+    // 2026-05-24 fix: 「最大」 行は max_slope_pct の計算が嘘っぱちで信用できないため削除 (user 指示)。
+    // 平均だけ表示。 sec-grade flex-column のまま、 子 span は 1 つだけ。
     const grade = document.createElement('span');
     grade.className = 'sec-grade';
     const gradeAvg = document.createElement('span');
     gradeAvg.className = 'sec-grade-avg';
     gradeAvg.textContent = `平均 ${sec.avg_slope_pct.toFixed(1)}%`;
-    const gradeMax = document.createElement('span');
-    gradeMax.className = 'sec-grade-max';
-    gradeMax.textContent = `最大 ${sec.max_slope_pct.toFixed(1)}%`;
     grade.appendChild(gradeAvg);
-    grade.appendChild(gradeMax);
     const delta = sec.end_ele - sec.start_ele;
     const deltaSign = delta >= 0 ? '+' : '';
     const meta = document.createElement('span');
