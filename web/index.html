@@ -16,7 +16,7 @@
      Three.js 版は地形に貼る航空写真 (seamlessphoto) を国土地理院から起動時 1 回だけ
      取得する (= IndexedDB キャッシュ必須、 2 回目以降は再アクセスなし、 GSI 配慮の範囲内)。
      CSP がこれを許可していないと航空写真 fetch が block される。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com https://cyberjapandata.gsi.go.jp; script-src 'self' 'sha256-ams4LJMCHZGQskrbmkRXJOLWiK7NRUBvM4eTtE/MsaQ='; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://www.strava.com https://*.strava.com https://cyberjapandata.gsi.go.jp https://www.jma.go.jp; script-src 'self' 'sha256-ams4LJMCHZGQskrbmkRXJOLWiK7NRUBvM4eTtE/MsaQ='; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.strava.com; object-src 'none'; base-uri 'self'">
 <title>fujihill viewer</title>
 <!-- brief 33: MapLibre を web/lib/vendor/ に self-host (= 外部 CDN 参照禁止、 same-origin 強制).
      license は LICENSE-maplibre.txt 参照 (BSD-3-Clause). -->

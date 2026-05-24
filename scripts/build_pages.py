@@ -44,7 +44,7 @@ EXCLUDED_TOPLEVEL = ("archived", "tests")
 
 CSP_STRIPPED = (
     "default-src 'self'; "
-    "connect-src 'self' https://cyberjapandata.gsi.go.jp; "
+    "connect-src 'self' https://cyberjapandata.gsi.go.jp https://www.jma.go.jp; "
     "script-src 'self' 'sha256-ams4LJMCHZGQskrbmkRXJOLWiK7NRUBvM4eTtE/MsaQ='; "
     "worker-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
