@@ -163,8 +163,9 @@ describe('createCamera3d: ファクトリ (THREE 注入)', () => {
   it('update は orbit モードでカメラをライダー位置の周囲 (球面) に置く', () => {
     const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
     c3d.update({ x: 100, y: 50, z: -20 }, { x: 0, y: 0, z: -1 });
-    // orbit: lookAt はライダー位置、 camera はその周囲
-    expect(c3d.camera.lookAtArg).toEqual({ x: 100, y: 50, z: -20 });
+    // b80: orbit の lookAt はライダー位置 + radius × 0.1 上 (= 画面下 1/4 に rider を押し下げる)。
+    // default radius = 80m なので lookAt.y = rider.y + 8 = 58。 x / z は rider と一致。
+    expect(c3d.camera.lookAtArg).toEqual({ x: 100, y: 58, z: -20 });
     expect(dist(c3d.camera.position, { x: 100, y: 50, z: -20 })).toBeGreaterThan(0);
   });
 

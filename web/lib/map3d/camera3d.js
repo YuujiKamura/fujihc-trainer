@@ -121,9 +121,13 @@ export function createCamera3d(THREE, opts = {}) {
   const FOLLOW_UP = 1.8;
   const LOOK_AHEAD = 3;
   // b80: 注視点を rider より高く置いて rider を画面下 1/4 (= 上から 3/4 位置) に押し下げる。
-  // fov 50° の縦方向 25% ≈ 6.25°、 カメラ→注視点 ahead+back = 11m 先で 6.25° 上 ≈ 1.2m offset、
-  // 既存実装が rider を中央より僅か下に置く効果と合わせて 1.5m に設定 (= 画面確認で調整可)。
+  // follow mode (= 走行中): カメラ→注視点 ahead+back = 11m 先で 6.25° 上 ≈ 1.2m offset、
+  // 既存実装が rider を中央より僅か下に置く効果と合わせて 1.5m に設定。
+  // orbit mode (= 観るモード): radius が変動するため固定 m ではなく radius 比例。 fov 50° の縦
+  // 半分 25°、 画面下 1/4 (= 中央から下 25%) は 25° × 25% = 6.25° 上を見る = radius × tan(6.25°)
+  // ≈ radius × 0.11、 0.1 で約 5.7° 上 (= 画面下 22.8%、 上から 77.2%、 「上から 3/4」 ほぼ一致)。
   const FOLLOW_LOOK_UP = 1.5;
+  const ORBIT_LOOK_UP_RATIO = 0.1;
   let mode = opts.mode || 'orbit';
   let viewW = 1;
   let viewH = 1;
@@ -139,7 +143,9 @@ export function createCamera3d(THREE, opts = {}) {
     camera.up.set(0, 1, 0);
     const p = orbitPosition(target, bearing, pitch, radius);
     camera.position.set(p.x, p.y, p.z);
-    camera.lookAt(target);
+    // b80: 注視点を target より radius × ORBIT_LOOK_UP_RATIO 上に置いて、 rider (= target 位置)
+    // を画面の縦中央でなく下 1/4 へ押し下げる。 top mode は触らない (= 真上俯瞰では無意味)。
+    camera.lookAt(target.x, target.y + radius * ORBIT_LOOK_UP_RATIO, target.z);
   }
 
   return {
