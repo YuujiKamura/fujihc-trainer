@@ -369,15 +369,20 @@ export function createMapRenderer() {
           terrainSpan = Math.max(geoMeta.sizeX, geoMeta.sizeZ);
           scene.configureScale(terrainSpan);
 
-          // b77: volumetric clouds (= CK42BB 移植 fullscreen quad screen-space ray-march)。
-          // 旧 b74 の cloudVolume (= world XZ bbox) は廃止、 fullscreen pass のため bbox 不要 (= 雲が
-          // 画面の広範囲に分布、 「山の周りしか雲がない」 issue を構造的に解消)。 SoT は
-          // cloudBaseM / cloudTopM / cloudCover の数値 3 個。 viewer-maplibre.js が AMeDAS から
-          // setWeatherClouds で流し込み、 cloud_estimator が cloudTopM 床 6000m (b76-polish-5) で
-          // 笠雲再現基盤を保証。
+          // b74: volumetric clouds を boot 内で動的 import + 生成 + scene.add。
+          // cloudVolume は terrain と同じ world XZ 範囲 (= demBounds 派生)、 別 SoT を作らない。
+          // 初期 cloudCover=0 (= 雲なし)、 viewer-maplibre.js が AMeDAS から setWeatherClouds で
+          // 流し込む。 boot 前に setWeatherClouds が呼ばれていれば pending から反映。
           try {
             const { createVolumetricClouds } = await import('./volumetric_clouds.js');
+            const cloudVolume = {
+              minX: -geoMeta.sizeX / 2,
+              maxX:  geoMeta.sizeX / 2,
+              minZ: -geoMeta.sizeZ / 2,
+              maxZ:  geoMeta.sizeZ / 2,
+            };
             cloudInstance = createVolumetricClouds(THREE, {
+              cloudVolume,
               cloudCover: 0,
               cloudBaseM: 1500,
               cloudTopM: 3500,
