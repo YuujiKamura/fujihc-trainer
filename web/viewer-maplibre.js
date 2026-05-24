@@ -2259,7 +2259,7 @@ const CONTROL_DEFS = [
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
 ];
-mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整'});
+mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
 
 // 自機 (自転車) の部品ごと形状エディタ。 各スライダーが bikeShape の 1 フィールドを
 // 更新し、 mapRenderer.setRiderShape で自転車を組み直す。 control_panel が
