@@ -2257,7 +2257,7 @@ const CONTROL_DEFS = [
   // b82: 自機の画面縦位置を slider で可変 (= orbit lookUp ratio、 0 で画面中央、 0.3 で画面下端寄り)。
   //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
   //   user 触って好みの位置に。
-  { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.1, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
+  { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.3, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
 
