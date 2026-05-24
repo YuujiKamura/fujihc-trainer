@@ -2278,6 +2278,14 @@ const BIKE_SHAPE_DEFS = [
 ];
 mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
+// b79: 雲量倍率 slider state (= AMeDAS 物理算出値 cloudCover に user 主観倍率を掛ける、 0..1)。
+// AMeDAS fetch は 1 起動 1 回 (= 配布元負荷ゼロ)、 slider 操作は currentBaseWeather × 倍率を
+// mapRenderer.setWeatherClouds に流すだけで再 fetch しない。 localStorage 'fujihill.cloudAmount'
+// で永続、 mountControlPanel が読み書きを担う ── 初期 mount で apply(localStorage 値) が呼ばれ、
+// currentCloudAmount が上書きされる順序。
+let currentBaseWeather = null;
+let currentCloudAmount = 0.3;  // b79 user 指示: default 0.3 (= AMeDAS 物理算出値の 30% で起動、 控えめ初期)
+
 // b72 + b74 weather: AMeDAS の現在気象を 1 起動 1 回 fetch して #weather-panel に populate +
 // 気温・湿度・標高 から雲量・雲底・雲頂を算出して mapRenderer.setWeatherClouds に流す。
 // 配布元 (気象庁 bosai) への通信は 1 起動 2 req (= latest_time + map、 b72 既存)、 b74 で
@@ -2343,7 +2351,33 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
     }
     // b74: 観測点 → 雲量・雲底・雲頂 算出 → mapRenderer.setWeatherClouds + 雲行追加 +
     //       data-clouds-state="rendered" or "error" + mini-overlay 更新
-    applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl, stations });
+    // b79: cloudAmountMultiplier (= 0..1 slider) を掛けて setWeatherClouds に流す。
+    //      panel 表示は物理算出値のまま、 戻り値を currentBaseWeather に保存して slider 操作で再適用。
+    currentBaseWeather = applyAmedasCloudsToPanel({
+      mapRenderer, panelEl, rowsEl, miniEl, stations,
+      cloudAmountMultiplier: currentCloudAmount,
+    });
+
+    // b79: AMeDAS 取得成功時のみ雲量 slider を生やす (= forceWeather / fetch 失敗時は出さない)。
+    // mountControlPanel が localStorage 'fujihill.cloudAmount' を読んで初期 apply、
+    // その瞬間に currentCloudAmount が上書きされる + applyCloudAmountToMap で再 setWeatherClouds。
+    if (currentBaseWeather) {
+      const sliderEl = document.getElementById('weather-sliders');
+      if (sliderEl && sliderEl.children.length === 0) {
+        mountControlPanel(sliderEl, [
+          {
+            key: 'cloudAmount',
+            label: '雲量',
+            min: 0, max: 1, step: 0.05, value: 0.3,
+            format: (raw) => `${Math.round(raw * 100)}%`,
+            apply(raw) {
+              currentCloudAmount = raw;
+              wirelib.applyCloudAmountToMap(mapRenderer, currentBaseWeather, raw);
+            },
+          },
+        ], { collapsible: true, title: '天候', collapsed: false });
+      }
+    }
   } catch (e) {
     statusEl.textContent = `取得失敗: ${e.message}`;
     panelEl.setAttribute('data-clouds-state', 'error');

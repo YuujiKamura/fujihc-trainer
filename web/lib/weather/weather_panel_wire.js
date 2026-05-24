@@ -15,21 +15,24 @@ import { estimateClouds } from './cloud_estimator.js';
  * 追加 (= 既存行があれば textContent 更新)、 #weather-panel の data-clouds-state を更新する。
  * miniEl が渡されていれば mini-overlay (= 観るモード / ride mode で常時 visible) も同期更新。
  *
+ * b79: cloudAmountMultiplier (0..1) を渡すと、 mapRenderer.setWeatherClouds に流す weather の
+ * cloudCover に倍率を掛ける (= user の主観調整スライダー反映)。 panel 表示は元値のまま
+ * (= 物理算出値を観測者に見せる)。 デフォルト 1 で従来挙動。
+ *
  * @param {object} args
  * @param {object} args.mapRenderer - createMapRenderer 戻り (= facade)。 null 可 (= test 用)
  * @param {object} args.panelEl - #weather-panel (data-clouds-state を書く対象)
  * @param {object} args.rowsEl - #weather-rows (雲行を追加する親)
  * @param {object} [args.miniEl] - #weather-cloud-mini (= 観るモード visible な mini-overlay、 任意)
  * @param {Array<object>|null} args.stations - pickFujiStations 戻り、 null で error 扱い
- * @returns {object|null} estimateClouds 戻り (= weather)、 失敗時 null
+ * @param {number} [args.cloudAmountMultiplier=1] - cloudCover に掛ける倍率 (= b79 slider)
+ * @returns {object|null} estimateClouds 戻り (= 物理算出 weather、 panel 表示用)、 失敗時 null
  */
-export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl, stations }) {
+export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl, stations, cloudAmountMultiplier = 1 }) {
   if (!panelEl || !rowsEl) return null;
   const weather = Array.isArray(stations) ? estimateClouds(stations) : null;
   if (weather) {
-    if (mapRenderer && typeof mapRenderer.setWeatherClouds === 'function') {
-      mapRenderer.setWeatherClouds(weather);
-    }
+    applyCloudAmountToMap(mapRenderer, weather, cloudAmountMultiplier);
     appendCloudRow(rowsEl, weather);
     updateMiniOverlay(miniEl, weather);
     panelEl.setAttribute('data-clouds-state', 'rendered');
@@ -40,6 +43,25 @@ export function applyAmedasCloudsToPanel({ mapRenderer, panelEl, rowsEl, miniEl,
     miniEl.setAttribute('data-clouds-state', 'error');
   }
   return null;
+}
+
+/**
+ * 保持してある baseWeather に倍率を掛けて mapRenderer.setWeatherClouds を呼ぶ。
+ * slider 操作時の再適用に使う ── AMeDAS 再 fetch せず物理値 × 倍率だけ更新できる。
+ *
+ * @param {object|null} mapRenderer - setWeatherClouds を持つ facade、 null 可
+ * @param {{cloudCover:number, cloudBaseM:number, cloudTopM:number}|null} baseWeather - 物理算出値
+ * @param {number} multiplier - 0..1 (clamp はしない、 呼び出し側が責任)
+ */
+export function applyCloudAmountToMap(mapRenderer, baseWeather, multiplier) {
+  if (!mapRenderer || typeof mapRenderer.setWeatherClouds !== 'function') return;
+  if (!baseWeather) return;
+  if (multiplier === 1) {
+    mapRenderer.setWeatherClouds(baseWeather);
+    return;
+  }
+  const adjusted = { ...baseWeather, cloudCover: baseWeather.cloudCover * multiplier };
+  mapRenderer.setWeatherClouds(adjusted);
 }
 
 /**

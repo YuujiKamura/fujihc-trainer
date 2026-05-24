@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyAmedasCloudsToPanel,
+  applyCloudAmountToMap,
   parseForceWeatherFromUrl,
   applyForceWeatherToPanel,
 } from '../lib/weather/weather_panel_wire.js';
@@ -204,6 +205,84 @@ describe('parseForceWeatherFromUrl — URL gate ?weather=fixed', () => {
     expect(parseForceWeatherFromUrl(null)).toBeNull();
     expect(parseForceWeatherFromUrl(undefined)).toBeNull();
     expect(parseForceWeatherFromUrl({})).toBeNull();
+  });
+});
+
+describe('applyAmedasCloudsToPanel — b79 cloudAmountMultiplier (= 雲量倍率 slider)', () => {
+  it('multiplier 未指定 → setWeatherClouds に渡る cloudCover は元値そのまま (= 後方互換)', () => {
+    const mr = makeMockMapRenderer();
+    const { panelEl, rowsEl } = makeMockPanel();
+    const stations = [
+      { code: '49251', alt: 860, temp: 20, humidity: 95 },
+      { code: '49256', alt: 992, temp: 18, humidity: 95 },
+    ];
+    const weather = applyAmedasCloudsToPanel({ mapRenderer: mr, panelEl, rowsEl, stations });
+    expect(mr.calls).toHaveLength(1);
+    expect(mr.calls[0].cloudCover).toBe(weather.cloudCover);
+    expect(mr.calls[0]).toBe(weather);  // multiplier=1 default なら identity 保持
+  });
+
+  it('multiplier=0.5 → setWeatherClouds の cloudCover は半分、 panel textContent は元値', () => {
+    const mr = makeMockMapRenderer();
+    const { panelEl, rowsEl } = makeMockPanel();
+    const stations = [
+      { code: '49251', alt: 860, temp: 20, humidity: 95 },
+      { code: '49256', alt: 992, temp: 18, humidity: 95 },
+    ];
+    const weather = applyAmedasCloudsToPanel({
+      mapRenderer: mr, panelEl, rowsEl, stations, cloudAmountMultiplier: 0.5,
+    });
+    // RH=95 平均 → (95-40)/60 ≈ 0.9167
+    expect(weather.cloudCover).toBeCloseTo(0.9167, 3);
+    expect(mr.calls[0].cloudCover).toBeCloseTo(weather.cloudCover * 0.5, 5);
+    expect(mr.calls[0].cloudBaseM).toBe(weather.cloudBaseM);   // 高さは不変
+    expect(mr.calls[0].cloudTopM).toBe(weather.cloudTopM);
+    // panel 表示は元値 (= 物理算出値)、 倍率は反映しない
+    const coverPct = Math.round(weather.cloudCover * 100);
+    expect(rowsEl.children[0].textContent).toContain(`雲量 ${coverPct}%`);
+  });
+
+  it('multiplier=0 → setWeatherClouds の cloudCover は 0 (= 完全に雲なし)', () => {
+    const mr = makeMockMapRenderer();
+    const { panelEl, rowsEl } = makeMockPanel();
+    const stations = [{ code: '49251', alt: 860, temp: 20, humidity: 95 }];
+    applyAmedasCloudsToPanel({
+      mapRenderer: mr, panelEl, rowsEl, stations, cloudAmountMultiplier: 0,
+    });
+    expect(mr.calls[0].cloudCover).toBe(0);
+  });
+});
+
+describe('applyCloudAmountToMap — slider 操作で再適用', () => {
+  it('baseWeather × multiplier の cloudCover で setWeatherClouds を 1 回呼ぶ', () => {
+    const mr = makeMockMapRenderer();
+    const base = { cloudCover: 0.8, cloudBaseM: 1500, cloudTopM: 6000 };
+    applyCloudAmountToMap(mr, base, 0.5);
+    expect(mr.calls).toHaveLength(1);
+    expect(mr.calls[0]).toEqual({ cloudCover: 0.4, cloudBaseM: 1500, cloudTopM: 6000 });
+  });
+
+  it('multiplier=1 → 元の baseWeather がそのまま渡る (= identity 保持、 spread 回避)', () => {
+    const mr = makeMockMapRenderer();
+    const base = { cloudCover: 0.8, cloudBaseM: 1500, cloudTopM: 6000 };
+    applyCloudAmountToMap(mr, base, 1);
+    expect(mr.calls[0]).toBe(base);  // 同 reference
+  });
+
+  it('mapRenderer=null → 何もしない (= 防御、 例外なし)', () => {
+    expect(() => applyCloudAmountToMap(null, { cloudCover: 0.5, cloudBaseM: 1500, cloudTopM: 6000 }, 0.5)).not.toThrow();
+  });
+
+  it('baseWeather=null → 何もしない (= AMeDAS fetch 完了前の slider 操作で安全)', () => {
+    const mr = makeMockMapRenderer();
+    applyCloudAmountToMap(mr, null, 0.5);
+    expect(mr.calls).toHaveLength(0);
+  });
+
+  it('mapRenderer.setWeatherClouds が無い → 何もしない (= duck-type 防御)', () => {
+    const mrNoFn = { calls: [] };
+    expect(() => applyCloudAmountToMap(mrNoFn, { cloudCover: 0.5, cloudBaseM: 1500, cloudTopM: 6000 }, 0.5)).not.toThrow();
+    expect(mrNoFn.calls).toHaveLength(0);
   });
 });
 
