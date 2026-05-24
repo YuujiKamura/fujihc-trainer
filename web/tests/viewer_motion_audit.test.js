@@ -87,11 +87,21 @@ describe('brief 35: 旧 module global (playSpeed / spinAngle) は live コード
   });
 });
 
-describe('brief 35: wsHandlers.state は rider.setSpeed / rider.setSensors を呼ぶ', () => {
-  it('state ハンドラ内に rider.setSpeed の呼出がある', () => {
+describe('brief 35 → b83: state は physicsSpeedMps を更新、 setSpeed は rAF tick 経由 (EMA 平滑化)', () => {
+  it('state ハンドラ内で physicsSpeedMps が integratePhysics の戻りで更新される', () => {
+    // b83: state ハンドラ内の rider.setSpeed 直書きは撤去、 物理積分結果は physicsSpeedMps
+    //      へ代入するだけ。 rider.setSpeed は tick (rAF 60Hz) 経由で EMA 平滑化して呼ぶ。
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/rider\.setSpeed\(/);
+    expect(m[0]).toMatch(/physicsSpeedMps\s*=\s*integratePhysics\(/);
+  });
+
+  it('rAF tick 内に rider.setSpeed が EMA 経由で呼ばれる (= displaySpeedMps を渡す)', () => {
+    // b83: tick 内で displaySpeedMps を physicsSpeedMps へ EMA 追従させ、 setSpeed する。
+    const m = viewer.match(/function\s+tick\s*\([^)]*\)\s*\{[\s\S]*?^\}/m);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/displaySpeedMps/);
+    expect(m[0]).toMatch(/rider\.setSpeed\(\s*displaySpeedMps\s*\)/);
   });
 
   it('state ハンドラ内に rider.setSensors の呼出がある', () => {

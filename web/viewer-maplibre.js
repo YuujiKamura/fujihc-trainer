@@ -346,6 +346,11 @@ let manualPowerW = _lsNum('fujihill.power', 250);
 let physicsSpeedMps = 0;
 // 直近 state メッセージの受信時刻 (= dt 算出用、 state push は約 1Hz)。
 let lastPhysicsStateT = null;
+// b83: 表示用 speed の EMA 平滑化値 + 時定数 (秒)。 rAF tick で physicsSpeedMps に追従、
+// 1Hz の階段を rAF 60Hz で滑らかに見せる。 slider「自機 速度時定数」 で実行時可変。
+// 中身物理 (= physicsSpeedMps) は touch せず、 表示 layer だけ smoothing する分離。
+let displaySpeedMps = 0;
+let speedSmoothTau = 1.0;
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 // ride 終了時の走行時間 (秒) を確定保存する。 ended ハンドラが rideStartedAt を null に
@@ -656,9 +661,8 @@ const wsHandlers = {
       // c_d=CdA / area=1 で渡す。
       physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, power, slopePct,
         { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
-      if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0) {
-        rider.setSpeed(physicsSpeedMps);
-      }
+      // b83: rider.setSpeed の 1Hz 直書きは撤去、 tick() で displaySpeedMps を EMA で
+      //      追従させて rAF 60Hz で滑らかに上書きする経路に集約。
     }
     // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
     // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
@@ -1864,6 +1868,14 @@ function tick(t) {
   // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
   // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
   // すべて rider.tick + rider.snapshot.position に集約済. viewer は snapshot を描画に流すだけ.
+  // b83: 表示 speed を physicsSpeedMps へ EMA で追従。 tau = 速度時定数 (秒)、
+  // alpha = clamp(dt/tau, 0, 1) で 1 階指数追従。 1Hz の階段が rAF 60Hz で「フーン」 と
+  // 連続変化に化ける。 physicsSpeedMps が NaN / 負ならガード。
+  if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0 && speedSmoothTau > 0) {
+    const alpha = Math.min(1, dt / speedSmoothTau);
+    displaySpeedMps += (physicsSpeedMps - displaySpeedMps) * alpha;
+    rider.setSpeed(displaySpeedMps);
+  }
   rider.tick(dt, { speedMultiplier: speedMult });
   const snap = rider.snapshot();
   const pos = snap.position;
@@ -2258,6 +2270,9 @@ const CONTROL_DEFS = [
   //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
   //   user 触って好みの位置に。
   { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.3, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
+  // b83: 速度の rAF 平滑化時定数 (= EMA tau)。 0.1 で従来挙動 (= ほぼ即追従、 1Hz 階段)、
+  //      1.0 で Zwift race mode 相当、 3.0 で Zwift default 相当、 5.0 で重慣性。 0 では止まる。
+  { key:'speedSmoothTau', label:'自機 速度時定数', min:0.1, max:5.0,  step:0.1,  value:1.0, unit:'秒', format:raw=>raw.toFixed(1),     apply(raw){ speedSmoothTau = raw; } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
 

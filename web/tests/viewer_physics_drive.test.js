@@ -62,10 +62,19 @@ describe('viewer 物理駆動: bike_physics 統合 (静的走査)', () => {
     expect(m[0]).not.toMatch(/SUB\s*=\s*1\s*\/\s*120/);
   });
 
-  it('wsHandlers.state は計算速度を rider.setSpeed に渡す (= 1 経路維持)', () => {
+  it('wsHandlers.state は計算速度を physicsSpeedMps へ書く (= b83: setSpeed は rAF tick 経由)', () => {
+    // b83 仕様変更: state ハンドラは integratePhysics の戻りを physicsSpeedMps へ代入するのみ。
+    // rider.setSpeed は tick (rAF) で displaySpeedMps を EMA 追従させてから呼ぶ。
+    // SoT は維持 (= 外から rider.speed を上書きする経路は依然 1 本、 場所が tick に移った)。
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/rider\.setSpeed\(/);
+    expect(m[0]).toMatch(/physicsSpeedMps\s*=\s*integratePhysics\(/);
+  });
+
+  it('b83: rider.setSpeed は rAF tick で displaySpeedMps (= EMA 平滑化) 経由で呼ばれる', () => {
+    const m = viewer.match(/function\s+tick\s*\([^)]*\)\s*\{[\s\S]*?^\}/m);
+    expect(m).not.toBeNull();
+    expect(m[0]).toMatch(/rider\.setSpeed\(\s*displaySpeedMps\s*\)/);
   });
 });
 
