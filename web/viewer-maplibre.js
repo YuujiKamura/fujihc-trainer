@@ -2284,7 +2284,7 @@ mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS
 // で永続、 mountControlPanel が読み書きを担う ── 初期 mount で apply(localStorage 値) が呼ばれ、
 // currentCloudAmount が上書きされる順序。
 let currentBaseWeather = null;
-let currentCloudAmount = 0.3;  // b79 user 指示: default 0.3 (= AMeDAS 物理算出値の 30% で起動、 控えめ初期)
+let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで起動、 slider で 1.0 まで上げて確認用)
 
 // b72 + b74 weather: AMeDAS の現在気象を 1 起動 1 回 fetch して #weather-panel に populate +
 // 気温・湿度・標高 から雲量・雲底・雲頂を算出して mapRenderer.setWeatherClouds に流す。
@@ -2368,7 +2368,7 @@ let currentCloudAmount = 0.3;  // b79 user 指示: default 0.3 (= AMeDAS 物理�
           {
             key: 'cloudAmount',
             label: '雲量',
-            min: 0, max: 1, step: 0.05, value: 0.3,
+            min: 0, max: 1, step: 0.05, value: 0,
             format: (raw) => `${Math.round(raw * 100)}%`,
             apply(raw) {
               currentCloudAmount = raw;
