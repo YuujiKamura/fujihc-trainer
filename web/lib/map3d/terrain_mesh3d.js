@@ -53,7 +53,7 @@ export function buildTerrainMesh({ stitched, range, photoCanvas, exaggeration = 
   const material = new THREE.MeshStandardMaterial({
     map: texture,
     bumpMap,
-    bumpScale: 8,  // 試行値、 過剰なら下げる
+    bumpScale: 4,  // b76-polish-3: user 「効きをもう少しやわらげた方が」 で 8→4
     roughness: 1.0,
     metalness: 0.0,
     side: THREE.DoubleSide,
