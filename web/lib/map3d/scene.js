@@ -118,13 +118,24 @@ function zenithColorForIntensity(intensity) {
 }
 
 // b71: 頂点カラーを再生成する純関数 (= dome rebuild、 setSkyIntensity から呼ぶ)。
-// geometry の color attribute を in-place 更新、 needsUpdate true でフレーム反映。
-function paintSkyDomeColors(dome, intensity) {
+// b76: elevationDeg を optional 追加 ── 太陽 elevation が低い (= 朝夕) と sunset
+// オレンジを混ぜて夕焼け空、 高い (= 昼) は base 水色のまま。 既存 setSkyIntensity 経路
+// (= elevationDeg=90 default) は base 水色維持で後方互換。
+function paintSkyDomeColors(dome, intensity, elevationDeg = 90) {
   const geo = dome.geometry;
   const pos = geo.attributes.position;
   const attr = geo.attributes.color;
-  const zenith = zenithColorForIntensity(intensity);
-  const horizon = new THREE.Color(SKY_HORIZON);
+  const baseZenith = zenithColorForIntensity(intensity);
+  const baseHorizon = new THREE.Color(SKY_HORIZON);
+  // b76: sunset blend factor (= elevation 25° 以上で 0、 -5° 以下で 1、 線形)
+  // 閾値を 25°/30° に拡大 ── 夏至 5:30 / 18:30 でも elevation 10-15° なので
+  // ここまで取らないと夕焼けオレンジが効かない (= b76 第 1 round で判明)。
+  const sunsetFactor = Math.max(0, Math.min(1, (25 - elevationDeg) / 30));
+  // 夕焼け色 (= 朱赤 zenith、 鮮橙 horizon)、 elevation 低下で base から lerp で混ぜる
+  const SUNSET_ZENITH = new THREE.Color(0xff6030);
+  const SUNSET_HORIZON = new THREE.Color(0xffaa50);
+  const zenith = baseZenith.clone().lerp(SUNSET_ZENITH, sunsetFactor);
+  const horizon = baseHorizon.clone().lerp(SUNSET_HORIZON, sunsetFactor);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i += 1) {
     const t = Math.max(0, Math.min(1, pos.getY(i))) ** 0.4;
@@ -220,6 +231,9 @@ export function createScene({ container, capture = false }) {
   let sunAzimuthDeg = DEFAULT_SUN_AZIMUTH_DEG;
   let sunStrength = 1.0;   // MapLibre hillshade-exaggeration 相当 (0..1)、 既定 1.0
   let span = DEFAULT_SPAN_M;
+  // b76: 現在の sky intensity を closure 保持 (= setSkyIntensity で更新、 applySun から
+  // sky dome 再 paint 時に同 intensity を維持。 elevation だけ変えて base 水色濃度は不変)。
+  let currentSkyIntensity = 1;
   // b75: 仰角 override。 null なら sun_model.sunElevationFromAzimuth(sunAzimuthDeg)
   // 派生 (= 既存 lightDir スライダー手動操作経路)、 数値なら NOAA 注入値で上書き
   // (= setSolarPosition 経由)。 1 軸 SoT を 2 軸に拡張する選択経路 (= C7 二重定義回避)。
@@ -260,6 +274,21 @@ export function createScene({ container, capture = false }) {
     const daylight = elevation > 0 ? 1 : 0.18;
     // b61: ACES tone mapping で中間調が沈むぶん、 旧基準 2.0 から 2.6 に持ち上げた。
     sun.intensity = Math.max(0, sunStrength) * 2.6 * daylight;
+    // b76: sun color を elevation 連動 ── 高 elevation (= 昼) は cool white、
+    // 低 elevation (= 朝夕) は warm orange、 朝夕の斜光が地形 hillshade で観て分かる。
+    // factor = clamp((25 - elevation) / 30, 0, 1) (= elevation 25 以上で 0、 -5 で 1)
+    // 閾値を 25° に拡大 ── 夏至 5:30 / 18:30 でも elevation 10-15° なので。
+    const warmFactor = Math.max(0, Math.min(1, (25 - elevation) / 30));
+    const COOL_WHITE = { r: 1.0, g: 1.0, b: 1.0 };
+    const WARM_ORANGE = { r: 1.0, g: 0.65, b: 0.35 };
+    sun.color.setRGB(
+      COOL_WHITE.r * (1 - warmFactor) + WARM_ORANGE.r * warmFactor,
+      COOL_WHITE.g * (1 - warmFactor) + WARM_ORANGE.g * warmFactor,
+      COOL_WHITE.b * (1 - warmFactor) + WARM_ORANGE.b * warmFactor,
+    );
+    // b76: sky dome を elevation 連動で再 paint (= 夕焼け空グラデーション)。
+    // currentSkyIntensity を維持しつつ elevation だけ変動。
+    paintSkyDomeColors(skyDome, currentSkyIntensity, elevation);
     // b61: 大気散乱の太陽を地表照明と同じ太陽へ同期する。
     // b75: SoT は sunAzimuthDeg + sunElevationOverrideDeg、 currentElevationDeg() で
     // 一本化。 atmosphere は受け取るだけ。
@@ -302,7 +331,8 @@ export function createScene({ container, capture = false }) {
     // スライダー「大気 空の青さ」 の配線口。 intensity = 0 で天頂白 (青なし)、 1.0 で現状、
     // 2.0 で深い青。 頂点カラー attribute を in-place 更新、 needsUpdate で次フレーム反映。
     setSkyIntensity(intensity) {
-      paintSkyDomeColors(skyDome, intensity);
+      currentSkyIntensity = intensity;  // b76: applySun の再 paint で同値を維持
+      paintSkyDomeColors(skyDome, intensity, currentElevationDeg());
     },
 
     // 影オルソカメラを自機 (pos) 中心へ寄せる。 太陽光の向き (= hillshade) は変えず、

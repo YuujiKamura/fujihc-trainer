@@ -25,7 +25,9 @@ const FIXTURE_DEM = fs.readFileSync(
 const TILES_DB_PATH = path.join(REPO_ROOT, 'data', 'tiles.sqlite');
 
 // sqlite tile DB を spec import 時に in-memory Map に load (= b74 と同型)
-const SOURCE_SQLITE_TO_URL = { gsi_dem: 'dem_png' };
+// gsi_dem (= legacy 名) と dem_png (= 正式 source 名) 両方を URL の dem_png に投影、
+// seamlessphoto は同名でそのまま投影 (= main 側で oneshot fetch 済、 49 tiles z=14)
+const SOURCE_SQLITE_TO_URL = { gsi_dem: 'dem_png', dem_png: 'dem_png', seamlessphoto: 'seamlessphoto' };
 let tileMap = new Map();
 let tileLoadInfo = 'not-attempted';
 try {
@@ -56,11 +58,12 @@ const SCRATCH = path.join(os.homedir(), '.agents', 'scratch', 'fujihc-trainer-pr
 // 雲は b74 確認用の遠景アクセント程度の量だけ残す。
 const URL_BASE_WEATHER = '?weather=fixed&cloudCover=0.2&cloudBaseM=2500&cloudTopM=4500';
 
-// 3 視点 (= 同日 2026-06-21 JST 朝 / 昼 / 夕)
+// 3 視点 (= 同日 2026-06-21 JST 朝 / 昼 / 夕、 朝夕は太陽 elevation を更に低く取って
+// 夕焼けオレンジが視覚的に出る時刻に設定)
 const SCENES = [
-  { name: 'morning', iso: '2026-06-21T05:30:00+09:00' },
-  { name: 'noon',    iso: '2026-06-21T12:00:00+09:00' },
-  { name: 'sunset',  iso: '2026-06-21T18:30:00+09:00' },
+  { name: 'morning', iso: '2026-06-21T04:45:00+09:00' },  // 日の出直後 elevation ≈ 5°
+  { name: 'noon',    iso: '2026-06-21T12:00:00+09:00' },  // 真上 elevation ≈ 78°
+  { name: 'sunset',  iso: '2026-06-21T19:15:00+09:00' },  // 日の入り直前 elevation ≈ 0°
 ];
 
 async function setupTileHijack(page) {
@@ -79,6 +82,16 @@ async function setupTileHijack(page) {
           return;
         }
         await route.fulfill({ status: 200, contentType: 'image/png', body: FIXTURE_DEM });
+        return;
+      }
+      if (source === 'seamlessphoto') {
+        const buf = tileMap.get(`${source}/${z}/${x}/${y}`);
+        if (buf) {
+          await route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from(buf) });
+          return;
+        }
+        // sqlite ミス → 灰色 fallback (= b74 と同等の defensive、 配布元 host へは絶対叩かない)
+        await route.fulfill({ status: 200, contentType: 'image/png', body: FIXTURE_PHOTO_GRAY });
         return;
       }
       await route.fulfill({ status: 200, contentType: 'image/png', body: FIXTURE_PHOTO_GRAY });
