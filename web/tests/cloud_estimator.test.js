@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { estimateClouds } from '../lib/weather/cloud_estimator.js';
 
 describe('estimateClouds — happy path', () => {
-  it('4 観測点 (25/70/860, 22/85/992, 26/65/552, 24/75/472) で cloudCover ∈ [0.4, 1.0], cloudBaseM ≥ 1500, cloudTopM = cloudBaseM + 2000', () => {
+  it('4 観測点 (25/70/860, 22/85/992, 26/65/552, 24/75/472) で cloudCover ∈ [0.4, 1.0], cloudBaseM ≥ 1500, cloudTopM = max(6000, cloudBaseM + 2000)', () => {
     const stations = [
       { code: '49251', name: '河口湖',   lat: 35.50, lon: 138.76, alt: 860, temp: 25, humidity: 70 },
       { code: '49256', name: '山中',     lat: 35.43, lon: 138.83, alt: 992, temp: 22, humidity: 85 },
@@ -22,11 +22,11 @@ describe('estimateClouds — happy path', () => {
     expect(r.cloudCover).toBeLessThanOrEqual(1.0);
     // 床 1500m 以上
     expect(r.cloudBaseM).toBeGreaterThanOrEqual(1500);
-    // 厚 2000m
-    expect(r.cloudTopM).toBe(r.cloudBaseM + 2000);
+    // b76-polish-5: 雲頂は max(6000, base+2000)、 通常時は床 6000 が勝って笠雲を再現
+    expect(r.cloudTopM).toBe(Math.max(6000, r.cloudBaseM + 2000));
   });
 
-  it('user 実データ 2026-05-24 06:50 JST (= 梅雨直前): 平均 RH 94 → cloudCover ≈ 0.9, cloudBaseM = 1500 (床), cloudTopM = 3500', () => {
+  it('user 実データ 2026-05-24 06:50 JST (= 梅雨直前): 平均 RH 94 → cloudCover ≈ 0.9, cloudBaseM = 1500 (床), cloudTopM = 6000 (床、 笠雲再現用)', () => {
     const stations = [
       { code: '49251', name: '河口湖',   lat: 35.50, lon: 138.76, alt: 860, temp: 10.8, humidity: 100 },
       { code: '49256', name: '山中',     lat: 35.43, lon: 138.83, alt: 992, temp: 10.9, humidity: 97 },
@@ -44,7 +44,8 @@ describe('estimateClouds — happy path', () => {
     //   御殿場:  472 + 25*3  =  547
     // 平均 = (860+1067+1002+547)/4 = 869 → 床 1500 が勝つ
     expect(r.cloudBaseM).toBe(1500);
-    expect(r.cloudTopM).toBe(3500);
+    // b76-polish-5: cloudTop 床 6000m (= 富士山頂 3776m を覆って笠雲再現)
+    expect(r.cloudTopM).toBe(6000);
   });
 });
 
