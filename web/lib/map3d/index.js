@@ -414,6 +414,11 @@ export function createMapRenderer() {
           if (pending.camZoom != null || pending.camPitch != null) {
             camera3d.setCameraDefaults({ zoom: pending.camZoom, pitch: pending.camPitch });
           }
+          // b82: boot 前に「自機 縦位置」 slider 初期 apply 等で setOrbitLookUpRatio が
+          // 呼ばれていれば、 ここで camera3d に流し込む。
+          if (pending.orbitLookUpRatio != null) {
+            camera3d.setOrbitLookUpRatio(pending.orbitLookUpRatio);
+          }
           // 前回 user が drag / wheel で合わせた orbit 視点があれば、 それを初期カメラ
           // として復元する (= setCameraDefaults より後に適用して上書き)。
           camera3d.applyOrbitState(loadSavedOrbit());
@@ -454,6 +459,17 @@ export function createMapRenderer() {
       } else {
         if (Number.isFinite(zoom)) pending.camZoom = zoom;
         if (Number.isFinite(pitch)) pending.camPitch = pitch;
+      }
+    },
+
+    // b82: orbit lookUp ratio (= 自機の画面縦位置調整、 0 = 中央 / 0.3 = 下寄り)。 viewer の
+    // 「自機 縦位置」 slider が apply 経由で呼ぶ。 camera3d 未生成なら pending に保留。
+    setOrbitLookUpRatio(ratio) {
+      if (!Number.isFinite(ratio)) return;
+      if (camera3d) {
+        camera3d.setOrbitLookUpRatio(ratio);
+      } else {
+        pending.orbitLookUpRatio = ratio;
       }
     },
 

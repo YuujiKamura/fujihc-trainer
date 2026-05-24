@@ -2254,6 +2254,10 @@ const CONTROL_DEFS = [
   { key:'skyIntensity',label:'大気 空の青さ',     min:0,   max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSkyIntensity(raw/100); } },
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
+  // b82: 自機の画面縦位置を slider で可変 (= orbit lookUp ratio、 0 で画面中央、 0.3 で画面下端寄り)。
+  //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
+  //   user 触って好みの位置に。
+  { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.1, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
 

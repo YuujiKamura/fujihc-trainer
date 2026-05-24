@@ -209,6 +209,26 @@ describe('createCamera3d: ファクトリ (THREE 注入)', () => {
     c3d.setMode('top');
     expect(c3d.getMode()).toBe('top');
   });
+
+  it('b82: setOrbitLookUpRatio で orbit の lookAt offset を実行時に変えられる', () => {
+    const c3d = createCamera3d(makeThreeStub(), { span: 1000 });
+    expect(c3d.getOrbitLookUpRatio()).toBe(0.1);  // default
+    // ratio=0.2 で update すると lookAt.y = rider.y + radius × 0.2
+    c3d.setOrbitLookUpRatio(0.2);
+    expect(c3d.getOrbitLookUpRatio()).toBe(0.2);
+    c3d.update({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+    // default radius = 80 なので lookAt.y = 0 + 80×0.2 = 16
+    expect(c3d.camera.lookAtArg.y).toBeCloseTo(16, 5);
+    // ratio=0 で中央復帰
+    c3d.setOrbitLookUpRatio(0);
+    c3d.update({ x: 0, y: 50, z: 0 }, { x: 0, y: 0, z: -1 });
+    expect(c3d.camera.lookAtArg.y).toBeCloseTo(50, 5);
+    // NaN / 非数は無視 (= 既存 0 のまま)
+    c3d.setOrbitLookUpRatio(NaN);
+    expect(c3d.getOrbitLookUpRatio()).toBe(0);
+    c3d.setOrbitLookUpRatio('abc');
+    expect(c3d.getOrbitLookUpRatio()).toBe(0);
+  });
 });
 
 describe('createCamera3d: orbit 視点の永続化 (getOrbitState / applyOrbitState)', () => {

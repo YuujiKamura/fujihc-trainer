@@ -12,7 +12,8 @@ import { createMapRenderer, distanceAlongCourse, isValidBounds } from '../lib/ma
 // setAtmosphereParams / getAtmosphereUniforms を追加、 b71 で背景スフィア用の
 // setSkyIntensity を追加、 b74 で volumetric clouds の setWeatherClouds /
 // getWeatherCloudsInfo を追加、 b75 で太陽位置時刻連動の setSolarPosition /
-// getSolarPosition を追加して 29 個)。
+// getSolarPosition を追加、 b82 で自機画面縦位置調整の setOrbitLookUpRatio を
+// 追加して 30 個)。
 // Three.js 実装も同じ顔ぶれを満たす。
 const CONTRACT_METHODS = [
   'isBooted', 'boot', 'onceIdle',
@@ -29,17 +30,18 @@ const CONTRACT_METHODS = [
   'setAtmosphereParams', 'getAtmosphereUniforms',  // b62 大気散乱の調整 / 観測口
   'setSkyIntensity',  // b71 背景スフィアの天頂色濃度
   'setWeatherClouds', 'getWeatherCloudsInfo',  // b74 volumetric clouds の配線 / 観測口
+  'setOrbitLookUpRatio',  // b82 自機の画面縦位置調整 (= orbit lookUp 比率を user slider 経由)
 ];
 
-describe('createMapRenderer — 差し替え口29メソッド', () => {
-  it('29個のメソッドが揃い、すべて関数である', () => {
+describe('createMapRenderer — 差し替え口30メソッド', () => {
+  it('30個のメソッドが揃い、すべて関数である', () => {
     const r = createMapRenderer();
     for (const name of CONTRACT_METHODS) {
       expect(typeof r[name], `${name} が関数でない`).toBe('function');
     }
   });
 
-  it('契約外の余計なメソッドを生やしていない (29個ちょうど)', () => {
+  it('契約外の余計なメソッドを生やしていない (30個ちょうど)', () => {
     const r = createMapRenderer();
     const fnKeys = Object.keys(r).filter((k) => typeof r[k] === 'function');
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());

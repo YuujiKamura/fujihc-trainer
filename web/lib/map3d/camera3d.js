@@ -127,7 +127,9 @@ export function createCamera3d(THREE, opts = {}) {
   // 半分 25°、 画面下 1/4 (= 中央から下 25%) は 25° × 25% = 6.25° 上を見る = radius × tan(6.25°)
   // ≈ radius × 0.11、 0.1 で約 5.7° 上 (= 画面下 22.8%、 上から 77.2%、 「上から 3/4」 ほぼ一致)。
   const FOLLOW_LOOK_UP = 1.5;
-  const ORBIT_LOOK_UP_RATIO = 0.1;
+  // b80 → b82: orbit lookUp ratio は user の主観調整なので const → let で実行時可変。
+  // viewer の調整パネル「自機 縦位置」 slider が facade 経由で値を上書きする。
+  let orbitLookUpRatio = 0.1;
   let mode = opts.mode || 'orbit';
   let viewW = 1;
   let viewH = 1;
@@ -143,9 +145,9 @@ export function createCamera3d(THREE, opts = {}) {
     camera.up.set(0, 1, 0);
     const p = orbitPosition(target, bearing, pitch, radius);
     camera.position.set(p.x, p.y, p.z);
-    // b80: 注視点を target より radius × ORBIT_LOOK_UP_RATIO 上に置いて、 rider (= target 位置)
-    // を画面の縦中央でなく下 1/4 へ押し下げる。 top mode は触らない (= 真上俯瞰では無意味)。
-    camera.lookAt(target.x, target.y + radius * ORBIT_LOOK_UP_RATIO, target.z);
+    // b80: 注視点を target より radius × orbitLookUpRatio 上に置いて、 rider (= target 位置)
+    // を画面の縦中央でなく下 へ押し下げる。 top mode は触らない (= 真上俯瞰では無意味)。
+    camera.lookAt(target.x, target.y + radius * orbitLookUpRatio, target.z);
   }
 
   return {
@@ -242,5 +244,13 @@ export function createCamera3d(THREE, opts = {}) {
     // カメラモードを切り替える ('orbit' | 'top' | 'follow')。
     setMode(m) { mode = m; },
     getMode() { return mode; },
+
+    // b82: orbit lookUp 比率 (= 注視点を target.y + radius × ratio 上にずらして
+    // rider の画面縦位置を下に押し下げる) を実行時に書き換える。 viewer の調整
+    // スライダー「自機 縦位置」 から facade 経由で呼ばれる。 NaN / 非数は無視。
+    setOrbitLookUpRatio(ratio) {
+      if (Number.isFinite(ratio)) orbitLookUpRatio = ratio;
+    },
+    getOrbitLookUpRatio() { return orbitLookUpRatio; },
   };
 }
