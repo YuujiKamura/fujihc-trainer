@@ -63,6 +63,20 @@ describe('followPlacement: 追従カメラ', () => {
     expect(Number.isFinite(fp.position.x)).toBe(true);
     expect(Number.isFinite(fp.position.z)).toBe(true);
   });
+
+  it('b80: lookUp (= 5番目引数 default 0) で lookAt.y が rider より高く offset される', () => {
+    // 既存 4 引数呼び出しは lookUp=0 default で従来通り y=0
+    const fpDefault = followPlacement(ORIGIN, { x: 0, y: 0, z: -1 }, 8, 1.8, 3);
+    expect(fpDefault.lookAt.y).toBe(0);
+    // 5 引数で lookUp=1.5 を渡すと lookAt.y が rider 高度より +1.5
+    const fpLifted = followPlacement(ORIGIN, { x: 0, y: 0, z: -1 }, 8, 1.8, 3, 1.5);
+    expect(fpLifted.lookAt.y).toBe(1.5);
+    // position は lookUp の影響を受けない (= カメラ位置は不変)
+    expect(fpLifted.position).toEqual(fpDefault.position);
+    // x / z も不変 (= lookAt の水平方向は ahead と forward だけで決まる)
+    expect(fpLifted.lookAt.x).toBe(fpDefault.lookAt.x);
+    expect(fpLifted.lookAt.z).toBe(fpDefault.lookAt.z);
+  });
 });
 
 describe('ndcToScreen: NDC → 画面 pixel', () => {

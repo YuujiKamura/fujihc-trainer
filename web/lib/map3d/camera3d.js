@@ -35,13 +35,15 @@ export function topPosition(target, radius) {
 
 // 追従カメラ: forward の水平成分でカメラを後方 back / 上方 up に置き、 前方 ahead を注視する。
 // 坂の上下振れを抑えるため forward の y 成分は使わず XZ だけで方向を取る (terrain3d.html L727-743)。
-export function followPlacement(riderPos, forward, back, up, ahead) {
+// lookUp (= 5番目、 default 0) は注視点 y を rider より高く置く offset (m)。 rider を画面の
+// 縦方向中央ではなく下 1/4 (= 上から 3/4 位置) に押し下げて前方視界を広く取るための調整。
+export function followPlacement(riderPos, forward, back, up, ahead, lookUp = 0) {
   const fwdLen = Math.sqrt(forward.x * forward.x + forward.z * forward.z) || 1;
   const nx = forward.x / fwdLen;
   const nz = forward.z / fwdLen;
   return {
     position: { x: riderPos.x - nx * back, y: riderPos.y + up, z: riderPos.z - nz * back },
-    lookAt: { x: riderPos.x + nx * ahead, y: riderPos.y, z: riderPos.z + nz * ahead },
+    lookAt: { x: riderPos.x + nx * ahead, y: riderPos.y + lookUp, z: riderPos.z + nz * ahead },
   };
 }
 
@@ -118,6 +120,10 @@ export function createCamera3d(THREE, opts = {}) {
   const FOLLOW_BACK = 8;
   const FOLLOW_UP = 1.8;
   const LOOK_AHEAD = 3;
+  // b80: 注視点を rider より高く置いて rider を画面下 1/4 (= 上から 3/4 位置) に押し下げる。
+  // fov 50° の縦方向 25% ≈ 6.25°、 カメラ→注視点 ahead+back = 11m 先で 6.25° 上 ≈ 1.2m offset、
+  // 既存実装が rider を中央より僅か下に置く効果と合わせて 1.5m に設定 (= 画面確認で調整可)。
+  const FOLLOW_LOOK_UP = 1.5;
   let mode = opts.mode || 'orbit';
   let viewW = 1;
   let viewH = 1;
@@ -146,7 +152,7 @@ export function createCamera3d(THREE, opts = {}) {
       target.set(riderPos.x + panOffset.x, riderPos.y + panOffset.y, riderPos.z + panOffset.z);
       if (mode === 'follow') {
         const fp = followPlacement(riderPos, forward || { x: 0, y: 0, z: -1 },
-          FOLLOW_BACK, FOLLOW_UP, LOOK_AHEAD);
+          FOLLOW_BACK, FOLLOW_UP, LOOK_AHEAD, FOLLOW_LOOK_UP);
         camera.up.set(0, 1, 0);
         camera.position.set(fp.position.x, fp.position.y, fp.position.z);
         camera.lookAt(fp.lookAt.x, fp.lookAt.y, fp.lookAt.z);
