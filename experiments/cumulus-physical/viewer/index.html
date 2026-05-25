@@ -46,6 +46,8 @@
     </div>
     <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">CP (= URL ?cam=top|side|iso|close):</p>
     <div id="cam-buttons"></div>
+    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">render mode:</p>
+    <div id="mode-buttons"></div>
     <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">buffer:</p>
     <div id="util-buttons">
       <button id="save-png">Save PNG (= canvas → download)</button>
@@ -85,10 +87,13 @@
 
       uniform vec3 uCameraPos;
       uniform float uDensity[625];
+      uniform float uReffMean_um;  // dataset の雲粒有効半径平均 [μm]、 1 個 (= uniform 数 limit 回避)
       uniform float uDensityMax;
+      uniform float uQlMax_gkg;    // ql の global max [g/kg]、 物理単位復元用
       uniform vec3 uBoxMin;
       uniform vec3 uBoxMax;
       uniform vec3 uSunDir;
+      uniform int uMode;           // 0=voxel (= 既存)、 1=scatter (= 物理駆動ミー散乱)
 
       float sampleDensity2D(vec2 gridXZ) {
         gridXZ = clamp(gridXZ, vec2(0.0), vec2(23.999));
@@ -103,6 +108,22 @@
         float dx0 = mix(d00, d10, fx);
         float dx1 = mix(d01, d11, fx);
         return mix(dx0, dx1, fz);
+      }
+
+      // r_eff は dataset 平均値 1 個で代用 (= 完全な空間分布は uniform 配列 limit 超過の制約)
+      float sampleReff(vec3 p) {
+        return uReffMean_um;
+      }
+
+      // Henyey-Greenstein phase function (= 雲粒の散乱角分布近似)
+      // g: 非対称パラメータ (= 雲粒は前方散乱優位、 g=0.85 典型)
+      float hg(float cosTheta, float g) {
+        float denom = 1.0 + g * g - 2.0 * g * cosTheta;
+        return (1.0 - g * g) / (12.566 * denom * sqrt(max(denom, 1e-6)));
+      }
+      // 2-lobe HG = 前方鋭いピーク + 後方緩い、 業界標準近似 (= takram / Schneider / Bauer 系)
+      float twoLobeHG(float cosTheta) {
+        return 0.5 * hg(cosTheta, 0.85) + 0.5 * hg(cosTheta, -0.3);
       }
 
       float sampleDensity(vec3 p) {
@@ -151,30 +172,69 @@
         float transmittance = 1.0;
         vec3 color = vec3(0.0);
 
-        vec3 cloudColor = vec3(1.0, 0.98, 0.95);
-        vec3 shadowColor = vec3(0.55, 0.62, 0.75);
+        vec3 sky = vec3(0.45, 0.6, 0.85);
 
-        for (int i = 0; i < STEPS; i++) {
-          float t = tNear + (float(i) + 0.5) * tStep;
-          vec3 p = ro + rd * t;
-          float d = sampleDensity(p);
-          // threshold: 0.05 (= 雲水 5% 未満は skip、 物理的に「雲粒なし」 と扱う)
-          if (d > 0.05) {
-            // 太陽方向の self-shadow も 1 step 最小限 (= 偽の立体感を作らない、
-            // voxel sampling 結果がそのまま色になる)
-            vec3 lp = p + uSunDir * 80.0;
-            float dl = sampleDensity(lp);
-            float lightAtten = exp(-dl * 2.0);
-            vec3 sampleC = mix(shadowColor, cloudColor, lightAtten);
-            // alpha: density が高い (= 雲水多い) ほど不透明、 低いほど半透明
-            float a = 1.0 - exp(-d * tStep * 0.03);
-            color += transmittance * a * sampleC;
-            transmittance *= (1.0 - a);
-            if (transmittance < 0.02) break;
+        if (uMode == 0) {
+          // ----- voxel mode: 既存、 物理量を素直に sampling -----
+          vec3 cloudColor = vec3(1.0, 0.98, 0.95);
+          vec3 shadowColor = vec3(0.55, 0.62, 0.75);
+          for (int i = 0; i < STEPS; i++) {
+            float t = tNear + (float(i) + 0.5) * tStep;
+            vec3 p = ro + rd * t;
+            float d = sampleDensity(p);
+            if (d > 0.05) {
+              vec3 lp = p + uSunDir * 80.0;
+              float dl = sampleDensity(lp);
+              float lightAtten = exp(-dl * 2.0);
+              vec3 sampleC = mix(shadowColor, cloudColor, lightAtten);
+              float a = 1.0 - exp(-d * tStep * 0.03);
+              color += transmittance * a * sampleC;
+              transmittance *= (1.0 - a);
+              if (transmittance < 0.02) break;
+            }
+          }
+        } else {
+          // ----- scatter mode: ミー散乱物理駆動 -----
+          // σ_ext = 3 ρ_air ql / (2 ρ_water r_eff)、 雲粒の物理から計算
+          // r_eff は dataset 平均が雲なし cell を含むため typical 雲内値で補正
+          float cosTheta = dot(rd, uSunDir);
+          float phase = twoLobeHG(cosTheta);
+          float rho_air = 1.0;
+          float rho_water = 1000.0;
+          float reff_um_inside = max(uReffMean_um * 2.5, 10.0);  // 雲内 typical 値
+          float reff_m = reff_um_inside * 1e-6;
+          // σ_ext 係数 (= ql 1 単位あたり)
+          float sigma_per_ql = 3.0 * rho_air / (2.0 * rho_water * reff_m);
+          vec3 cloudAlbedo = vec3(0.97);
+          for (int i = 0; i < STEPS; i++) {
+            float t = tNear + (float(i) + 0.5) * tStep;
+            vec3 p = ro + rd * t;
+            float dn = sampleDensity(p);
+            if (dn > 0.02) {
+              float ql_kgkg = dn * uQlMax_gkg * 1e-3;
+              float sigma_ext = sigma_per_ql * ql_kgkg;
+              // direct light atten = 太陽方向に 2 step、 距離 30m 程度 (= 光路短縮)
+              float lightOpticalDepth = 0.0;
+              for (int j = 1; j <= 2; j++) {
+                vec3 lp = p + uSunDir * 30.0 * float(j);
+                float dn_l = sampleDensity(lp);
+                if (dn_l > 0.0) {
+                  float ql_l = dn_l * uQlMax_gkg * 1e-3;
+                  lightOpticalDepth += sigma_per_ql * ql_l * 30.0;
+                }
+              }
+              float lightAtten = exp(-lightOpticalDepth);
+              vec3 directLight = vec3(1.4, 1.35, 1.25) * lightAtten * (phase * 2.0 + 0.5);  // 直射 + 等方
+              vec3 ambientLight = sky * 1.0;  // multi-scatter 強化 (= 雲は ambient で明るい)
+              vec3 sampleColor = cloudAlbedo * (directLight + ambientLight);
+              float a = 1.0 - exp(-sigma_ext * tStep);
+              color += transmittance * a * sampleColor;
+              transmittance *= (1.0 - a);
+              if (transmittance < 0.02) break;
+            }
           }
         }
 
-        vec3 sky = vec3(0.45, 0.6, 0.85);
         vec3 finalColor = color + transmittance * sky;
         float alpha = 1.0 - transmittance;
 
@@ -319,11 +379,13 @@
       const uniforms = {
         uCameraPos: { value: camera.position },
         uDensity: { value: new Float32Array(625) },
-        uDensityMax: { value: 1.0 },  // refreshVoxel() が product ごとに更新
+        uReffMean_um: { value: 10.0 },               // 雲粒有効半径平均 [μm]、 dataset から更新
+        uDensityMax: { value: 1.0 },
+        uQlMax_gkg: { value: 1.0 },                  // ql global max [g/kg] 物理復元
         uBoxMin: { value: boxMin },
         uBoxMax: { value: boxMax },
-        // 太陽方向 = 標準的な上空斜め (= 偽の長い陰を作らない、 voxel が見えやすい)
         uSunDir: { value: new THREE.Vector3(-0.4, 0.8, 0.3).normalize() },
+        uMode: { value: urlParams.get("mode") === "voxel" ? 0 : 1 },  // default = scatter
       };
 
       const cloudMat = new THREE.ShaderMaterial({
@@ -349,6 +411,17 @@
         return arr;
       }
 
+      // 別 product (= ql or r_eff) を fetch する helper
+      async function ensureBinFor(productKey) {
+        const key = `${state.dataset}_${productKey}`;
+        if (state.bins[key]) return state.bins[key];
+        const meta = catalog.datasets[state.dataset].products[productKey];
+        if (!meta) return null;
+        const arr = await fetchBinary(meta.bin_file);
+        state.bins[key] = arr;
+        return arr;
+      }
+
       // 現 state の step を uniform に転送 + 表示更新
       async function refreshVoxel() {
         const arr = await ensureBin();
@@ -356,9 +429,23 @@
         const stepArr = arr.subarray(state.step * 625, (state.step + 1) * 625);
         const u = uniforms.uDensity.value;
         for (let i = 0; i < 625; i++) u[i] = stepArr[i];
-        // 各 product の max を uniform に (= 線形 sampling、 product 切替で scale 更新)
         state.productMax = meta.max > 0 ? meta.max : 1.0;
         uniforms.uDensityMax.value = state.productMax;
+
+        // scatter mode = ql + r_eff 平均値 を uniform に
+        const qlMeta = catalog.datasets[state.dataset].products.ql;
+        const reffMeta = catalog.datasets[state.dataset].products.effective_radius;
+        if (qlMeta) uniforms.uQlMax_gkg.value = qlMeta.max;
+        if (reffMeta) uniforms.uReffMean_um.value = Math.max(reffMeta.mean, 1.0);
+        // scatter mode で uDensity を ql 強制 (= state.product が ql 以外でも物理駆動)
+        if (uniforms.uMode.value === 1) {
+          const qlArr = await ensureBinFor("ql");
+          if (qlArr) {
+            const qlStep = qlArr.subarray(state.step * 625, (state.step + 1) * 625);
+            for (let i = 0; i < 625; i++) u[i] = qlStep[i];
+            uniforms.uDensityMax.value = qlMeta.max;
+          }
+        }
         cloudMat.uniformsNeedUpdate = true;
 
         // step あたりの実効 max を計算 (= 表示用)
@@ -414,6 +501,29 @@
         state.step = parseInt(e.target.value, 10);
         refreshVoxel();
       });
+
+      // mode 切替 button
+      const modeButtonsDiv = document.getElementById("mode-buttons");
+      [
+        { key: "scatter", label: "scatter (= ミー散乱 物理駆動)", value: 1 },
+        { key: "voxel",   label: "voxel (= 物理量 直出し)",       value: 0 },
+      ].forEach(opt => {
+        const btn = document.createElement("button");
+        btn.textContent = opt.label;
+        btn.dataset.mode = opt.key;
+        btn.onclick = () => {
+          uniforms.uMode.value = opt.value;
+          cloudMat.uniformsNeedUpdate = true;
+          modeButtonsDiv.querySelectorAll("button").forEach(b =>
+            b.classList.toggle("active", b.dataset.mode === opt.key));
+          refreshVoxel();
+        };
+        modeButtonsDiv.appendChild(btn);
+      });
+      // 初期 mode の active 表示
+      const initModeKey = uniforms.uMode.value === 1 ? "scatter" : "voxel";
+      modeButtonsDiv.querySelectorAll("button").forEach(b =>
+        b.classList.toggle("active", b.dataset.mode === initModeKey));
 
       updateActiveStates();
       await refreshVoxel();
