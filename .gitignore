@@ -31,3 +31,9 @@ test-results/
 # b86: dev server (= python -m fujihill.bridge) が起動時に書き出す版情報、 viewer HUD で表示する
 # (= 「画面に出てる版が最新か」 確認用)。 commit に含めない、 server 起動のたび更新。
 web/version.json
+
+# b98: 物理ベース雲シミュ (= PySDM、 数値気象モデル本道) の python venv と計算結果。
+# .venv は環境依存、 npy は計算 artifact (= 数十〜数百 MB、 commit 重い)、 両方 ignore。
+experiments/cumulus-physical/.venv/
+experiments/cumulus-physical/output/*.npy
+experiments/cumulus-physical/output/*.zst
