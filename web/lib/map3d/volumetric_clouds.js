@@ -124,8 +124,11 @@ void main() {
 `;
 
 // fragment shader: AABB 交差 → ray-march → density 積算 → HG 位相 + light ray self-shadowing。
-// 識別子 cloudCover / cloudBaseM / cloudTopM / HG_G / RAY_MARCH_STEPS / LIGHT_RAY_STEPS は
+// 識別子 cloudCover / cloudBaseM / cloudTopM / RAY_MARCH_STEPS / LIGHT_RAY_STEPS は
 // uniform として参照され、 shader 内 density() / heightMask() / ray-march loop で使われる。
+// b80: 2 lobe HG / powder の定数は JS 側 export (HG_FORWARD / HG_BACKWARD / HG_MIX /
+// POWDER_SCALE / POWDER_EXPONENT) をテンプレートリテラルで注入 ── JS と shader が drift せず、
+// test が JS 定数を pin すれば shader にも反映される (= misleading test 構造の対症療法)。
 // volumetric_clouds.test.js が material.fragmentShader 文字列から識別子 grep で参照を pin する。
 const FRAGMENT_SHADER = /* glsl */`
 precision highp float;
@@ -135,7 +138,6 @@ uniform vec3 uSunDir;
 uniform float cloudCover;
 uniform float cloudBaseM;
 uniform float cloudTopM;
-uniform float HG_G;
 uniform int RAY_MARCH_STEPS;
 uniform int LIGHT_RAY_STEPS;
 uniform vec3 uBoundsMin;
@@ -224,13 +226,13 @@ float hgPhase(float cosTheta, float g) {
   return (1.0 - g2) / (4.0 * 3.14159265 * pow(max(d, 1e-4), 1.5));
 }
 
-// b80: 2 lobe Henyey-Greenstein (= forward 0.7 + backward -0.2 を 50:50 blend、
-// takram clouds.frag:332-338 同型)。 太陽 backlight 時の silver lining を encode。
-// hg2Js と式同型。
+// b80: 2 lobe Henyey-Greenstein (= forward ${HG_FORWARD} + backward ${HG_BACKWARD} を
+// ${HG_MIX}:${1-HG_MIX} blend、 takram clouds.frag:332-338 同型)。 太陽 backlight 時の
+// silver lining を encode。 hg2Js と式同型、 JS 定数注入で drift 防止。
 float hg2Phase(float cosTheta) {
-  float pf = hgPhase(cosTheta, 0.7);
-  float pb = hgPhase(cosTheta, -0.2);
-  return 0.5 * pf + 0.5 * pb;
+  float pf = hgPhase(cosTheta, ${HG_FORWARD.toFixed(1)});
+  float pb = hgPhase(cosTheta, ${HG_BACKWARD.toFixed(1)});
+  return ${HG_MIX.toFixed(1)} * pf + ${(1 - HG_MIX).toFixed(1)} * pb;
 }
 
 // AABB と ray の交差 ── tNear / tFar を返す
@@ -262,8 +264,7 @@ void main() {
   vec3 accumColor = vec3(0.0);
   float transmittance = 1.0;
   float cosTheta = dot(rd, normalize(uSunDir));
-  // b80: 2 lobe HG で silver lining、 旧 1 lobe hgPhase(cosTheta, HG_G) を置換。
-  // HG_G uniform は legacy (= 後方互換のため残置、 shader 内 unused)。
+  // b80: 2 lobe HG で silver lining、 旧 1 lobe hgPhase 単体呼出を置換 (= dead code 削除済)。
   float phase = hg2Phase(cosTheta);
 
   // 雲の base color。 真夏の白い積雲質感を狙い、 sun は warm white、 ambient は明るい青み
@@ -294,8 +295,8 @@ void main() {
       // 「真夏の白い積雲」 質感は雲全体が white に飽和、 太陽方向で更に明るく光るのが基準。
       // phase (= 0.0001..0.1) だけだと雲全体が暗くなるため、 sunColor base 0.6 を常時加算。
       // b80: Beer-powder で雲外周を dark、 雲深部を bright (= 「綿菓子→真の積雲」 質感)、
-      // takram clouds.frag:581-583 同型。 powderJs と式同型。
-      float powder = 1.0 - 0.8 * exp(-d * 15.0);
+      // takram clouds.frag:581-583 同型。 powderJs と式同型、 JS 定数注入で drift 防止。
+      float powder = 1.0 - ${POWDER_SCALE.toFixed(1)} * exp(-d * ${POWDER_EXPONENT.toFixed(1)});
       vec3 inScatter = (sunColor * (0.6 + phase * lightTransmit * 4.0) + ambientColor * 0.6) * powder;
       float dStep = d * stepLen * densityMul;
       // 累積色 (= alpha-premultiplied で blend、 dStep を 1.0 で clamp して overflow 防止)
@@ -344,7 +345,6 @@ export function createVolumetricClouds(THREE, opts = {}) {
     cloudCover: { value: cloudCover },
     cloudBaseM: { value: cloudBaseM },
     cloudTopM: { value: cloudTopM },
-    HG_G: { value: HG_G },
     RAY_MARCH_STEPS: { value: RAY_MARCH_STEPS },
     LIGHT_RAY_STEPS: { value: LIGHT_RAY_STEPS },
     uBoundsMin: { value: new THREE.Vector3(cloudVolume.minX, cloudBaseM, cloudVolume.minZ) },

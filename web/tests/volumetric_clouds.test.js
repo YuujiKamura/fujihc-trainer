@@ -136,7 +136,7 @@ describe('hg2Js — b80 2 lobe Henyey-Greenstein (= silver lining)', () => {
     expect(fwd).toBeGreaterThan(back);
   });
 
-  it('g1 = 0, g2 = 0 (= isotropic) で 1/(4π) (= 物理的 sanity)', () => {
+  it('g1=g2=0 + cosTheta=0 で 1/(4π) (= isotropic では cosTheta 依存なし、 HG 数式の sanity)', () => {
     expect(hg2Js(0, 0, 0, 0.5)).toBeCloseTo(1 / (4 * Math.PI), 4);
   });
 
@@ -312,14 +312,17 @@ describe('createVolumetricClouds — factory', () => {
     expect(inst.mesh.material.fragmentShader).toContain('cloudTopM');
   });
 
-  it('fragmentShader に HG_G / RAY_MARCH_STEPS / LIGHT_RAY_STEPS 識別子が登場', () => {
+  it('b80: fragmentShader に RAY_MARCH_STEPS / LIGHT_RAY_STEPS 識別子が登場、 HG_G uniform 宣言は削除済 (= 2 lobe 化で dead code)', () => {
     const inst = createVolumetricClouds(THREE, {
       cloudVolume, cloudBaseM: 1500, cloudTopM: 3500,
     });
     const src = inst.mesh.material.fragmentShader;
-    expect(src).toContain('HG_G');
     expect(src).toContain('RAY_MARCH_STEPS');
     expect(src).toContain('LIGHT_RAY_STEPS');
+    // HG_G uniform 宣言は b80 で削除済 (= 後方互換は JS 定数 export のみ、 shader 未使用)
+    expect(src).not.toContain('uniform float HG_G');
+    // 旧 1 lobe `hgPhase(cosTheta, HG_G)` 呼出も削除済 (= 2 lobe 化、 dead code 不在 pin)
+    expect(src).not.toContain('hgPhase(cosTheta, HG_G)');
   });
 
   it('fragmentShader に density / heightMask / hgPhase / intersectAABB 関数が登場', () => {
@@ -372,5 +375,25 @@ describe('createVolumetricClouds — factory', () => {
     expect(src).not.toContain('topFade');
     expect(src).toContain('densityCurve');
     expect(src).toContain('roundTop');
+  });
+
+  it('b80: shader 内 hg2Phase に HG_FORWARD/BACKWARD/MIX が JS 定数として注入されてる (= drift 防止)', () => {
+    const inst = createVolumetricClouds(THREE, {
+      cloudVolume, cloudBaseM: 1500, cloudTopM: 3500,
+    });
+    const src = inst.mesh.material.fragmentShader;
+    // JS 定数を変えれば shader にも反映される pin、 misleading 構造 fix
+    expect(src).toContain(`hgPhase(cosTheta, ${HG_FORWARD.toFixed(1)})`);
+    expect(src).toContain(`hgPhase(cosTheta, ${HG_BACKWARD.toFixed(1)})`);
+    expect(src).toContain(`${HG_MIX.toFixed(1)} * pf`);
+    expect(src).toContain(`${(1 - HG_MIX).toFixed(1)} * pb`);
+  });
+
+  it('b80: shader 内 powder に POWDER_SCALE/EXPONENT が JS 定数として注入されてる (= drift 防止)', () => {
+    const inst = createVolumetricClouds(THREE, {
+      cloudVolume, cloudBaseM: 1500, cloudTopM: 3500,
+    });
+    const src = inst.mesh.material.fragmentShader;
+    expect(src).toContain(`${POWDER_SCALE.toFixed(1)} * exp(-d * ${POWDER_EXPONENT.toFixed(1)})`);
   });
 });
