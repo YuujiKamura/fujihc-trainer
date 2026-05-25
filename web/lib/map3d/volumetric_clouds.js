@@ -214,13 +214,22 @@ float heightMask(float y) {
   return densityCurve * roundTop;
 }
 
-// density field (= 雲量 × Perlin × Worley × heightMask)。
+// density field (= 雲量 × Perlin FBM 2 octave × Worley FBM 2 octave × heightMask)。
 // 生 perlin × worley は mean ≈ 0.25 で local variance が低く 「もこもこ雲」 にならないため、
 // threshold + scale で sharp 化: 0.2 以下を 0、 0.45 以上を 1 にマップ (= 塊と隙間が立つ)。
+// b95: 1 octave noise は cumulus の「カリフラワー縁取り」 (= 大塊内に小塊の入れ子) を
+// 出さない、 user 「およそ雲って感じではない」 + 山中湖ライブカメラの multi-scale 観察を
+// 受け、 Perlin / Worley を 2 octave FBM に化けた (= base freq + 2x freq、 重み 2:1)。
+// sample cost は perlin 2x + worley 27→54 sample/pixel × 16 step = 1300 sample/frame で
+// RX 6400 でも fragment 命令は ALU 余裕、 GPU 計測で問題出たら octave 数減らせる。
 float density(vec3 p) {
   vec3 windOffset = vec3(uTime * 5.0, 0.0, uTime * 2.0);
-  float pn = perlin3d((p + windOffset) * ${PERLIN_FREQ});
-  float wn = worley3d(p * ${WORLEY_FREQ});
+  // Perlin FBM: 大塊スケール + 2x freq の細部、 amplitude 2:1 で base 重め
+  float pn = 0.67 * perlin3d((p + windOffset) * ${PERLIN_FREQ})
+           + 0.33 * perlin3d((p + windOffset) * ${PERLIN_FREQ * 2});
+  // Worley FBM: 大塊縁 + 2x freq の小塊縁、 amplitude 2:1 で multi-scale カリフラワー縁
+  float wn = 0.67 * worley3d(p * ${WORLEY_FREQ})
+           + 0.33 * worley3d(p * ${WORLEY_FREQ * 2});
   float raw = pn * wn;
   float clipped = clamp((raw - 0.2) * 4.0, 0.0, 1.0);
   return clipped * cloudCover * heightMask(p.y);
