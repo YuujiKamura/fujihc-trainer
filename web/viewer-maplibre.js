@@ -346,11 +346,12 @@ let manualPowerW = _lsNum('fujihill.power', 250);
 let physicsSpeedMps = 0;
 // 直近 state メッセージの受信時刻 (= dt 算出用、 state push は約 1Hz)。
 let lastPhysicsStateT = null;
-// b83: 表示用 speed の EMA 平滑化値 + 時定数 (秒)。 rAF tick で physicsSpeedMps に追従、
-// 1Hz の階段を rAF 60Hz で滑らかに見せる。 slider「自機 速度時定数」 で実行時可変。
-// 中身物理 (= physicsSpeedMps) は touch せず、 表示 layer だけ smoothing する分離。
+// b83-fix: EMA は 1Hz 階段を消す道具でない (sub-agent review 結論) ── 線形補間に置換。
+// wsHandlers.state で「seed = 現在表示値」 を覚えて、 tick で elapsed/expectedDt の比率で
+// prev → next を線形に繋ぐ。 階段が rAF 60Hz で連続化、 tau slider 不要 (= 撤去)。
 let displaySpeedMps = 0;
-let speedSmoothTau = 1.0;
+let prevPhysicsSpeedMps = 0;
+const EXPECTED_STATE_DT = 1.0;  // state push 期待間隔 (秒)、 fake state interval と整合
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 // ride 終了時の走行時間 (秒) を確定保存する。 ended ハンドラが rideStartedAt を null に
@@ -661,8 +662,10 @@ const wsHandlers = {
       // c_d=CdA / area=1 で渡す。
       physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, power, slopePct,
         { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
-      // b83: rider.setSpeed の 1Hz 直書きは撤去、 tick() で displaySpeedMps を EMA で
-      //      追従させて rAF 60Hz で滑らかに上書きする経路に集約。
+      // b83-fix: 線形補間の seed ── 「補間開始値 = 現在表示値」 を pin、 tick がここから
+      //   physicsSpeedMps (= 新目標) へ EXPECTED_STATE_DT 秒かけて線形に進む。
+      //   階段の跳びを起こさず rAF 60Hz で連続化される。
+      prevPhysicsSpeedMps = displaySpeedMps;
     }
     // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
     // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
@@ -1377,7 +1380,14 @@ function initViewMode() {
         // fake state push が後で同じ rider.setSpeed を呼ぶが、 idempotent なので競合しない.
         if (!rideState) return;
         rideState.startFrom(sec.start_idx);
+        // b83-fix: section click の即時 setSpeed と同時に補間 state 4 値を同期。
+        // これをしないと次 tick の線形補間が「古い prev → 新 next」 で再計算して
+        // setSpeed(20/3.6) を上書きしてしまい、 ride 開始がじわっと加速になる。
         if (rider) rider.setSpeed(20 / 3.6);
+        physicsSpeedMps = 20 / 3.6;
+        prevPhysicsSpeedMps = 20 / 3.6;
+        displaySpeedMps = 20 / 3.6;
+        lastPhysicsStateT = performance.now();
         lastT = performance.now();
         rideStartedAt = performance.now();
         setAppState('riding');
@@ -1868,12 +1878,15 @@ function tick(t) {
   // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
   // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
   // すべて rider.tick + rider.snapshot.position に集約済. viewer は snapshot を描画に流すだけ.
-  // b83: 表示 speed を physicsSpeedMps へ EMA で追従。 tau = 速度時定数 (秒)、
-  // alpha = clamp(dt/tau, 0, 1) で 1 階指数追従。 1Hz の階段が rAF 60Hz で「フーン」 と
-  // 連続変化に化ける。 physicsSpeedMps が NaN / 負ならガード。
-  if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0 && speedSmoothTau > 0) {
-    const alpha = Math.min(1, dt / speedSmoothTau);
-    displaySpeedMps += (physicsSpeedMps - displaySpeedMps) * alpha;
+  // b83-fix: 1Hz 物理速度を rAF 60Hz に線形補間。 wsHandlers.state が 1 秒ごとに
+  // physicsSpeedMps を更新 + prevPhysicsSpeedMps に「表示中の値」 を seed、 ここで
+  // 経過 elapsed / EXPECTED_STATE_DT を比率に prev → next を線形に繋ぐ。
+  // EMA と違い「階段を 60Hz で消す」 効果が確実、 定常偏差なし。 物理急変 (= ペダル踏み始め
+  // / 止め) は次の state push 時の seed 更新で「現在値」 から滑らかに新目標へ進む。
+  if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0 && lastPhysicsStateT != null) {
+    const elapsed = (t - lastPhysicsStateT) / 1000;
+    const frac = Math.min(1, Math.max(0, elapsed / EXPECTED_STATE_DT));
+    displaySpeedMps = prevPhysicsSpeedMps + (physicsSpeedMps - prevPhysicsSpeedMps) * frac;
     rider.setSpeed(displaySpeedMps);
   }
   rider.tick(dt, { speedMultiplier: speedMult });
@@ -2194,7 +2207,13 @@ document.getElementById('btnScanHrm').addEventListener('click', () => {
 document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   hideConfirm(); hidePairing();
   // brief 35: 旧 playSpeed module global は廃止、 rider.setSpeed が唯一の入口.
+  // b83-fix: section click と同型の補間 state 4 値同期 (= 次 tick で線形補間が「古い prev」
+  //   から再計算して setSpeed を上書きする副次バグの防止)。
   if (rider) rider.setSpeed(20 / 3.6);
+  physicsSpeedMps = 20 / 3.6;
+  prevPhysicsSpeedMps = 20 / 3.6;
+  displaySpeedMps = 20 / 3.6;
+  lastPhysicsStateT = performance.now();
   if (rideState) rideState.start();
   lastT = performance.now();
   status('デモモード (記録は保存されません)');
@@ -2270,9 +2289,6 @@ const CONTROL_DEFS = [
   //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
   //   user 触って好みの位置に。
   { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.3, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
-  // b83: 速度の rAF 平滑化時定数 (= EMA tau)。 0.1 で従来挙動 (= ほぼ即追従、 1Hz 階段)、
-  //      1.0 で Zwift race mode 相当、 3.0 で Zwift default 相当、 5.0 で重慣性。 0 では止まる。
-  { key:'speedSmoothTau', label:'自機 速度時定数', min:0.1, max:5.0,  step:0.1,  value:1.0, unit:'秒', format:raw=>raw.toFixed(1),     apply(raw){ speedSmoothTau = raw; } },
 ];
 mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
 
