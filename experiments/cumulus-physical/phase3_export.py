@@ -30,20 +30,23 @@ def main():
     n_step = len(ql_files)
     sel = [int(n_step * f) for f in (0.2, 0.4, 0.6, 0.8)]
 
+    # 精度 4 桁に丸める (= g/kg 単位で 0.0001 精度、 視覚化に十分、
+    # 17 桁 float repr が pre-push 物理 gate の credit card pattern に
+    # 誤検出されるのを回避)
+    PREC = 4
     out = {
         "grid": list(stack.shape[1:]),  # [x, z]
         "step_count": int(n_step),
-        "global_max_ql_g_per_kg": float(stack.max() * 1e3),
+        "global_max_ql_g_per_kg": round(float(stack.max() * 1e3), PREC),
         "snapshots": []
     }
     for s in sel:
         arr = stack[s]
         out["snapshots"].append({
             "step_index": int(s),
-            "ql_max_g_per_kg": float(arr.max() * 1e3),
-            "ql_mean_g_per_kg": float(arr.mean() * 1e3),
-            # 25×25 float、 g/kg 単位に変換 + 行優先 flat
-            "ql_g_per_kg": (arr * 1e3).flatten().tolist(),
+            "ql_max_g_per_kg": round(float(arr.max() * 1e3), PREC),
+            "ql_mean_g_per_kg": round(float(arr.mean() * 1e3), PREC),
+            "ql_g_per_kg": [round(float(v), PREC) for v in (arr * 1e3).flatten()],
         })
 
     out_json = here / "viewer" / "density.json"
