@@ -141,11 +141,13 @@
      下半分: 標高プロファイル (= brief 28 と同じ buildMinimapBottom 仕様)。 */
   #minimap-container {
     position: fixed; left: 1rem; top: 1rem; z-index: 999;
-    width: 320px; height: 720px;
+    /* 2026-05-25 b88: user 指示「ミニマップサイズ 75%」 ── 旧 320x720 を 0.75 倍に縮小、
+       top 561→421 / bottom 159→119 で 78:22 比率と合計 540px を維持。 */
+    width: 240px; height: 540px;
     background: rgba(0, 0, 0, 0.8); border-radius: 6px; overflow: hidden;
   }
-  #minimap-top    { display: block; width: 100%; height: 561px; }   /* 78% = 平面マップ */
-  #minimap-bottom { display: block; width: 100%; height: 159px; } /* 22% = 標高 */
+  #minimap-top    { display: block; width: 100%; height: 421px; }   /* 78% = 平面マップ */
+  #minimap-bottom { display: block; width: 100%; height: 119px; } /* 22% = 標高 */
 
   #setup-overlay {
     position: fixed; inset: 0; z-index: 1500;
