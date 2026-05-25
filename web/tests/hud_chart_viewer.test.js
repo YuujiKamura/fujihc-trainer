@@ -70,13 +70,13 @@ describe('index.html: chart panel DOM + CSS', () => {
   it('CSS rule #hud-chart { が存在 (= 落ちると panel に位置 / 背景がない、 画面に出ても見えない)', () => {
     expect(HTML).toMatch(/#hud-chart\s*\{/);
   });
-  it('state gate body.state-checking #hud-chart が存在 (= setup 中に chart を隠す)', () => {
+  it('state gate body.state-checking で chart 系を隠す (= setup 中に chart を隠す、 wrapper or chart selector)', () => {
     expect(HTML).toMatch(/body\.state-checking[^,{]*#hud-chart/);
   });
-  it('state gate body.state-dbinit #hud-chart が存在 (= DB 構築中に chart を隠す)', () => {
+  it('state gate body.state-dbinit で chart 系を隠す', () => {
     expect(HTML).toMatch(/body\.state-dbinit[^,{]*#hud-chart/);
   });
-  it('state gate body.state-pairing #hud-chart が存在 (= BLE ペアリング中に chart を隠す)', () => {
+  it('state gate body.state-pairing で chart 系を隠す', () => {
     expect(HTML).toMatch(/body\.state-pairing[^,{]*#hud-chart/);
   });
   it('fold ボタン id="hud-chart-fold-btn" が存在 (= 折りたたみ機能の DOM)', () => {

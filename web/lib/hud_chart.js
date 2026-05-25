@@ -10,7 +10,7 @@
 //   sub-chart 3: y=170..222 ── ケイデンス (magenta)
 // 横軸 = ride elapsed 0 〜 maxT (= buffer.maxTime())、 全 sub-chart で共有。
 //
-// 寸法は b99 UI 改訂で 75% コンパクト化 (= ユーザ訂正「画面占有率高い」、 元 70/18/90/40 → 52/14/68/30).
+// 寸法は b99 UI 改訂で 50% 級にコンパクト化 (= ユーザ訂正「でけえよバカ」、 元 70/18/90/40 → 36/12/60/26).
 // 折りたたみは index.html の #hud-chart-fold-btn + body.chart-folded で canvas を隠す層.
 
 export const SUBCHART_SPECS = [
@@ -20,12 +20,12 @@ export const SUBCHART_SPECS = [
   { field: 'cadence', label: 'ケイデンス', unit: 'rpm', color: '#e879b6', avgColor: 'rgba(232,121,182,0.55)' },
 ];
 
-export const SUBCHART_HEIGHT_PX = 52;
+export const SUBCHART_HEIGHT_PX = 36;
 export const SUBCHART_GAP_PX = 0;
-export const TIME_RULER_HEIGHT_PX = 14;
-export const LEFT_LABEL_WIDTH_PX = 68;
-export const RIGHT_UNIT_WIDTH_PX = 30;
-export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 222
+export const TIME_RULER_HEIGHT_PX = 12;
+export const LEFT_LABEL_WIDTH_PX = 60;
+export const RIGHT_UNIT_WIDTH_PX = 26;
+export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 156
 
 function isValidNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -185,23 +185,30 @@ export function createChartRenderer(canvas, buffer) {
     if (anyDrawn) ctx.stroke();
   }
 
-  function drawLabels(spec, max, avg, top, bottom, width) {
-    // 左端: "ラベル名\n最大 N\n平均 N" を 3 行 fillText。
-    // 右端: 単位を fillText。
+  function drawLabels(spec, max, avg, top, bottom, width, axisMin, axisMax) {
+    // 左端: "ラベル名\n最大 N\n平均 N" を 3 行 fillText.
+    // 右端: 上端に axisMax (= 縦軸上限) / 中段に 単位 / 下端に axisMin (= 縦軸下限).
     ctx.fillStyle = '#dfe';
-    ctx.font = '11px ui-monospace, monospace';
+    ctx.font = '10px ui-monospace, monospace';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     const label = formatSubchartLabel(spec, max, avg);
     const lines = label.split('\n');
-    const lineHeight = 13;
-    const startY = top + 4;
+    const lineHeight = 11;  // 3 行 × 11px = 33px = sub-chart 36px に収まる
+    const startY = top + 1;
     for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], 4, startY + i * lineHeight);
+      ctx.fillText(lines[i], 3, startY + i * lineHeight);
     }
-    // 右端単位
-    ctx.textAlign = 'left';
-    ctx.fillText(spec.unit, width - RIGHT_UNIT_WIDTH_PX + 4, top + (bottom - top) / 2 - 5);
+    // 右端: 縦軸の上限/単位/下限 を 3 段表示 (= Strava 形式の y-axis 値ラベル).
+    const rightX = width - RIGHT_UNIT_WIDTH_PX + 2;
+    const maxStr = formatNumberForLabel(axisMax);
+    const minStr = formatNumberForLabel(axisMin);
+    ctx.fillStyle = '#bcd';
+    ctx.fillText(maxStr, rightX, top + 1);  // 上端
+    ctx.fillStyle = '#dfe';
+    ctx.fillText(spec.unit, rightX, top + (bottom - top) / 2 - 5);  // 中段
+    ctx.fillStyle = '#bcd';
+    ctx.fillText(minStr, rightX, bottom - 11);  // 下端
   }
 
   return {
@@ -244,8 +251,9 @@ export function createChartRenderer(canvas, buffer) {
         const avg = buffer.avgOf(spec.field);
         const max = buffer.maxOf(spec.field);
 
-        // ラベル (= 左端 + 右端、 polyline 有無に関わらず描く、 fillText のみで lineTo は呼ばない)
-        drawLabels(spec, max, avg, top, bottom, width);
+        // ラベル (= 左端 + 右端、 polyline 有無に関わらず描く、 fillText のみで lineTo は呼ばない).
+        // axisMin/Max は有効値ゼロ時 null (= '--' 表示) を formatNumberForLabel で処理.
+        drawLabels(spec, max, avg, top, bottom, width, hasValid ? minV : null, hasValid ? maxV : null);
 
         if (!hasSamples) continue; // 空 buffer は背景 grid も含めて何も描かない (= ride 開始前の clean state)
 
