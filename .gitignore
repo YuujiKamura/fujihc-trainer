@@ -38,3 +38,5 @@ experiments/cumulus-physical/.venv/
 experiments/cumulus-physical/output/*.npy
 experiments/cumulus-physical/output/*.zst
 experiments/cumulus-physical/output/phase1_arabas_storage/
+experiments/cumulus-physical/output/phase1_arabas_cumulus_storage/
+experiments/cumulus-physical/lcm/output/
