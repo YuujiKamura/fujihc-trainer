@@ -318,12 +318,12 @@ void main() {
  * @param {{minX:number, maxX:number, minZ:number, maxZ:number}} opts.cloudVolume - world XZ bbox
  * @param {number} [opts.cloudCover=0]
  * @param {number} [opts.cloudBaseM=1500]
- * @param {number} [opts.cloudTopM=3500]
+ * @param {number} [opts.cloudTopM=6000]  // b76-polish-5: 笠雲再現の絶対床、 cloud_estimator と同値
  * @returns {object} { mesh, setWeather, getWeather, setSunDir, setCameraPosition, tick }
  */
 export function createVolumetricClouds(THREE, opts = {}) {
   const {
-    cloudVolume, cloudCover = 0, cloudBaseM = 1500, cloudTopM = 3500,
+    cloudVolume, cloudCover = 0, cloudBaseM = 1500, cloudTopM = 6000,
   } = opts;
   if (!cloudVolume
       || !Number.isFinite(cloudVolume.minX) || !Number.isFinite(cloudVolume.maxX)

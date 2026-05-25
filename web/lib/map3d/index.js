@@ -385,7 +385,7 @@ export function createMapRenderer() {
               cloudVolume,
               cloudCover: 0,
               cloudBaseM: 1500,
-              cloudTopM: 3500,
+              cloudTopM: 6000,
             });
             scene.add(cloudInstance.mesh);
             if (pending.weatherClouds) cloudInstance.setWeather(pending.weatherClouds);
