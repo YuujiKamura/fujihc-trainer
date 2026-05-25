@@ -140,6 +140,14 @@ PRESETS: dict[str, Config] = {
         microphysics=Microphysics(sd_per_cell=25, n_aero_per_m3=1e8),
         initial=Initial(T0=300.0, p0=101325.0, q_v0=0.015, lapse_rate=0.0065),
     ),
+    "fuji_3d_100m": Config(
+        label="3D 富士山 100m + CPU 用 (= 50×50×50=125k cell、 ローカル PC 数十秒-分、 b107 multicell sim、 lz=5km で 富士山頂 3.75km + 雲頂 4km + 上層 shear カバー)",
+        domain=Domain(lx=5000.0, ly=5000.0, lz=5000.0),
+        grid=Grid(dx=100.0, dy=100.0, dz=100.0),
+        time=TimeStep(dt=1.0, sim_time=1800.0),
+        microphysics=Microphysics(sd_per_cell=10, n_aero_per_m3=1e8),
+        initial=Initial(T0=288.15, p0=101325.0, q_v0=0.018, lapse_rate=0.0065),
+    ),
     "fuji_3d_200m": Config(
         label="3D 富士山 200m (= 50×50×75=187k cell、 ローカル PC 上限、 数時間)",
         domain=Domain(lx=10000.0, ly=10000.0, lz=15000.0),
