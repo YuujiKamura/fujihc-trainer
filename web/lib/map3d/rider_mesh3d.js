@@ -376,7 +376,7 @@ export function createRiderMesh3d(THREE) {
     // ±車軸間隔/2 の 2 点で決める。 中心を 2 点の中点にすると、 コースが曲がる急勾配
     // 区間で中点がコース曲面から浮く (弦は曲面の内側を通る) ので、 位置は中心点だけ・
     // 向きだけ 2 点。 こうして「剛体 bike をコースの傾きに沿わせつつ浮かせない」。
-    updatePose(ribbonPositions, course, distanceM) {
+    updatePose(ribbonPositions, course, distanceM, spinAngle = null) {
       // 前後の車軸間隔 (m) = unit モデルの前後ハブ間隔 × wheelbase × group scale。
       const wheelbaseM = (BIKE_DIMENSIONS.rearZ - BIKE_DIMENSIONS.frontZ)
         * currentShape.wheelbase * (group.scale.x || 1);
@@ -395,12 +395,19 @@ export function createRiderMesh3d(THREE) {
       const flen = Math.hypot(fx, fy, fz) || 1;
       fx /= flen; fy /= flen; fz /= flen;
       group.lookAt(cx - fx, cy - fy, cz - fz);
-      // 走行距離 → 車輪と駆動系の回転。 bike は -Z 前方なので前進で車輪上部は前へ
-      // 転がる = 車軸 (ローカル X) まわりの回転。 クランクはギア比ぶん車輪より遅い。
+      // 走行距離 → 車輪回転 (= 速度 × 700C 仮定、 user 指示)。 bike は -Z 前方なので前進で
+      // 車輪上部は前へ転がる = 車軸 (ローカル X) まわりの回転。 半径 0.34m は 700×28C 転がり
+      // 半径標準値、 周長 ≈ 2.14m / 1 回転、 速度 20km/h ≈ 5.56m/s で約 2.6Hz の回転。
       const roll = -distanceM / WHEEL_ROLL_RADIUS_M;
       spinners.frontWheel.rotation.x = roll;
       spinners.rearWheel.rotation.x = roll;
-      const crankRot = roll / CRANK_GEAR_RATIO;
+      // user 指示「ケイデンスに合わせてペダル回転」 ── crank rotation は spinAngle (= rider.js が
+      // cadence rpm × dt で累積した真の cadence ベース角) を使う。 trainer の cadence 信号が
+      // そのまま反映、 ギア比固定の距離フォールバック (= roll / CRANK_GEAR_RATIO) は spinAngle
+      // が無い時 (= 後方互換 / 既存 test) のみに残す。
+      const crankRot = (spinAngle != null && Number.isFinite(spinAngle))
+        ? -spinAngle
+        : (roll / CRANK_GEAR_RATIO);
       spinners.crankSet.rotation.x = crankRot;
       // ペダルの踏み面は常にコースと水平 ── crankSet の回転を逆回転で打ち消す
       // (= 実車のペダルがスピンドルで自由回転し踏み面を保つのと同じ)。
