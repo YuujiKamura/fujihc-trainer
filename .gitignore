@@ -37,3 +37,4 @@ web/version.json
 experiments/cumulus-physical/.venv/
 experiments/cumulus-physical/output/*.npy
 experiments/cumulus-physical/output/*.zst
+experiments/cumulus-physical/output/phase1_arabas_storage/
