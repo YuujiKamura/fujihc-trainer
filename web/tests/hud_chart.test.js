@@ -125,7 +125,7 @@ describe('SUBCHART_SPECS 順序 pin (= 「上から speed/power/hr/cadence」 �
 describe('CANVAS_HEIGHT_PX 算式 pin (= マジックナンバー化防止)', () => {
   it('CANVAS_HEIGHT_PX === TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4', () => {
     expect(CANVAS_HEIGHT_PX).toBe(TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4);
-    expect(CANVAS_HEIGHT_PX).toBe(18 + 70 * 4);
-    expect(CANVAS_HEIGHT_PX).toBe(298);
+    expect(CANVAS_HEIGHT_PX).toBe(14 + 52 * 4);
+    expect(CANVAS_HEIGHT_PX).toBe(222);
   });
 });

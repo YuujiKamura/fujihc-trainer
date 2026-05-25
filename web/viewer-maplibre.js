@@ -576,6 +576,22 @@ const chartRenderer = chartCanvas ? createChartRenderer(chartCanvas, chartBuffer
 let _lastSpeed = null, _lastPower = null, _lastCadence = null, _lastHr = null;
 let _lastChartPushSec = -1;
 let _lastChartRenderMs = 0;
+// b99 ui-tune: 折りたたみボタン. body.chart-folded を toggle、 localStorage で persist
+// (= 次回起動で前回 fold 状態を復元、 ride 中の画面占有を user 好みに合わせる).
+const FOLD_KEY = 'fujihill.chart-folded';
+const chartFoldBtn = document.getElementById('hud-chart-fold-btn');
+function applyChartFold(folded) {
+  document.body.classList.toggle('chart-folded', folded);
+  if (chartFoldBtn) chartFoldBtn.textContent = folded ? '▸ chart' : '▾ chart';
+}
+try { applyChartFold(localStorage.getItem(FOLD_KEY) === '1'); } catch (_) { /* SSR / privacy mode */ }
+if (chartFoldBtn) {
+  chartFoldBtn.addEventListener('click', () => {
+    const next = !document.body.classList.contains('chart-folded');
+    applyChartFold(next);
+    try { localStorage.setItem(FOLD_KEY, next ? '1' : '0'); } catch (_) { /* privacy mode */ }
+  });
+}
 function maybePushAndRenderChart(elapsedSec, paused) {
   if (!chartRenderer || !chartBuffer) return;
   const decision = decideChartPush({

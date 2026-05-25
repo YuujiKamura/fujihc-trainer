@@ -78,13 +78,27 @@
      ride 中以外 (= state-checking / state-dbinit / state-pairing) は隠す (= 既存 #hud と同じ state gate). */
   #hud-chart {
     position: fixed; top: 1rem; left: 17rem; right: 1rem; z-index: 999;
-    background: rgba(0, 0, 0, 0.65); padding: 4px; border-radius: 6px;
-    pointer-events: none; display: block;
+    background: rgba(0, 0, 0, 0.65); padding: 2px 4px 4px 4px; border-radius: 6px;
+    pointer-events: none;
+    display: flex; flex-direction: column; align-items: stretch;
   }
   #hud-chart canvas {
     display: block; width: 100%;
     /* height literal を書かない ── canvas attribute (JS init で CANVAS_HEIGHT_PX を set) が SoT. */
   }
+  /* b99 ui-tune: 折りたたみボタン. canvas の上に独立 row として並ぶ (= flex column).
+     fold 時は canvas display:none、 button 行だけ残って 1 行高に縮む. */
+  #hud-chart-fold-btn {
+    align-self: flex-end;
+    background: #222; border: 1px solid #888;
+    color: #fff; padding: 1px 8px; margin-bottom: 2px;
+    font-size: 11px; line-height: 16px;
+    cursor: pointer; border-radius: 3px; pointer-events: auto;
+    font-family: ui-monospace, monospace; font-weight: bold;
+  }
+  #hud-chart-fold-btn:hover { background: #444; border-color: #ccc; }
+  body.chart-folded #hud-chart { padding: 2px 4px; }
+  body.chart-folded #hud-chart canvas { display: none; }
   body.state-checking #hud-chart,
   body.state-dbinit #hud-chart,
   body.state-pairing #hud-chart { display: none !important; }
@@ -686,6 +700,7 @@
      chart renderer が 4 sub-chart (speed/power/hr/cadence) に描く. canvas の width/height
      attribute は持たない (= JS init で CANVAS_HEIGHT_PX を canvas.height に上書きする SoT 1 化). -->
 <div id="hud-chart">
+  <button id="hud-chart-fold-btn" type="button" title="折りたたみ / 展開">▾ chart</button>
   <canvas id="hud-chart-canvas"></canvas>
 </div>
 

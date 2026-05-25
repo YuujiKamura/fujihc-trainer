@@ -79,6 +79,24 @@ describe('index.html: chart panel DOM + CSS', () => {
   it('state gate body.state-pairing #hud-chart が存在 (= BLE ペアリング中に chart を隠す)', () => {
     expect(HTML).toMatch(/body\.state-pairing[^,{]*#hud-chart/);
   });
+  it('fold ボタン id="hud-chart-fold-btn" が存在 (= 折りたたみ機能の DOM)', () => {
+    expect(HTML).toContain('id="hud-chart-fold-btn"');
+  });
+  it('CSS body.chart-folded #hud-chart canvas { display: none } が存在 (= 折りたたみで canvas 隠す)', () => {
+    expect(HTML).toMatch(/body\.chart-folded\s+#hud-chart\s+canvas\s*\{[^}]*display:\s*none/);
+  });
+});
+
+describe('viewer-maplibre.js: 折りたたみ結線 (= b99 ui-tune)', () => {
+  it('hud-chart-fold-btn の getElementById 呼出が存在', () => {
+    expect(VIEWER).toMatch(/getElementById\(['"]hud-chart-fold-btn['"]\)/);
+  });
+  it('chart-folded class の toggle が存在 (= classList.toggle で fold 状態切替)', () => {
+    expect(VIEWER).toMatch(/classList\.toggle\(['"]chart-folded['"]/);
+  });
+  it('fold ボタンに click listener が結線されている', () => {
+    expect(VIEWER).toMatch(/chartFoldBtn[^]*addEventListener\(['"]click['"]/);
+  });
 });
 
 describe('hud.js 不可侵契約 (= chart 概念を hud.js に混入させない、 整形 + DOM 書き込み SoT 維持)', () => {

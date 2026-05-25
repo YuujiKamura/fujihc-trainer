@@ -3,12 +3,15 @@
 //
 // canvas は <canvas id="hud-chart-canvas"> 1 個に 4 sub-chart を縦積みする (= Strava
 // と同型 form)。 各 sub-chart は独立した sub region (= y 帯) を持つ:
-//   time ruler:  y=0..18
-//   sub-chart 0: y=18..88   ── スピード (cyan)
-//   sub-chart 1: y=88..158  ── パワー (purple)
-//   sub-chart 2: y=158..228 ── 心拍 (red)
-//   sub-chart 3: y=228..298 ── ケイデンス (magenta)
+//   time ruler:  y=0..14
+//   sub-chart 0: y=14..66   ── スピード (cyan)
+//   sub-chart 1: y=66..118  ── パワー (purple)
+//   sub-chart 2: y=118..170 ── 心拍 (red)
+//   sub-chart 3: y=170..222 ── ケイデンス (magenta)
 // 横軸 = ride elapsed 0 〜 maxT (= buffer.maxTime())、 全 sub-chart で共有。
+//
+// 寸法は b99 UI 改訂で 75% コンパクト化 (= ユーザ訂正「画面占有率高い」、 元 70/18/90/40 → 52/14/68/30).
+// 折りたたみは index.html の #hud-chart-fold-btn + body.chart-folded で canvas を隠す層.
 
 export const SUBCHART_SPECS = [
   { field: 'speed', label: 'スピード', unit: 'km/h', color: '#5fb8e6', avgColor: 'rgba(95,184,230,0.55)' },
@@ -17,12 +20,12 @@ export const SUBCHART_SPECS = [
   { field: 'cadence', label: 'ケイデンス', unit: 'rpm', color: '#e879b6', avgColor: 'rgba(232,121,182,0.55)' },
 ];
 
-export const SUBCHART_HEIGHT_PX = 70;
+export const SUBCHART_HEIGHT_PX = 52;
 export const SUBCHART_GAP_PX = 0;
-export const TIME_RULER_HEIGHT_PX = 18;
-export const LEFT_LABEL_WIDTH_PX = 90;
-export const RIGHT_UNIT_WIDTH_PX = 40;
-export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 298
+export const TIME_RULER_HEIGHT_PX = 14;
+export const LEFT_LABEL_WIDTH_PX = 68;
+export const RIGHT_UNIT_WIDTH_PX = 30;
+export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 222
 
 function isValidNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
