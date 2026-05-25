@@ -61,7 +61,7 @@ def main():
         axes[0].set_ylabel("z [km]")
         cbar = fig.colorbar(im, ax=axes, shrink=0.8, pad=0.02)
         cbar.set_label(f"{var} [{unit}]")
-        fig.suptitle(f"Field2D warm bubble: {var} (Eulerian, no projection)")
+        fig.suptitle(f"Field2D warm bubble: {var} (Eulerian + FFT spectral pressure projection)")
         out_png = here / "output" / f"field_2d_{var}.png"
         fig.savefig(out_png, dpi=110, bbox_inches="tight")
         plt.close(fig)

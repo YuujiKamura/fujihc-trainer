@@ -40,3 +40,6 @@ experiments/cumulus-physical/output/*.zst
 experiments/cumulus-physical/output/phase1_arabas_storage/
 experiments/cumulus-physical/output/phase1_arabas_cumulus_storage/
 experiments/cumulus-physical/lcm/output/
+experiments/cumulus-physical/obs/cache.sqlite
+experiments/cumulus-physical/obs/cache.sqlite-shm
+experiments/cumulus-physical/obs/cache.sqlite-wal

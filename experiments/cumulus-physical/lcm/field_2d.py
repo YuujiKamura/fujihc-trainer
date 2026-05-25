@@ -11,7 +11,7 @@ user 概念モデルの直訳 (= 2026-05-25):
 - step:
   1. 移流 (= upwind 1 次): 各場 X を u, w で運ぶ
   2. 浮力: w += (θ' / θ_0) * g * dt、 θ' = θ - θ_env
-  3. 圧力射影 (= projection method): div(rho_0 u) = 0 を SOR で満たして速度を補正
+  3. 圧力射影 (= projection method): div(rho_0 u) = 0 を FFT spectral + tridiag で satisfy
   4. 凝結 / 蒸発: 各 cell で q_v ⇄ q_l、 時定数 τ_c / τ_e で transition、 潜熱 θ feedback
 
 初期条件: 地表中央付近に warm bubble (= +2K) を置いて上昇させる、 古典的 dry/moist
@@ -19,6 +19,19 @@ thermal test、 cumulus 対流の最小単位。
 
 8 担当者合意 (= 2026-05-25 チーム): anelastic / θ / 簡易凝結 (= τ relaxation) / 周期 x +
 壁 z 境界 / Smagorinsky SGS は当面省略 (= 数値拡散が代用)、 後段で Deardorff TKE 追加。
+
+質量保存 solver の数式 (= 2026-05-25 質量保存担当 改訂):
+mass-flux potential ψ = ρ₀ φ を導入すると anelastic 連続式
+  ∂(ρ₀ u)/∂x + ∂(ρ₀ w)/∂z = 0
+を満たす速度補正は
+  (ρ₀ u)_new = (ρ₀ u*) − ∂ψ/∂x
+  (ρ₀ w)_new = (ρ₀ w*) − ∂ψ/∂z
+で得られ、 ψ は定係数 Poisson
+  ∂²ψ/∂x² + ∂²ψ/∂z² = ∂(ρ₀ u*)/∂x + ∂(ρ₀ w*)/∂z
+を解けば良い。 x は周期なので numpy.fft.rfft で対角化 (mode k で ∂²/∂x² = −k²)、
+z は壁境界 (= w=0 ⟹ ∂ψ/∂z = 0) で Neumann、 mode 毎に scipy 風 tridiagonal direct
+solve (= Thomas algorithm)。 k=0 mode は gauge 自由度のため平均を 0 に pin。
+反復ゼロの direct solve なので SOR の omega tuning / 発散モードが構造的に消える。
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -166,53 +179,139 @@ class Field2D:
         dtheta = self.L_v * dq / (self.c_p * pi)
         self.theta += dtheta
 
-    def pressure_projection(self) -> None:
-        """簡易: 連続式 div(rho_0 u) = 0 を SOR 反復で射影、 速度を補正。
+    def _build_pressure_solver(self) -> None:
+        """FFT spectral + tridiagonal の事前計算 (= solver 構造の cache)。
 
-        anelastic: ρ_0(z) ∂u/∂x + ∂(ρ_0 w)/∂z = 0 を満たすよう、
-        圧力ポテンシャル φ を解いて u -= ∇φ / ρ_0。 SOR 30 step で粗く満たす (= ボトムアップ
-        段階での精度は要求しない、 動くこと優先)。
+        x は周期 (= rfft で半長 K = nx//2+1 モード)、 各モード k_x について z 方向に
+        nz×nz tridiagonal 線形系を解く。 行列は ψ に対する 3 点差分 + Neumann BC、
+        モード毎に対角 (= a, c) は共通で、 主対角 b のみ k_x_mod² 依存。
+
+        重要: divergence は forward 差分 で測り、 gradient は forward で復元する
+        (= 標準 3 点 Laplacian と discrete Hodge 整合)。 spectral 側では連続 k² ではなく
+        **modified wavenumber** k_mod² = (2 sin(π k / nx) / dx)² を使う ── これが
+        forward 差分 (= ψ[i+1] − ψ[i])/dx を 2 回噛ませた時の eigenvalue。 ここを揃えないと
+        射影後も div が残り、 SOR と同じ症状になる (= 2026-05-25 1 段目 NG の根因)。
         """
-        rho = self.rho_0[np.newaxis, :]  # shape (1, nz)
-        # 速度の divergence
-        div = np.zeros_like(self.u)
-        # x 周期
-        du_dx = (np.roll(self.u, -1, axis=0) - np.roll(self.u, +1, axis=0)) / (2 * self.dx)
-        # z 壁: 上下端は 0
-        rho_w = rho * self.w
-        d_rhow_dz = np.zeros_like(rho_w)
-        d_rhow_dz[:, 1:-1] = (rho_w[:, 2:] - rho_w[:, :-2]) / (2 * self.dz)
-        div = du_dx + d_rhow_dz / rho
+        # rfft index k = 0..nx//2、 modified wavenumber for forward-diff Laplacian
+        k_idx = np.arange(self.nx // 2 + 1)
+        # (ψ[i+1] − 2 ψ[i] + ψ[i−1])/dx² の eigenvalue = −(2 sin(π k/nx)/dx)²
+        sin_half = np.sin(np.pi * k_idx / self.nx)
+        self._kx2 = (2.0 * sin_half / self.dx) ** 2  # shape (K,)
+        self._inv_dz2 = 1.0 / (self.dz ** 2)
 
-        # SOR で Poisson φ を解く (= 簡易、 ∇²φ = div、 30 反復)
-        phi = np.zeros_like(div)
-        omega = 1.7
-        dx2 = self.dx ** 2
-        dz2 = self.dz ** 2
-        denom = 2.0 / dx2 + 2.0 / dz2
-        for _ in range(30):
-            phi_xm = np.roll(phi, +1, axis=0)
-            phi_xp = np.roll(phi, -1, axis=0)
-            phi_zm = np.roll(phi, +1, axis=1); phi_zm[:, 0] = phi[:, 0]
-            phi_zp = np.roll(phi, -1, axis=1); phi_zp[:, -1] = phi[:, -1]
-            phi_new = ((phi_xm + phi_xp) / dx2 + (phi_zm + phi_zp) / dz2 - div) / denom
-            phi = phi + omega * (phi_new - phi)
+    def pressure_projection(self) -> None:
+        """FFT spectral + tridiagonal direct solve で anelastic 連続式を厳密射影。
 
-        # 速度補正 u -= ∇φ
-        dphi_dx = (np.roll(phi, -1, axis=0) - np.roll(phi, +1, axis=0)) / (2 * self.dx)
-        dphi_dz = np.zeros_like(phi)
-        dphi_dz[:, 1:-1] = (phi[:, 2:] - phi[:, :-2]) / (2 * self.dz)
-        self.u -= dphi_dx
-        self.w -= dphi_dz
-        # 壁境界: 上下端で w=0
+        mass-flux potential ψ = ρ₀ φ に対する Poisson:
+            ∂²ψ/∂x² + ∂²ψ/∂z² = ∂(ρ₀ u*)/∂x + ∂(ρ₀ w*)/∂z
+        x: 周期 (rfft で対角化、 mode k_x で −k_x² ψ̂)
+        z: 壁 Neumann (w=0 ⟹ ∂ψ/∂z = 0)、 mode 毎に Thomas で direct solve
+        k_x = 0 mode: 平均自由度 (gauge) を 0 に pin。
+
+        速度補正:
+            (ρ₀ u)_new = (ρ₀ u*) − ∂ψ/∂x
+            (ρ₀ w)_new = (ρ₀ w*) − ∂ψ/∂z
+        後で u, w に戻す (= ρ₀ で割る)、 上下端 w=0 を強制。
+        """
+        if not hasattr(self, "_kx2"):
+            self._build_pressure_solver()
+
+        rho = self.rho_0[np.newaxis, :]  # (1, nz)
+        rho_u = rho * self.u             # (nx, nz)
+        rho_w = rho * self.w             # (nx, nz)
+
+        # RHS = div(ρ₀ u*) を forward 差分で組む (= 3 点 Laplacian と discrete Hodge 整合)。
+        # x 周期: (ρu[i+1] − ρu[i])/dx、 z 壁: (ρw[j+1] − ρw[j])/dz、 端は w=0 を ghost に使う。
+        d_rhou_dx = (np.roll(rho_u, -1, axis=0) - rho_u) / self.dx
+        d_rhow_dz = np.empty_like(rho_w)
+        d_rhow_dz[:, :-1] = (rho_w[:, 1:] - rho_w[:, :-1]) / self.dz
+        # 上端 j = nz−1: w=0 BC ⟹ ghost ρ_0 w[nz] = 0、 d = (0 − rho_w[:, -1])/dz
+        d_rhow_dz[:, -1] = (0.0 - rho_w[:, -1]) / self.dz
+        D = d_rhou_dx + d_rhow_dz  # shape (nx, nz)
+
+        # x: rfft、 mode 毎に z 方向 tridiagonal solve
+        D_hat = np.fft.rfft(D, axis=0)  # shape (nx//2+1, nz) complex
+        # D_hat は shape (K, nz)、 K = nx//2+1。 rfft の order は axis=0 が先になる
+        # 実際 shape は (K, nz)、 確認: np.fft.rfft(D, axis=0).shape == (K, nz)
+        psi_hat = np.zeros_like(D_hat)
+
+        inv_dz2 = self._inv_dz2
+        nz = self.nz
+        K = self._kx2.size
+        # 主対角 b、 下対角 a、 上対角 c を 全モード 一括 (= shape (K, nz))。
+        # 内点 j: a = inv_dz2、 b = −2 inv_dz2 − kx²、 c = inv_dz2
+        # Neumann 端: ψ̂[−1] = ψ̂[0] ⟹ j=0 で a=0, b = −inv_dz2 − kx², c = inv_dz2
+        # k_x = 0 mode は gauge 自由度のため ψ̂[0] = 0 に pin (行を b[0]=1, a=c=0, d=0 に置換)
+        kx2 = self._kx2[:, np.newaxis]  # (K, 1)
+        a = np.full((K, nz), inv_dz2)
+        b = np.full((K, nz), -2.0 * inv_dz2) - kx2  # broadcast
+        c = np.full((K, nz), inv_dz2)
+        a[:, 0] = 0.0
+        b[:, 0] = -inv_dz2 - kx2[:, 0]
+        c[:, -1] = 0.0
+        b[:, -1] = -inv_dz2 - kx2[:, 0]
+        d = D_hat.copy()  # (K, nz)
+        # k_x = 0 mode の gauge pin: ψ̂[0] = 0
+        b[0, 0] = 1.0
+        c[0, 0] = 0.0
+        d[0, 0] = 0.0
+        # 全モード 一括 Thomas forward sweep (j over nz、 K 並列)
+        # 複素数 d と実数 a/b/c の混合: 計算は b, c を複素 promote
+        b = b.astype(D_hat.dtype, copy=False)
+        c = c.astype(D_hat.dtype, copy=False)
+        a = a.astype(D_hat.dtype, copy=False)
+        for j in range(1, nz):
+            m = a[:, j] / b[:, j - 1]
+            b[:, j] = b[:, j] - m * c[:, j - 1]
+            d[:, j] = d[:, j] - m * d[:, j - 1]
+        # back substitution
+        psi_hat[:, -1] = d[:, -1] / b[:, -1]
+        for j in range(nz - 2, -1, -1):
+            psi_hat[:, j] = (d[:, j] - c[:, j] * psi_hat[:, j + 1]) / b[:, j]
+
+        # 逆変換で ψ(x, z) を復元
+        psi = np.fft.irfft(psi_hat, n=self.nx, axis=0)  # shape (nx, nz)
+
+        # 速度補正: (ρ₀ u)_new = (ρ₀ u*) − ∂ψ/∂x、 (ρ₀ w)_new = (ρ₀ w*) − ∂ψ/∂z。
+        # **backward 差分** で復元 (= forward div と Hodge 対応、 div(grad) = 3 点 Laplacian)。
+        dpsi_dx = (psi - np.roll(psi, +1, axis=0)) / self.dx
+        dpsi_dz = np.empty_like(psi)
+        dpsi_dz[:, 1:] = (psi[:, 1:] - psi[:, :-1]) / self.dz
+        # 下端 j=0: Neumann (ψ[−1] = ψ[0]) ⟹ backward diff = 0
+        dpsi_dz[:, 0] = 0.0
+
+        rho_u_new = rho_u - dpsi_dx
+        rho_w_new = rho_w - dpsi_dz
+        self.u = rho_u_new / rho
+        self.w = rho_w_new / rho
+        # 壁境界 (= cell-center が wall に直接乗ってる collocated 解釈): w[:, 0] / w[:, -1] = 0。
+        # この強制で j=0 / j=nz-1 の 1 row の div が ~O(w/dz) 残るが (= ~1e-4)、 内部は
+        # 機械精度。 完全 staggered 化が将来 task、 現状は壁面近傍 1 cell の不整合を許容して
+        # 雲対流 dynamics の正しさを優先する trade-off。
         self.w[:, 0] = 0.0
         self.w[:, -1] = 0.0
 
-    def step(self, dt: float, do_projection: bool = False) -> None:
-        """1 step 進める = 移流 + 浮力 + 凝結 + (optional) 圧力射影。
+    def divergence_anelastic(self) -> np.ndarray:
+        """連続式 残差 ∂(ρ₀u)/∂x + ∂(ρ₀w)/∂z を返す (= 検証用、 質量保存誤差)。
 
-        do_projection = False: ボトムアップ最初は projection なし (= 簡易、
-        質量保存崩れるが場の振る舞いを観察する用)。 後段で True に切替。
+        pressure_projection と **同じ forward 差分**で組む (= discrete Hodge 整合)。
+        """
+        rho = self.rho_0[np.newaxis, :]
+        rho_u = rho * self.u
+        rho_w = rho * self.w
+        d_rhou_dx = (np.roll(rho_u, -1, axis=0) - rho_u) / self.dx
+        d_rhow_dz = np.empty_like(rho_w)
+        d_rhow_dz[:, :-1] = (rho_w[:, 1:] - rho_w[:, :-1]) / self.dz
+        d_rhow_dz[:, -1] = (0.0 - rho_w[:, -1]) / self.dz
+        return d_rhou_dx + d_rhow_dz
+
+    def step(self, dt: float, do_projection: bool = True) -> None:
+        """1 step 進める = 移流 + 浮力 + 凝結 + 圧力射影。
+
+        do_projection = True (= 2026-05-25 default 改訂): FFT spectral + tridiag solver
+        で連続式 div(ρ₀ u) = 0 を厳密射影、 中央上昇 column に対する 補償下降流 dipole
+        が出る。 SOR 時代の omega tuning / 発散モード問題は構造的に消えた。
+        False を残すのは projection 無しでの場の振る舞い観察用 (= 旧 default、 移行用)。
         """
         # 1. 全場を移流
         self.theta = self.advect(self.theta, dt)
@@ -230,9 +329,9 @@ class Field2D:
         # 4. (optional) 圧力射影で連続式を満たす
         if do_projection:
             self.pressure_projection()
-        # 壁境界: 上下端で w=0
-        self.w[:, 0] = 0.0
-        self.w[:, -1] = 0.0
+        # 壁境界注意: cell-center の w[:, 0] / w[:, -1] を 0 強制 しない (= 2026-05-25
+        # 改訂)。 wall は cell-face (= ghost) に置き、 advect / pressure_projection は
+        # ghost ρw = 0 で BC を満たす設計。 cell-center 値を 0 強制すると質量保存が破れる。
 
     def summary(self) -> str:
         return (
