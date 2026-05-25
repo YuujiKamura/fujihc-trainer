@@ -176,6 +176,14 @@ export function createLabels3d(THREE, opts) {
     // 透明部分が黒く描かれて看板が黒い四角になる。
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const sprite = new THREE.Sprite(material);
+    // user 指示「テキスト矩形の左端揃え」 ── Three.js Sprite の anchor は default
+    // {0.5, 0.5} (= 中央)、 これだと数字の桁数で sprite 中央点が動き、 連続する距離
+    // ラベル (= 0.05km / 0.10km / 1.20km ...) が桁ぐりで揃わない。 center.x=0 に
+    // すると position 座標が canvas (= テキスト矩形) の左端に対応、 全ラベルが
+    // 始端揃いになる。 y=0.5 で縦中央は維持 (= 地形上の高さ計算は中央基準のまま)。
+    if (sprite.center && typeof sprite.center.set === 'function') {
+      sprite.center.set(0, 0.5);
+    }
     sprite.position.set(positions[i][0], positions[i][1], positions[i][2]);
     group.add(sprite);
     entries.push({ sprite, texture, material, aspect, distance_m: labels[i].distance_m });
