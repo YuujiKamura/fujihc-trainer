@@ -227,6 +227,26 @@ def make_http_app(
     # 静的 file 配信 (= viewer HTML / JS / CSS / course.json)、 同一 origin で /tiles/ と並走。
     # /tiles/* route の後に登録 (= aiohttp は登録順 dispatch、 /tiles を static で奪われない)。
     web_root_p = Path(web_root) if web_root else Path(__file__).resolve().parent.parent.parent / "web"
+
+    # b86: 起動時に git rev-parse + commit 日時を web/version.json に書き出し、 viewer が
+    # fetch で読んで HUD に表示する。 「画面に出てる版が最新か」 を user が一目で判定可。
+    # git 不在 / worktree 外 / subprocess 失敗時は「unknown」 fallback で静かに進む。
+    try:
+        import subprocess as _sp
+        import json as _json
+        from datetime import datetime as _dt
+        _short = _sp.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=str(web_root_p.parent), stderr=_sp.DEVNULL, timeout=2).decode().strip()
+        _iso = _sp.check_output(["git", "log", "-1", "--format=%cI", "HEAD"], cwd=str(web_root_p.parent), stderr=_sp.DEVNULL, timeout=2).decode().strip()
+        (web_root_p / "version.json").write_text(_json.dumps({
+            "hash": _short, "commit_iso": _iso, "server_started_iso": _dt.now().isoformat(timespec="seconds"),
+        }), encoding="utf-8")
+    except Exception:
+        try:
+            from datetime import datetime as _dt2
+            (web_root_p / "version.json").write_text('{"hash":"unknown","commit_iso":"unknown","server_started_iso":"' + _dt2.now().isoformat(timespec="seconds") + '"}', encoding="utf-8")
+        except Exception:
+            pass
+
     if web_root_p.exists():
         async def h_root(request: web.Request) -> web.Response:
             index = web_root_p / "index.html"

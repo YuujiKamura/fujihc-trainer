@@ -27,3 +27,7 @@ test-results/
 
 # Claude Code のリポジトリ単位ローカル状態 (= エージェント作業状態、 プロジェクト成果物ではない)
 .claude/
+
+# b86: dev server (= python -m fujihill.bridge) が起動時に書き出す版情報、 viewer HUD で表示する
+# (= 「画面に出てる版が最新か」 確認用)。 commit に含めない、 server 起動のたび更新。
+web/version.json

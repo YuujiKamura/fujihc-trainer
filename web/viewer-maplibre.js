@@ -2311,6 +2311,26 @@ const BIKE_SHAPE_DEFS = [
 ];
 mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
+// b86: 起動時に /version.json (= python bridge が git rev-parse で書き出した dev server 起動時点
+// の commit 短 hash と日時) を fetch して HUD の version-info span に表示する。 reload 後に
+// 数字が変わってれば「最新版が browser に届いている」 確認 signal、 SW cache stale 検出の物理 gate。
+// fetch 失敗 (= production / 静的配信で version.json 無い場合) は無言で「(fetch失敗)」 表示、
+// viewer 本体機能には影響ゼロ。
+(async () => {
+  const verEl = document.getElementById('version-info');
+  if (!verEl) return;
+  try {
+    const res = await fetch('/version.json?t=' + Date.now());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const v = await res.json();
+    const hash = v.hash || 'unknown';
+    const ciso = (v.commit_iso || '').slice(0, 16).replace('T', ' ');  // YYYY-MM-DD HH:MM
+    verEl.textContent = ciso ? `${hash} ${ciso}` : hash;
+  } catch {
+    verEl.textContent = '(fetch失敗)';
+  }
+})();
+
 // b79: 雲量倍率 slider state (= AMeDAS 物理算出値 cloudCover に user 主観倍率を掛ける、 0..1)。
 // AMeDAS fetch は 1 起動 1 回 (= 配布元負荷ゼロ)、 slider 操作は currentBaseWeather × 倍率を
 // mapRenderer.setWeatherClouds に流すだけで再 fetch しない。 localStorage 'fujihill.cloudAmount'
