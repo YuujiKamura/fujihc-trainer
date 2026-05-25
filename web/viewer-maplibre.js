@@ -2248,7 +2248,12 @@ document.getElementById('btnClosePairing').addEventListener('click', () => {
 // b13-1: 旧5系統スライダー配線を共通機構に一本化。
 // 形式不一致の旧キーを先に消去 (inertiaKg / mass は生値一致のため保持)。
 ['fujihill.diff','fujihill.spd','fujihill.crr','fujihill.cda','fujihill.labelSize'].forEach(k => { try { localStorage.removeItem(k); } catch {} });
-const CONTROL_DEFS = [
+// b89: 旧 CONTROL_DEFS 単一配列を 3 カテゴリに分離 (= 自機挙動 / コース環境 / 大気環境)、
+// 各カテゴリを別 mountControlPanel で独立フォールド。 panel 名と def の対応:
+//   BIKE_DEFS       = 「自機挙動」 (= 負荷 / 速度 / 慣性 / 質量 / 物理係数 / パワー / 自機表示)
+//   COURSE_DEFS     = 「コース環境」 (= ラベル / コース幅 / 路面高さ)
+//   ATMO_DEFS       = 「大気環境」 (= 光源 / 大気散乱 / 空の青さ / 太陽倍率)
+const BIKE_DEFS = [
   { key:'diff',       label:'負荷',        min:10,  max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ diffMult=raw/100; lastSlopeSent=null; } },
   { key:'spd',        label:'速度倍率',    min:50,  max:200,  step:5,  value:100, unit:'x',      format:raw=>(raw/100).toFixed(2),         apply(raw){ speedMult=raw/100; } },
   { key:'inertiaKg',  label:'慣性',        min:0,   max:3000, step:50, value:800, unit:'kg相当', format:raw=>String(Math.round(raw)),      apply(raw){ inertiaKg=raw; } },
@@ -2259,13 +2264,17 @@ const CONTROL_DEFS = [
   // 出力域 (ホビー巡航 100–200W、 競技 250–400W、 スプリント上限 600W 強) を覆う。
   // step 10W は微調整に十分な粒度。 trainer 接続中の実ライドには効かない (上記 manualPowerW)。
   { key:'power',      label:'パワー',      min:50,  max:600,  step:10, value:250, unit:'W',      format:raw=>String(Math.round(raw)),      apply(raw){ manualPowerW=raw; } },
-  { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
-  { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
-  { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
   { key:'riderScale', label:'ライダー倍率', min:10,  max:500,  step:5,  value:36,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setRiderScale(raw/10); } },
+];
+const COURSE_DEFS = [
+  { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
   { key:'courseWidth',label:'コース幅',     min:4,   max:40,   step:2,  value:10,  unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setCourseWidth(raw); } },
   { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
   { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
+];
+const ATMO_DEFS = [
+  { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
+  { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
   // b62: 大気散乱 (aerial perspective) の調整スライダー 4 本。 atmosphere3d.js の散乱
   //   パラメータを mapRenderer.setAtmosphereParams 経由で実行時に差し替える。 太陽方位は
   //   既存 lightDir が兼ねる (= 仰角は方位由来 SoT、 大気の太陽は scene の applySun が
@@ -2287,12 +2296,16 @@ const CONTROL_DEFS = [
   { key:'skyIntensity',label:'大気 空の青さ',     min:0,   max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSkyIntensity(raw/100); } },
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
-  // b82: 自機の画面縦位置を slider で可変 (= orbit lookUp ratio、 0 で画面中央、 0.3 で画面下端寄り)。
-  //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
-  //   user 触って好みの位置に。
-  { key:'riderScreenPos', label:'自機 縦位置',     min:0,   max:0.3,  step:0.01, value:0.3, format:raw=>raw.toFixed(2),               apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } },
 ];
-mountControlPanel(document.getElementById('control-sliders'), CONTROL_DEFS, {collapsible:true, title:'調整', collapsed:true});
+// b82: 自機の画面縦位置を slider で可変 (= orbit lookUp ratio、 0 で画面中央、 0.3 で画面下端寄り)。
+//   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
+//   user 触って好みの位置に。 b89: 自機挙動カテゴリの末尾に push (= def 配列定義後)。
+BIKE_DEFS.push({ key:'riderScreenPos', label:'自機 縦位置', min:0, max:0.3, step:0.01, value:0.3, format:raw=>raw.toFixed(2), apply(raw){ mapRenderer.setOrbitLookUpRatio(raw); } });
+
+// b89: 3 カテゴリを別 panel で mount、 全 collapsed:true で初期は畳む (= 旧挙動と整合)。
+mountControlPanel(document.getElementById('control-sliders-bike'),   BIKE_DEFS,   {collapsible:true, title:'自機挙動',  collapsed:true});
+mountControlPanel(document.getElementById('control-sliders-course'), COURSE_DEFS, {collapsible:true, title:'コース環境', collapsed:true});
+mountControlPanel(document.getElementById('control-sliders-atmo'),   ATMO_DEFS,   {collapsible:true, title:'大気環境',  collapsed:true});
 
 // 自機 (自転車) の部品ごと形状エディタ。 各スライダーが bikeShape の 1 フィールドを
 // 更新し、 mapRenderer.setRiderShape で自転車を組み直す。 control_panel が

@@ -54,10 +54,11 @@ describe('brief b-segment-labels: ラベル symbol レイヤー統合層 (= map_
     expect(viewer).toMatch(/mapRenderer\.setLabelScale\(/);
   });
 
-  it('機器設定パネルに ラベルサイズ slider コンテナ (#control-sliders) がある', () => {
+  it('機器設定パネルに ラベルサイズ slider コンテナ (= b89 で control-sliders-course に分割) がある', () => {
     // b13-1: control_panel.js が動的生成するため静的 HTML にスライダー行は無い。
-    // コンテナ div の id だけ静的 HTML に存在する。
-    expect(html).toMatch(/id="control-sliders"/);
+    // b89: 旧 #control-sliders を #control-sliders-bike / -course / -atmo に分割、
+    //   ラベルサイズは COURSE_DEFS に入ったので -course コンテナで pin。
+    expect(html).toMatch(/id="control-sliders-course"/);
   });
 
   it('rider 距離窓で間引く: setFilter で近傍だけ表示 (= 地平の潰れ対策、 map_renderer.js)', () => {

@@ -697,7 +697,11 @@
     <button id="btnPause">pause</button>
     <button id="btnOpenPairing">機器設定</button>
   </div>
-  <div id="control-sliders"></div>
+  <!-- b89: 調整スライダー群を 3 カテゴリにフォールド (= 自機挙動 / コース環境 / 大気環境)。
+       旧 #control-sliders 1 つに全 19 項目混在で見通し悪化、 分類で開閉スコープを限定する。 -->
+  <div id="control-sliders-bike"></div>
+  <div id="control-sliders-course"></div>
+  <div id="control-sliders-atmo"></div>
   <div id="bike-shape-sliders"></div>
   <!-- b72 weather + b74 volumetric clouds: AMeDAS 現在気象 + 雲量/雲底/雲頂 行 -->
   <!-- data-clouds-state: pending (= 初期、 AMeDAS fetch 前) / rendered (= setWeatherClouds 後) / error -->
