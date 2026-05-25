@@ -584,6 +584,8 @@ export function createMapRenderer() {
       labels3d = createLabels3d(THREE, {
         polygonFC,
         ...geoOpts,
+        // 2026-05-25: ラベル offset を「コース右端 + 1m」 で動的算出するため courseWidthM を渡す。
+        courseWidthM: savedCourseWidth,
         exaggeration: 1.0,
         heightOffset: currentRoadOffset + LABEL_BASE_HEIGHT_M / 2,
         labelScale: pending.labelScale != null ? pending.labelScale : 1,

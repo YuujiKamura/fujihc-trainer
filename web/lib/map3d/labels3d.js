@@ -31,7 +31,16 @@ const M_PER_DEG_LAT = 111320;
 export const LABEL_INTERVAL_M = 50;
 // ラベルをコース路面の脇に逃がす量 (m)。 勾配色リボンを文字で隠さないため。
 // 2026-05-18: ラベル同士・コースとの重なりを user 指摘、 6m → 12m に拡げて横へ逃がす。
+// 2026-05-25: user 指摘「コース中央からのオフセット固定で根拠なし、 コース右端 + 1m が正解」 ──
+//   定数は後方互換 fallback (= courseWidthM 未供給時) として残し、 createLabels3d が
+//   courseWidthM を受けて (courseWidthM/2 + LABEL_SIDE_MARGIN_M) で動的算出する経路に移行。
 export const LABEL_SIDE_OFFSET_M = 12;
+// 2026-05-25: コース右端からラベルまでの距離 (m)。 user 「1m で十分」。
+// 動的オフセット = courseWidthM/2 + LABEL_SIDE_MARGIN_M で「リボン右端外 1m」 に揃う。
+export const LABEL_SIDE_MARGIN_M = 1;
+// デフォルトのコース幅 (m)。 createCourseRibbon の default と整合 (= 10m)、
+// createLabels3d opts.courseWidthM が省略された時の fallback。
+export const LABEL_DEFAULT_COURSE_WIDTH_M = 10;
 // 表示窓: ライダー現在地の後方 / 前方 (m)。 窓外のラベルは非表示にする。
 export const LABEL_WINDOW_BACK_M = 150;
 export const LABEL_WINDOW_FWD_M = 450;
@@ -160,7 +169,13 @@ function makeLabelCanvas(text) {
  *   group = scene.add() する Three.js Group。 全ラベル sprite を含む。
  */
 export function createLabels3d(THREE, opts) {
-  const labels = buildSegmentLabels(opts.polygonFC, LABEL_INTERVAL_M, LABEL_SIDE_OFFSET_M);
+  // 2026-05-25: sideOffset を「コース右端 + 1m」 で動的算出 (user 指摘修正)。
+  // courseWidthM 未供給なら旧 LABEL_SIDE_OFFSET_M = 12 を fallback (= 後方互換)。
+  const courseWidthM = Number.isFinite(opts.courseWidthM) ? opts.courseWidthM : null;
+  const sideOffset = courseWidthM != null
+    ? (courseWidthM / 2 + LABEL_SIDE_MARGIN_M)
+    : LABEL_SIDE_OFFSET_M;
+  const labels = buildSegmentLabels(opts.polygonFC, LABEL_INTERVAL_M, sideOffset);
   const positions = labelWorldPositions(labels, opts);
 
   const group = new THREE.Group();
