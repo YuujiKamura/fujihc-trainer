@@ -1,0 +1,114 @@
+"""field_terrain_snapshots.npz (= b104 富士山地形 + 西風 5 m/s 山岳波 sim 出力) を
+viewer 入力 binary に変換、 25×25 にダウンサンプル。
+
+既存 export_to_viewer.py (= field_2d 用) の coarsen_to_25 を再利用、 入出力 4 箇所の
+リテラルを差し替え + catalog 書換を atomic (= tmp + os.replace) に強化。
+
+これで viewer の dataset selector で field_terrain を選ぶと、 山岳波 dipole (= 風上 +w /
+風下 -w) + gravity wave fan が画面に出る、 user 2026-05-25 「ならやってけ、 画面に出せる
+まで」 への着手。 q_l は 0 (= dry mountain wave、 b104 sim 既知)、 雲水表示は全体無色が
+正常。
+
+brief: ~/.agents/scratch/fujihc-trainer-project/b105-field-terrain-viewer-export.md
+"""
+from __future__ import annotations
+import json
+from pathlib import Path
+
+import numpy as np
+
+
+def coarsen_to_25(arr_2d: np.ndarray) -> np.ndarray:
+    """100×150 → 25×25 area-weighted average + 鉛直 z=0-15km を 25 layer (= 600m/layer)"""
+    nx, nz = arr_2d.shape  # (100, 150)
+    if (nx, nz) != (100, 150):
+        raise AssertionError(f"expected shape (100, 150), got {(nx, nz)}")
+    x_coarse = arr_2d.reshape(25, 4, nz).mean(axis=1)
+    return x_coarse.reshape(25, 25, 6).mean(axis=2)
+
+
+def atomic_write_json(path: Path, obj: dict) -> None:
+    """tmp file に write して os.replace で atomic 置換。 partial JSON で既存 entry を巻き添えにしない"""
+    import os
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp_path, path)
+
+
+def main():
+    here = Path(__file__).parent
+    npz_path = here / "output" / "field_terrain_snapshots.npz"
+    if not npz_path.exists():
+        raise SystemExit(f"snapshots 無し: {npz_path}")
+    data = np.load(npz_path)
+    n_snap = len(data["steps"])
+    print(f"snapshots: {n_snap}")
+
+    viewer_dir = here.parent / "viewer"
+    catalog_path = viewer_dir / "catalog.json"
+    if not catalog_path.exists():
+        raise FileNotFoundError(f"catalog 無し: {catalog_path}")
+    with open(catalog_path, encoding="utf-8") as f:
+        catalog = json.load(f)
+
+    field_dataset = {"label": "field_terrain", "products": {}, "steps": list(range(n_snap))}
+
+    theta_env = data["theta_env"]
+
+    for product, scale, unit, source_keys in [
+        ("w", 1.0, "m/s", [f"w_{i:03d}" for i in range(n_snap)]),
+        ("theta_prime", 1.0, "K", [f"theta_{i:03d}" for i in range(n_snap)]),
+        ("q_l", 1e3, "g/kg", [f"q_l_{i:03d}" for i in range(n_snap)]),
+    ]:
+        coarsened = []
+        for key in source_keys:
+            arr = data[key].astype(np.float64)
+            if product == "theta_prime":
+                arr = arr - theta_env[np.newaxis, :]
+            coarse = coarsen_to_25(arr) * scale
+            coarsened.append(coarse.astype(np.float32))
+
+        stack = np.stack(coarsened)
+        bin_path = viewer_dir / f"field_terrain_{product}.bin"
+        stack.tofile(bin_path)
+
+        clean = np.nan_to_num(stack)
+        field_dataset["products"][product] = {
+            "unit": unit,
+            "n_step": int(n_snap),
+            "grid": [25, 25],
+            "min": round(float(clean.min()), 6),
+            "max": round(float(clean.max()), 6),
+            "mean": round(float(clean.mean()), 6),
+            "bin_size_kb": round(bin_path.stat().st_size / 1024, 1),
+            "bin_file": bin_path.name,
+        }
+        print(f"  {product:12s} 25×25×{n_snap}step → {bin_path.name}  "
+              f"({bin_path.stat().st_size/1024:.1f} KB)  "
+              f"range=[{clean.min():+.3g}, {clean.max():+.3g}] {unit}")
+
+    field_dataset["products"]["ql"] = {
+        "unit": "g/kg",
+        "n_step": n_snap,
+        "grid": [25, 25],
+        "min": field_dataset["products"]["q_l"]["min"],
+        "max": max(field_dataset["products"]["q_l"]["max"], 0.001),
+        "mean": field_dataset["products"]["q_l"]["mean"],
+        "bin_size_kb": field_dataset["products"]["q_l"]["bin_size_kb"],
+        "bin_file": "field_terrain_q_l.bin",
+    }
+    field_dataset["products"]["effective_radius"] = {
+        "unit": "um", "n_step": n_snap, "grid": [25, 25],
+        "min": 10.0, "max": 10.0, "mean": 10.0,
+        "bin_size_kb": 0, "bin_file": "field_terrain_q_l.bin"
+    }
+
+    catalog["datasets"]["field_terrain"] = field_dataset
+    atomic_write_json(catalog_path, catalog)
+    print(f"\ncatalog: {catalog_path} 更新 (atomic)、 field_terrain dataset 追加")
+    print(f"  viewer で ?dataset=field_terrain&product=w 等で表示可能")
+
+
+if __name__ == "__main__":
+    main()
