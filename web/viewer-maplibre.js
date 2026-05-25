@@ -2322,7 +2322,9 @@ const BIKE_SHAPE_DEFS = [
   // 影ボード: オン=影が自機にくっつく / オフ=影はコースに落ちる。 既定オフ (value:0)。
   { key:'bikeShadowBoard', label:'影ボード',      min:0, max:1, step:1, value:0, format:raw=>(raw>=0.5?'オン':'オフ'), apply(raw){ mapRenderer.setShadowBoardEnabled(raw>=0.5); } },
 ];
-mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
+// b90: user 指示「自機形状は不要なんでオミット」 ── mountControlPanel 呼び出しを停止。
+// BIKE_SHAPE_DEFS 配列と #bike-shape-sliders div は残す (= 復活余地)、 panel が立たないだけ。
+// mountControlPanel(document.getElementById('bike-shape-sliders'), BIKE_SHAPE_DEFS, {collapsible:true, title:'自機の形状', collapsed:true});
 
 // b86: 起動時に /version.json (= python bridge が git rev-parse で書き出した dev server 起動時点
 // の commit 短 hash と日時) を fetch して HUD の version-info span に表示する。 reload 後に
