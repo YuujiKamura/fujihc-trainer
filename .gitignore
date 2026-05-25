@@ -43,3 +43,6 @@ experiments/cumulus-physical/lcm/output/
 experiments/cumulus-physical/obs/cache.sqlite
 experiments/cumulus-physical/obs/cache.sqlite-shm
 experiments/cumulus-physical/obs/cache.sqlite-wal
+experiments/cumulus-physical/obs/live_cameras/
+experiments/cumulus-physical/lcm/output/
+experiments/cumulus-physical/viewer/field_2d_*.bin

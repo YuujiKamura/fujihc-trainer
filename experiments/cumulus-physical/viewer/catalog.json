@@ -299,6 +299,108 @@
         89,
         90
       ]
+    },
+    "field_2d": {
+      "label": "field_2d",
+      "products": {
+        "w": {
+          "unit": "m/s",
+          "n_step": 30,
+          "grid": [
+            25,
+            25
+          ],
+          "min": -1.342986,
+          "max": 3.354158,
+          "mean": -0.0,
+          "bin_size_kb": 73.2,
+          "bin_file": "field_2d_w.bin"
+        },
+        "theta_prime": {
+          "unit": "K",
+          "n_step": 30,
+          "grid": [
+            25,
+            25
+          ],
+          "min": -1.384584,
+          "max": 1.643132,
+          "mean": 0.011207,
+          "bin_size_kb": 73.2,
+          "bin_file": "field_2d_theta_prime.bin"
+        },
+        "q_l": {
+          "unit": "g/kg",
+          "n_step": 30,
+          "grid": [
+            25,
+            25
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "bin_size_kb": 73.2,
+          "bin_file": "field_2d_q_l.bin"
+        },
+        "ql": {
+          "unit": "g/kg",
+          "n_step": 30,
+          "grid": [
+            25,
+            25
+          ],
+          "min": 0.0,
+          "max": 0.001,
+          "mean": 0.0,
+          "bin_size_kb": 73.2,
+          "bin_file": "field_2d_q_l.bin"
+        },
+        "effective_radius": {
+          "unit": "um",
+          "n_step": 30,
+          "grid": [
+            25,
+            25
+          ],
+          "min": 10.0,
+          "max": 10.0,
+          "mean": 10.0,
+          "bin_size_kb": 0,
+          "bin_file": "field_2d_q_l.bin"
+        }
+      },
+      "steps": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
     }
   }
 }
