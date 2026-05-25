@@ -2421,15 +2421,20 @@ let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで
     //       data-clouds-state="rendered" or "error" + mini-overlay 更新
     // b79: cloudAmountMultiplier (= 0..1 slider) を掛けて setWeatherClouds に流す。
     //      panel 表示は物理算出値のまま、 戻り値を currentBaseWeather に保存して slider 操作で再適用。
+    // b94: Pages (= ENV.mode === 'static') では雲シミュ視覚品質が cumulus に届かない (user 判断
+    //      「およそ雲って感じではない、 Pages では当面オフ」)、 multiplier 強制 0 + slider mount skip
+    //      で完全 off。 dev (= bridge mode) では既存挙動 (= AMeDAS 由来 × slider) を維持して改修継続。
+    const cloudsDisabledByEnv = ENV?.mode === 'static';
     currentBaseWeather = applyAmedasCloudsToPanel({
       mapRenderer, panelEl, rowsEl, miniEl, stations,
-      cloudAmountMultiplier: currentCloudAmount,
+      cloudAmountMultiplier: cloudsDisabledByEnv ? 0 : currentCloudAmount,
     });
 
     // b79: AMeDAS 取得成功時のみ雲量 slider を生やす (= forceWeather / fetch 失敗時は出さない)。
     // mountControlPanel が localStorage 'fujihill.cloudAmount' を読んで初期 apply、
     // その瞬間に currentCloudAmount が上書きされる + applyCloudAmountToMap で再 setWeatherClouds。
-    if (currentBaseWeather) {
+    // b94: Pages では slider 自体も mount しない (= user が触っても雲が出ない、 完全 off を視覚的に統一)。
+    if (currentBaseWeather && !cloudsDisabledByEnv) {
       const sliderEl = document.getElementById('weather-sliders');
       if (sliderEl && sliderEl.children.length === 0) {
         mountControlPanel(sliderEl, [
