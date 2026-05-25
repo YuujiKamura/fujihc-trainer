@@ -15,13 +15,15 @@
 // 入力 shape は b72 既存 pickFujiStations の戻り (= alt, temp, humidity を含む station 配列)。
 // 富士山頂は湿度センサーなしのため、 humidity == null の観測点は自動除外して 4 点平均。
 
-const CLOUD_BASE_FLOOR_M = 1500;     // 富士山周辺の典型最低雲底 (河口湖湖面 833m より上)
+// b91 → b93: 雲底 / 雲頂の絶対床は viewer factory (volumetric_clouds.js) と
+// boot 呼び出し (map3d/index.js) でも default として使うため export 化、 SoT 単一化。
+export const CLOUD_BASE_FLOOR_M = 1500;     // 富士山周辺の典型最低雲底 (河口湖湖面 833m より上)
 const CLOUD_LAYER_THICKNESS_M = 2000; // 積雲典型厚 1-3km の中央値
 // b76-polish-5: 雲頂の絶対床 6000m。 user 「上は 13km まで広げると計算きつい、 でも
 // 6000m くらいまでは傘雲がかかる印象がある」 反映。 富士山頂 3776m を超えて笠雲・
 // 多層雲が乗る視覚を担保。 cloudBaseM + 2000 で 6000m に届かない通常時 (= base=1500
 // → top=3500) では富士山頂が雲の上にぴょこっと出てしまい笠雲が再現できなかった。
-const CLOUD_TOP_FLOOR_M = 6000;
+export const CLOUD_TOP_FLOOR_M = 6000;
 const RH_THRESHOLD = 40;              // RH 40% 以下で cloudCover=0
 const RH_RANGE = 60;                  // RH 40-100 を 0-1 に線形マップ
 

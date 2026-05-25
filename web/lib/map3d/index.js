@@ -384,8 +384,8 @@ export function createMapRenderer() {
             cloudInstance = createVolumetricClouds(THREE, {
               cloudVolume,
               cloudCover: 0,
-              cloudBaseM: 1500,
-              cloudTopM: 6000,
+              // b93: cloudBaseM / cloudTopM はここで指定しない (= factory default = import 経由
+              // CLOUD_BASE_FLOOR_M / CLOUD_TOP_FLOOR_M、 cloud_estimator.js が SoT)。
             });
             scene.add(cloudInstance.mesh);
             if (pending.weatherClouds) cloudInstance.setWeather(pending.weatherClouds);

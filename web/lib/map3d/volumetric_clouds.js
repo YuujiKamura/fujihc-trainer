@@ -19,6 +19,9 @@
 // node の vitest から直接 import 可能、 GLSL と式が drift した時に test が検出する。
 // atmosphere3d.js と同型の「純関数を THREE 非依存で export、 factory に THREE 注入」 規律を承継。
 
+// b93: 雲底 / 雲頂の絶対床は cloud_estimator.js を SoT として import (= 3 箇所ばらまき廃止)。
+import { CLOUD_BASE_FLOOR_M, CLOUD_TOP_FLOOR_M } from '../weather/cloud_estimator.js';
+
 // === GLSL 同期定数 (= shader uniform と JS helper で同値を共有) ===
 export const RAY_MARCH_STEPS = 16;              // view ray ステップ数 (b74 prototype の中央値)
 export const LIGHT_RAY_STEPS = 6;                // 太陽方向 self-shadowing ステップ数
@@ -321,13 +324,13 @@ void main() {
  * @param {object} opts
  * @param {{minX:number, maxX:number, minZ:number, maxZ:number}} opts.cloudVolume - world XZ bbox
  * @param {number} [opts.cloudCover=0]
- * @param {number} [opts.cloudBaseM=1500]
- * @param {number} [opts.cloudTopM=6000]  // b76-polish-5: 笠雲再現の絶対床、 cloud_estimator と同値
+ * @param {number} [opts.cloudBaseM=CLOUD_BASE_FLOOR_M]
+ * @param {number} [opts.cloudTopM=CLOUD_TOP_FLOOR_M]  // SoT = cloud_estimator.js (= 笠雲再現の絶対床)
  * @returns {object} { mesh, setWeather, getWeather, setSunDir, setCameraPosition, tick }
  */
 export function createVolumetricClouds(THREE, opts = {}) {
   const {
-    cloudVolume, cloudCover = 0, cloudBaseM = 1500, cloudTopM = 6000,
+    cloudVolume, cloudCover = 0, cloudBaseM = CLOUD_BASE_FLOOR_M, cloudTopM = CLOUD_TOP_FLOOR_M,
   } = opts;
   if (!cloudVolume
       || !Number.isFinite(cloudVolume.minX) || !Number.isFinite(cloudVolume.maxX)
