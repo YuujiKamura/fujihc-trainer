@@ -19,6 +19,9 @@
     #snapshot-buttons button.active, #cam-buttons button.active { background: #58a; }
     #info.collapsed > *:not(#collapse-btn) { display: none; }
     #info.collapsed { padding: 4px 8px; }
+    #time-slider { width: 100%; }
+    .control-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .control-row label { font-size: 11px; min-width: 60px; opacity: 0.8; }
     #collapse-btn {
       position: absolute; top: 4px; right: 6px; background: transparent;
       border: none; color: #eee; cursor: pointer; font-size: 14px;
@@ -29,21 +32,27 @@
 <body>
   <div id="info">
     <button id="collapse-btn" title="情報パネル折りたたみ">×</button>
-    <h1>PySDM cumulus 物理雲 (b98 Phase 3 単体 demo)</h1>
+    <h1>PySDM 物理雲 voxel viewer (b98 Phase 3)</h1>
     <p id="meta-grid"></p>
-    <p id="meta-snap"></p>
-    <p id="meta-max"></p>
-    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">snapshot (= ql 場の時系列):</p>
-    <div id="snapshot-buttons"></div>
-    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">CP (= camera 視点固定、 URL ?cam=top|side|iso|close):</p>
+    <p id="meta-product"></p>
+    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">dataset (= 上昇流の強さ違い):</p>
+    <div id="dataset-buttons"></div>
+    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">product (= PySDM 出力の物理量):</p>
+    <div id="product-buttons"></div>
+    <div class="control-row">
+      <label>time:</label>
+      <input id="time-slider" type="range" min="0" max="90" value="18" step="1">
+      <span id="time-label" style="font-size: 11px; min-width: 60px;">step 18</span>
+    </div>
+    <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">CP (= URL ?cam=top|side|iso|close):</p>
     <div id="cam-buttons"></div>
     <p style="margin: 4px 0; font-size: 11px; opacity: 0.7;">buffer:</p>
     <div id="util-buttons">
       <button id="save-png">Save PNG (= canvas → download)</button>
     </div>
     <p style="font-size: 11px; opacity: 0.7;">
-      ノイズ無し。 PySDM Super-Droplet Method (= Arabas 2015 2D Kinematic) の
-      雲水質量比 (= ql) を density texture として ray-march。
+      ノイズ無し。 PySDM の super-droplet 粒子計算結果を voxel として線形 sampling、
+      shader 装飾なしの直出し。 dataset / product / 時間切替で 2 × 4 × 91 view。
     </p>
   </div>
   <div id="canvas-container"></div>
@@ -104,11 +113,13 @@
         //   viewer z (= 奥行き) は density 一様 + 端 fade (= 厚み 300m 程度に絞る)
         vec2 gridXZ = vec2(t.x, t.y) * 24.0;
         float d2d = sampleDensity2D(gridXZ);
-        // z 方向は薄い slab (= 中央 ±0.1 で density 維持、 端で fade)
+        // 「らしさ」 を作らず、 PySDM 出力 ql (= 雲水質量比 g/kg) を voxel として
+        // 素直に sampling。 z 方向 (= 視点奥行き) は 2D 場の単純押し出し、 端の薄い
+        // fade のみ (= 板の境界を物理量で表現できないので、 形状的に薄める最小限)。
         float zCenter = 0.5;
-        float zRadius = 0.2;
+        float zRadius = 0.25;
         float zDist = abs(t.z - zCenter);
-        float zFade = smoothstep(zRadius, zRadius * 0.4, zDist);
+        float zFade = smoothstep(zRadius, zRadius * 0.7, zDist);
         return max(0.0, d2d / uDensityMax) * zFade;
       }
 
@@ -149,9 +160,11 @@
           float d = sampleDensity(p);
           // threshold: 0.05 (= 雲水 5% 未満は skip、 物理的に「雲粒なし」 と扱う)
           if (d > 0.05) {
-            vec3 lp = p + uSunDir * 60.0;
+            // 太陽方向の self-shadow も 1 step 最小限 (= 偽の立体感を作らない、
+            // voxel sampling 結果がそのまま色になる)
+            vec3 lp = p + uSunDir * 80.0;
             float dl = sampleDensity(lp);
-            float lightAtten = exp(-dl * 5.0);
+            float lightAtten = exp(-dl * 2.0);
             vec3 sampleC = mix(shadowColor, cloudColor, lightAtten);
             // alpha: density が高い (= 雲水多い) ほど不透明、 低いほど半透明
             float a = 1.0 - exp(-d * tStep * 0.03);
@@ -174,21 +187,47 @@
       if (el) el.textContent = text;
     }
 
+    async function fetchBinary(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      return new Float32Array(buf);
+    }
+
     async function main() {
-      let data;
+      let catalog;
       try {
-        const res = await fetch("density.json");
-        data = await res.json();
+        const res = await fetch("catalog.json");
+        catalog = await res.json();
       } catch (e) {
-        setText("meta-grid", "density.json の取得失敗: " + e.message);
+        setText("meta-grid", "catalog.json の取得失敗: " + e.message);
         return;
       }
-      setText("meta-grid", `grid: ${data.grid[0]}×${data.grid[1]} (= 25×25, 60m/cell, 1500m domain)`);
-      setText("meta-snap", `snapshots: ${data.snapshots.length} 抜き出し / ${data.step_count} 全 step`);
-      setText("meta-max", `global max ql: ${data.global_max_ql_g_per_kg.toFixed(3)} g/kg`);
+
+      const datasetKeys = Object.keys(catalog.datasets);
+      if (datasetKeys.length === 0) {
+        setText("meta-grid", "dataset が空");
+        return;
+      }
+      const urlParams = new URLSearchParams(window.location.search);
+
+      // 現在の選択
+      const state = {
+        dataset: urlParams.get("dataset") || datasetKeys[0],
+        product: urlParams.get("product") || "ql",
+        step: parseInt(urlParams.get("step") || "18", 10),
+        // 各 product binary を ArrayBuffer cache (= dataset 切替時に解放)
+        bins: {},   // key: `${dataset}_${product}`、 value: Float32Array (= 91*625)
+        productMax: 1.0,
+      };
+
+      function currentProductMeta() {
+        return catalog.datasets[state.dataset].products[state.product];
+      }
+
+      setText("meta-grid", `grid: 25×25 (= 25×25, 60m/cell, 1500m domain)`);
 
       const container = document.getElementById("canvas-container");
-      const buttonsDiv = document.getElementById("snapshot-buttons");
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x6a90c0);
@@ -199,7 +238,6 @@
         side:  { pos: [4500, 750, 750],  target: [750, 750, 750], label: "side (= 真横、 鉛直断面)" },
         close: { pos: [2200, 1200, 2200], target: [750, 750, 750], label: "close (= 接近)" },
       };
-      const urlParams = new URLSearchParams(window.location.search);
       const camKey = CAMERA_PRESETS[urlParams.get("cam")] ? urlParams.get("cam") : "iso";
 
       const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 20000);
@@ -239,15 +277,12 @@
 
       // Save PNG handler (= canvas → blob → download)
       document.getElementById("save-png").onclick = () => {
-        renderer.render(scene, camera);  // 直前フレームを保証
+        renderer.render(scene, camera);
         renderer.domElement.toBlob((blob) => {
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
-          const snapIdx = data.snapshots.findIndex(s =>
-            uniforms.uDensity.value[0] === s.ql_g_per_kg[0]
-          );
           a.href = url;
-          a.download = `pysdm_cumulus_cam_${camKey}_snap_${snapIdx}_${Date.now()}.png`;
+          a.download = `pysdm_${state.dataset}_${state.product}_step${state.step}_cam${camKey}_${Date.now()}.png`;
           a.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         }, "image/png");
@@ -284,9 +319,10 @@
       const uniforms = {
         uCameraPos: { value: camera.position },
         uDensity: { value: new Float32Array(625) },
-        uDensityMax: { value: data.global_max_ql_g_per_kg },
+        uDensityMax: { value: 1.0 },  // refreshVoxel() が product ごとに更新
         uBoxMin: { value: boxMin },
         uBoxMax: { value: boxMax },
+        // 太陽方向 = 標準的な上空斜め (= 偽の長い陰を作らない、 voxel が見えやすい)
         uSunDir: { value: new THREE.Vector3(-0.4, 0.8, 0.3).normalize() },
       };
 
@@ -302,34 +338,85 @@
       const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
       scene.add(cloudMesh);
 
-      function loadSnapshot(idx) {
-        const snap = data.snapshots[idx];
-        const arr = uniforms.uDensity.value;
-        for (let i = 0; i < 625; i++) arr[i] = snap.ql_g_per_kg[i];
-        cloudMat.uniformsNeedUpdate = true;
-        const buttons = buttonsDiv.querySelectorAll("button");
-        buttons.forEach((b, i) => b.classList.toggle("active", i === idx));
-        document.title = `PySDM cloud step ${snap.step_index} (max ${snap.ql_max_g_per_kg.toFixed(3)} g/kg)`;
+      // dataset binary を必要に応じて fetch (= cache)
+      async function ensureBin() {
+        const key = `${state.dataset}_${state.product}`;
+        if (state.bins[key]) return state.bins[key];
+        const meta = currentProductMeta();
+        if (!meta) throw new Error(`product ${state.product} 無し`);
+        const arr = await fetchBinary(meta.bin_file);
+        state.bins[key] = arr;
+        return arr;
       }
 
-      data.snapshots.forEach((snap, idx) => {
+      // 現 state の step を uniform に転送 + 表示更新
+      async function refreshVoxel() {
+        const arr = await ensureBin();
+        const meta = currentProductMeta();
+        const stepArr = arr.subarray(state.step * 625, (state.step + 1) * 625);
+        const u = uniforms.uDensity.value;
+        for (let i = 0; i < 625; i++) u[i] = stepArr[i];
+        // 各 product の max を uniform に (= 線形 sampling、 product 切替で scale 更新)
+        state.productMax = meta.max > 0 ? meta.max : 1.0;
+        uniforms.uDensityMax.value = state.productMax;
+        cloudMat.uniformsNeedUpdate = true;
+
+        // step あたりの実効 max を計算 (= 表示用)
+        let maxV = 0;
+        for (let i = 0; i < 625; i++) maxV = Math.max(maxV, stepArr[i]);
+        setText("meta-product",
+          `${state.dataset} / ${state.product} [${meta.unit}]  step ${state.step}/${meta.n_step - 1}  ` +
+          `(this step max: ${maxV.toFixed(3)}, global max: ${meta.max.toFixed(3)})`);
+        document.title = `PySDM ${state.dataset}/${state.product} step ${state.step}`;
+        document.getElementById("time-label").textContent = `step ${state.step}`;
+        document.getElementById("time-slider").max = (meta.n_step - 1).toString();
+        document.getElementById("time-slider").value = state.step.toString();
+      }
+
+      // dataset selector
+      const datasetButtonsDiv = document.getElementById("dataset-buttons");
+      datasetKeys.forEach(key => {
         const btn = document.createElement("button");
-        btn.textContent = `step ${snap.step_index} (max ${snap.ql_max_g_per_kg.toFixed(2)})`;
-        btn.onclick = () => loadSnapshot(idx);
-        buttonsDiv.appendChild(btn);
+        btn.textContent = `${key} (${catalog.datasets[key].products.ql ? "max " + catalog.datasets[key].products.ql.max.toFixed(2) + " g/kg" : "n/a"})`;
+        btn.dataset.dataset = key;
+        btn.onclick = () => {
+          state.dataset = key;
+          updateActiveStates();
+          refreshVoxel();
+        };
+        datasetButtonsDiv.appendChild(btn);
       });
 
-      let bestIdx = 0;
-      let bestMax = -1;
-      data.snapshots.forEach((s, i) => {
-        if (s.ql_max_g_per_kg > bestMax) {
-          bestMax = s.ql_max_g_per_kg;
-          bestIdx = i;
-        }
+      // product selector (= ql / n_c_cm3 / effective_radius / super_droplet_count)
+      const productButtonsDiv = document.getElementById("product-buttons");
+      const productKeys = Object.keys(catalog.datasets[state.dataset].products);
+      productKeys.forEach(key => {
+        const btn = document.createElement("button");
+        btn.textContent = key;
+        btn.dataset.product = key;
+        btn.onclick = () => {
+          state.product = key;
+          updateActiveStates();
+          refreshVoxel();
+        };
+        productButtonsDiv.appendChild(btn);
       });
-      const snapParam = urlParams.get("snap");
-      const initSnap = (snapParam != null && data.snapshots[+snapParam]) ? +snapParam : bestIdx;
-      loadSnapshot(initSnap);
+
+      function updateActiveStates() {
+        document.querySelectorAll("#dataset-buttons button").forEach(b =>
+          b.classList.toggle("active", b.dataset.dataset === state.dataset));
+        document.querySelectorAll("#product-buttons button").forEach(b =>
+          b.classList.toggle("active", b.dataset.product === state.product));
+      }
+
+      // time slider
+      document.getElementById("time-slider").addEventListener("input", (e) => {
+        state.step = parseInt(e.target.value, 10);
+        refreshVoxel();
+      });
+
+      updateActiveStates();
+      await refreshVoxel();
 
       window.addEventListener("resize", () => {
         camera.aspect = window.innerWidth / window.innerHeight;
