@@ -17,11 +17,17 @@ import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
+from datetime import datetime
+
 from aiohttp import web
 
 from fujihill import dbinit, tile_server
 
 log = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec='seconds')
 
 
 def make_http_app(
@@ -214,6 +220,29 @@ def make_http_app(
         debug_frame_path.write_bytes(body)
         return web.json_response({'saved': str(debug_frame_path), 'bytes': len(body)})
 
+    # b99 CP: viewer の chart buffer state を debug 取得する経路。 ブラウザを前面化せず
+    # 背景タブのままでも viewer JS が 1Hz で POST してくれた最新 chart state (= sample 数 /
+    # 各 metric の最大/平均 / fold 状態 / 最新 sample 時刻) を bridge memory に保持して
+    # GET で返す。 127.0.0.1 bind なので外から読まれない。 状態は最後の POST 値で上書き、
+    # ride 終了後も最後の値は残る (= 「ride 中に動いていたか」 を後から検証可能)。
+    chart_state_store: dict = {}
+
+    async def h_debug_chart_state_post(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({'error': 'invalid json'}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({'error': 'object expected'}, status=400)
+        # 受け取った dict を完全上書き保存 + サーバ側 timestamp (= viewer 時計との照合用)
+        chart_state_store.clear()
+        chart_state_store.update(body)
+        chart_state_store['_server_received_iso'] = _now_iso()
+        return web.Response(status=204)
+
+    async def h_debug_chart_state_get(request: web.Request) -> web.Response:
+        return web.json_response(dict(chart_state_store))
+
     app.router.add_get("/tiles/{source}/metadata.json", h_metadata)
     app.router.add_get("/tiles/_style.json", h_style)
     app.router.add_get("/tiles/_metrics", h_metrics)
@@ -222,6 +251,8 @@ def make_http_app(
     app.router.add_post("/tiles/_extract_osm", h_extract_osm)
     app.router.add_post("/tiles/_fetch_minimap_raster", h_fetch_minimap_raster)
     app.router.add_post("/debug/frame", h_debug_frame)
+    app.router.add_post("/api/debug/chart-state", h_debug_chart_state_post)
+    app.router.add_get("/api/debug/chart-state", h_debug_chart_state_get)
     app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
 
     # 静的 file 配信 (= viewer HTML / JS / CSS / course.json)、 同一 origin で /tiles/ と並走。

@@ -602,6 +602,7 @@ function maybePushAndRenderChart(elapsedSec, paused) {
   });
   if (decision.push && decision.sample) {
     chartBuffer.push(decision.sample);
+    postChartStateToBridge();  // = 1 Hz CP push (= bridge memory に chart state を保存、 GET で読める)
   }
   _lastChartPushSec = decision.nextLastPushSec;
   const nowMs = performance.now();
@@ -609,6 +610,32 @@ function maybePushAndRenderChart(elapsedSec, paused) {
     chartRenderer.render();
     _lastChartRenderMs = nowMs;
   }
+}
+
+// b99 CP: chart buffer の summary を bridge の /api/debug/chart-state に POST する.
+// ブラウザを前面化せず背景タブのままでも (= chrome flag で rAF 抑制を切れば) bridge 経由で
+// chart 動作を curl で観測できる. 1 sample push のたびに 1 回呼ばれる = 1Hz, throttle 重複なし.
+function postChartStateToBridge() {
+  if (!chartBuffer) return;
+  const samples = chartBuffer.get();
+  const summary = {
+    sample_count: samples.length,
+    last_t: chartBuffer.maxTime(),
+    paused: document.body.classList.contains('state-checking') || document.body.classList.contains('state-dbinit'),
+    folded: document.body.classList.contains('chart-folded'),
+    metrics: {
+      speed:   { max: chartBuffer.maxOf('speed'),   avg: chartBuffer.avgOf('speed') },
+      power:   { max: chartBuffer.maxOf('power'),   avg: chartBuffer.avgOf('power') },
+      hr:      { max: chartBuffer.maxOf('hr'),      avg: chartBuffer.avgOf('hr') },
+      cadence: { max: chartBuffer.maxOf('cadence'), avg: chartBuffer.avgOf('cadence') },
+    },
+    client_iso: new Date().toISOString(),
+  };
+  fetch('/api/debug/chart-state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(summary),
+  }).catch(() => { /* bridge 未起動 / 切断 etc は静かに無視 (= 開発ツール、 production 影響なし) */ });
 }
 
 // === WebSocket === (既存 viewer.js と同じ contract)

@@ -143,6 +143,70 @@ async def test_debug_frame_endpoint_empty_body(aiohttp_client, db_with_one_tile,
     assert not out.exists()
 
 
+async def test_chart_state_round_trip(aiohttp_client, db_with_one_tile):
+    """b99 CP: POST /api/debug/chart-state → GET で取得した dict が POST と一致 + サーバ timestamp 付与."""
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
+    payload = {
+        "sample_count": 42,
+        "last_t": 41,
+        "paused": False,
+        "folded": False,
+        "metrics": {
+            "speed":   {"max": 24.3, "avg": 12.8},
+            "power":   {"max": 250.0, "avg": 180.0},
+            "hr":      {"max": 152.0, "avg": 130.0},
+            "cadence": {"max": 90.0, "avg": 82.0},
+        },
+        "client_iso": "2026-05-25T22:30:00",
+    }
+    resp_post = await client.post("/api/debug/chart-state", json=payload)
+    assert resp_post.status == 204
+
+    resp_get = await client.get("/api/debug/chart-state")
+    assert resp_get.status == 200
+    got = await resp_get.json()
+    # 元の値が全部含まれている (= 上書き保存 SoT)
+    for k, v in payload.items():
+        assert got[k] == v, f"field {k} mismatch: {got[k]} != {v}"
+    # サーバ timestamp が付与されている (= 古い stale state ではないか viewer 時計とのズレ判定用)
+    assert "_server_received_iso" in got
+    assert isinstance(got["_server_received_iso"], str)
+
+
+async def test_chart_state_empty_initial(aiohttp_client, db_with_one_tile):
+    """b99 CP: viewer から POST されていない時 GET は空 dict を返す (= bridge 起動直後の初期 state)."""
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
+    resp = await client.get("/api/debug/chart-state")
+    assert resp.status == 200
+    got = await resp.json()
+    assert got == {}, f"initial state must be empty dict, got {got}"
+
+
+async def test_chart_state_post_invalid_json(aiohttp_client, db_with_one_tile):
+    """b99 CP: 壊れた JSON は 400 で弾く (= 既存 state 不変)."""
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
+    # まず正常 state を入れる
+    await client.post("/api/debug/chart-state", json={"sample_count": 5})
+    # 壊れた JSON を送る
+    resp = await client.post(
+        "/api/debug/chart-state",
+        data=b"{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status == 400
+    # 直前 state が温存されている
+    resp_get = await client.get("/api/debug/chart-state")
+    got = await resp_get.json()
+    assert got.get("sample_count") == 5
+
+
+async def test_chart_state_post_non_object(aiohttp_client, db_with_one_tile):
+    """b99 CP: JSON が object でない (= array / 数値 / null) なら 400."""
+    client = await aiohttp_client(make_http_app(db_with_one_tile))
+    resp = await client.post("/api/debug/chart-state", json=[1, 2, 3])
+    assert resp.status == 400
+
+
 def test_bind_is_127_0_0_1_in_source():
     """bridge.py の bind が 0.0.0.0 に化けたら fail (= LOAD-BEARING source-grep gate).
 

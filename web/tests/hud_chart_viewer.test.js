@@ -99,6 +99,24 @@ describe('viewer-maplibre.js: 折りたたみ結線 (= b99 ui-tune)', () => {
   });
 });
 
+describe('viewer-maplibre.js: CP (= chart-state を bridge に POST、 背景タブ verify path)', () => {
+  it('postChartStateToBridge 関数が定義されている', () => {
+    expect(VIEWER).toMatch(/function\s+postChartStateToBridge/);
+  });
+  it('/api/debug/chart-state へ POST する fetch が存在', () => {
+    expect(VIEWER).toMatch(/fetch\(['"]\/api\/debug\/chart-state['"],\s*\{[^}]*method:\s*['"]POST['"]/);
+  });
+  it('chartBuffer.push の直後に postChartStateToBridge が呼ばれる (= 1Hz 同期)', () => {
+    expect(VIEWER).toMatch(/chartBuffer\.push\(decision\.sample\);\s*\n\s*postChartStateToBridge\(\)/);
+  });
+  it('4 metric の max / avg が summary に含まれる', () => {
+    for (const field of ['speed', 'power', 'hr', 'cadence']) {
+      const pattern = new RegExp(`${field}:\\s*\\{\\s*max:\\s*chartBuffer\\.maxOf\\(['"]${field}['"]\\),\\s*avg:\\s*chartBuffer\\.avgOf\\(['"]${field}['"]\\)`);
+      expect(VIEWER).toMatch(pattern);
+    }
+  });
+});
+
 describe('hud.js 不可侵契約 (= chart 概念を hud.js に混入させない、 整形 + DOM 書き込み SoT 維持)', () => {
   it('export 行数が 11 行 (= b39 後の確定値、 増減で即 fail)', () => {
     // formatElapsed/Speed/Power/Cadence/Hr/TrainerSpeed/Ack/Eta + ACK_OK_COLOR + ACK_NG_COLOR + createHud = 11
