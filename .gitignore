@@ -47,3 +47,4 @@ experiments/cumulus-physical/obs/live_cameras/
 experiments/cumulus-physical/lcm/output/
 experiments/cumulus-physical/viewer/field_2d_*.bin
 experiments/cumulus-physical/viewer/field_terrain_*.bin
+experiments/cumulus-physical/viewer/field_moist_*.bin
