@@ -44,9 +44,9 @@ describe('定数 (= GLSL と JS で同値共有)', () => {
   it('HEIGHT_MASK_FADE_M = 200 (= legacy 旧 smoothstep mask FADE 幅、 b80 で unused、 後方互換)', () => {
     expect(HEIGHT_MASK_FADE_M).toBe(200);
   });
-  it('PERLIN_FREQ = 0.0001 / WORLEY_FREQ = 0.0005 (= 周期 60km / 12km)', () => {
-    expect(PERLIN_FREQ).toBe(0.0001);
-    expect(WORLEY_FREQ).toBe(0.0005);
+  it('PERLIN_FREQ = 0.003 / WORLEY_FREQ = 0.008 (= 周期 333m / 125m、 b92 cumulus スケールへ修正)', () => {
+    expect(PERLIN_FREQ).toBe(0.003);
+    expect(WORLEY_FREQ).toBe(0.008);
   });
 });
 

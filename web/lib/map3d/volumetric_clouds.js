@@ -32,8 +32,12 @@ export const HEIGHT_MASK_FADE_M = 200;           // 旧 smoothstep mask の FADE
 export const DENSITY_PROFILE_LINEAR = 0.75;      // b80: densityProfile 線形項 (= takram CloudLayer DEFAULT linearTerm)
 export const DENSITY_PROFILE_CONST = 0.25;       // b80: densityProfile 定数項 (= takram CloudLayer DEFAULT constantTerm、 雲底密度)
 export const EARLY_BREAK_TRANSMITTANCE = 0.01;  // ray-march 早期終了閾値
-export const PERLIN_FREQ = 0.0001;               // 周期 60 km、 雲塊スケール
-export const WORLEY_FREQ = 0.0005;               // 周期 12 km、 cellular 細部
+// b92: noise scale を cumulus 1 個 (= 数百 m) スケールに揃える。 旧 PERLIN 0.0001
+// (= 周期 10km) は 16 step ray-march の総距離が perlin 1/10 周期に収まり、 全 step で
+// density 不変 → 均一灰色靄になっていた (sub-agent review 結論)。 0.003 で周期 333m、
+// 0.008 で周期 125m、 cumulus on/off 境界が視野内に複数回現れて塊感が出る。
+export const PERLIN_FREQ = 0.003;                // 周期 333 m、 cumulus 1 個スケール
+export const WORLEY_FREQ = 0.008;                // 周期 125 m、 cellular 細部
 
 // === 純 JS helper (= node test で GLSL 式同期 pin) ===
 
@@ -212,8 +216,8 @@ float heightMask(float y) {
 // threshold + scale で sharp 化: 0.2 以下を 0、 0.45 以上を 1 にマップ (= 塊と隙間が立つ)。
 float density(vec3 p) {
   vec3 windOffset = vec3(uTime * 5.0, 0.0, uTime * 2.0);
-  float pn = perlin3d((p + windOffset) * 0.0001);
-  float wn = worley3d(p * 0.0005);
+  float pn = perlin3d((p + windOffset) * ${PERLIN_FREQ});
+  float wn = worley3d(p * ${WORLEY_FREQ});
   float raw = pn * wn;
   float clipped = clamp((raw - 0.2) * 4.0, 0.0, 1.0);
   return clipped * cloudCover * heightMask(p.y);
