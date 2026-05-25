@@ -70,6 +70,24 @@
   body.state-pairing #hud,
   body.state-pairing #controls,
   body.state-pairing #minimap-container { display: none !important; }
+  /* b99 Strava 形式 chart panel.
+     位置: 画面上端 1rem、 minimap の右隣 (= left 17rem = 1rem + 240px + 1rem 余白)、 画面右端 1rem まで.
+     高さは canvas attribute (= JS が CANVAS_HEIGHT_PX で上書き) から自然継承、 CSS に height literal を
+     書かない (= 1 SoT 化、 SUBCHART_HEIGHT_PX 変更時の sync 漏れ vector 物理排除).
+     z-index 999: 既存 #hud (999) と同じ階層、 走行 3D の上、 setup-overlay (1500) より下.
+     ride 中以外 (= state-checking / state-dbinit / state-pairing) は隠す (= 既存 #hud と同じ state gate). */
+  #hud-chart {
+    position: fixed; top: 1rem; left: 17rem; right: 1rem; z-index: 999;
+    background: rgba(0, 0, 0, 0.65); padding: 4px; border-radius: 6px;
+    pointer-events: none; display: block;
+  }
+  #hud-chart canvas {
+    display: block; width: 100%;
+    /* height literal を書かない ── canvas attribute (JS init で CANVAS_HEIGHT_PX を set) が SoT. */
+  }
+  body.state-checking #hud-chart,
+  body.state-dbinit #hud-chart,
+  body.state-pairing #hud-chart { display: none !important; }
   /* brief 26b: state 別の overlay 排他制御 (= 同時表示禁止 = NG-R1-3 再演回避) */
   body.state-dbinit #setup-overlay { display: none !important; }
   body.state-dbinit #dbinit-overlay { display: flex; }
@@ -662,6 +680,13 @@
   <!-- b86: dev server 起動時に書き出された web/version.json (= 短 hash + commit 日時) を fetch + 表示。
        「画面に出てる版が最新か」 user が一目で判定できる、 reload 反映確認の物理 signal。 -->
   <span style="color:#888; font-size:10px;">ver <span id="version-info">--</span></span>
+</div>
+
+<!-- b99 Strava 形式 4 chart panel. ride 開始から trainer 値 + 物理速度を 1 Hz で push、
+     chart renderer が 4 sub-chart (speed/power/hr/cadence) に描く. canvas の width/height
+     attribute は持たない (= JS init で CANVAS_HEIGHT_PX を canvas.height に上書きする SoT 1 化). -->
+<div id="hud-chart">
+  <canvas id="hud-chart-canvas"></canvas>
 </div>
 
 <!-- rider 追随 HUD: ride の重要数値 (= slope / speed / power / cadence / hr) を大きめ text で

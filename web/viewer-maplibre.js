@@ -74,6 +74,9 @@ import { FUJIHC_LANDMARKS, snapLandmarksToCourse } from './lib/course_landmarks.
 import { createTerrainPhase } from './lib/terrain_phase.js';
 // b13-1: 機器設定パネルの共通スライダー機構
 import { mountControlPanel } from './lib/control_panel.js';
+// b99: Strava 形式 chart panel (= 4 sub-chart: speed / power / hr / cadence).
+import { createChartBuffer, decideChartPush } from './lib/hud_chart_buffer.js';
+import { createChartRenderer, CANVAS_HEIGHT_PX } from './lib/hud_chart.js';
 
 // b12 Phase 2: 地図描画 renderer。 viewer 本体が地図を触る唯一の窓口。
 const mapRenderer = createMapRenderer();
@@ -559,6 +562,39 @@ const setText = createTextWriter((id) => document.getElementById(id));
 // writer を分けることで「変化時だけ書く」 skip 判定が id ごとに 1 本化する)。
 const hud = createHud((id) => document.getElementById(id));
 
+// b99: Strava 形式 chart panel の init. canvas attribute / CSS の二重 literal を排除、 JS 側
+// CANVAS_HEIGHT_PX を SoT として canvas.height に上書き。 width は親 div の clientWidth を取り、
+// リサイズなしの 1 shot 設定 (= chart panel は ride 中固定 layout). 直近 4 metric は viewer 側で
+// 保持し、 1 Hz tick で 1 sample に合成。 trainer / speed 到来タイミングが独立なので合成は viewer 責務.
+const chartBuffer = createChartBuffer();
+const chartCanvas = document.getElementById('hud-chart-canvas');
+if (chartCanvas) {
+  chartCanvas.width = chartCanvas.parentElement?.clientWidth || 800;
+  chartCanvas.height = CANVAS_HEIGHT_PX;
+}
+const chartRenderer = chartCanvas ? createChartRenderer(chartCanvas, chartBuffer) : null;
+let _lastSpeed = null, _lastPower = null, _lastCadence = null, _lastHr = null;
+let _lastChartPushSec = -1;
+let _lastChartRenderMs = 0;
+function maybePushAndRenderChart(elapsedSec, paused) {
+  if (!chartRenderer || !chartBuffer) return;
+  const decision = decideChartPush({
+    paused,
+    elapsedSec,
+    lastPushSec: _lastChartPushSec,
+    snapshot: { speed: _lastSpeed, power: _lastPower, hr: _lastHr, cadence: _lastCadence },
+  });
+  if (decision.push && decision.sample) {
+    chartBuffer.push(decision.sample);
+  }
+  _lastChartPushSec = decision.nextLastPushSec;
+  const nowMs = performance.now();
+  if (nowMs - _lastChartRenderMs >= 250) {
+    chartRenderer.render();
+    _lastChartRenderMs = nowMs;
+  }
+}
+
 // === WebSocket === (既存 viewer.js と同じ contract)
 const WS_URL = 'ws://localhost:8765';
 // brief 22: ?test=1 で trainer / bridge 不在の画面操作確認モード.
@@ -678,6 +714,8 @@ const wsHandlers = {
     // r-speed (rider-hud の速度) は tick() の hud.speed() が物理速度で書く ──
     // trainer 生速度 (currentSpeedMps) は下の #p-speed にのみ出す。
     hud.trainer({ powerW: currentPower, cadenceRpm: currentCadence, hrBpm: currentHr });
+    // b99: chart 用 snapshot. trainer 受信時に最新値を保持 (= 1 Hz tick で sample 合成).
+    _lastPower = currentPower; _lastCadence = currentCadence; _lastHr = currentHr;
     // ペアリングパネル p-* は本石の対象外、 viewer 側で従来通り更新。
     setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp); setText('p-hr', hr);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));
@@ -747,6 +785,9 @@ const wsHandlers = {
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = false;
     } else if (msg.state === 'ended') {
       if (rideState) rideState.end();
+      // b99: ride 終了で chart buffer を cut + 空 chart を 1 度描画 (= 画面クリア).
+      chartBuffer && chartBuffer.clear();
+      chartRenderer && chartRenderer.render();
       // 2026-05-19 fix: rideStartedAt を null にする前に走行時間を確定させる。
       // 旧コードは ended で rideStartedAt=null にした後 showPostride → buildRideSummary が
       // 呼ばれるため、 保存される duration_s が常に 0 だった (=「記録の時間が 0」の正体)。
@@ -1929,6 +1970,9 @@ function tick(t) {
     ? Math.floor((performance.now() - rideStartedAt) / 1000)
     : null;
   hud.ride({ elapsedSec, dist: curDist, ele: rEle, slope: pos.slope_pct });
+  // b99: 1 Hz で chart buffer に push、 4 Hz で render. paused / elapsedSec<0 は
+  // decideChartPush (= pure helper) 内で skip 判定、 viewer 側は state を渡すだけ.
+  maybePushAndRenderChart(elapsedSec, snap.paused);
 
   // b39: ゴール ETA。 paused / 開始 30 秒以内は avgSpeed_kmh を NaN にして渡し、
   // hud 側の整形規律 (= NaN → "--") に判定を移譲する (= hud SoT 規律維持)。
@@ -2019,6 +2063,8 @@ function tick(t) {
   const dispKmh = snap.speed * speedMult * 3.6;
   const connected = !!(client && client.isOpen());
   hud.speed(dispKmh, { paused: snap.paused, connected });
+  // b99: chart 用 snapshot. 物理速度更新時に最新値を保持.
+  _lastSpeed = dispKmh;
 
   if (!snap.paused) maybeSendSlope(pos.slope_pct);
   if (snap.active && !snap.paused && connected) {
