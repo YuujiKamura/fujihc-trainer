@@ -1901,6 +1901,13 @@ function tick(t) {
   // tick() 側で module global へ写す経路は廃止 (= 初回 tick より前の state push で slope=0 に
   // なる Critical バグの除去)。
 
+  // b83-fix2: updateRider を updateCamera より先に呼ぶ。 旧順序は updateCamera が
+  // lastRiderPlacement (= 前フレームの updateRider が書いた値) を target にしていて、
+  // 構造的 1-frame lag が「カメラとライダーの差」 として user に見えていた。
+  // sub-agent review 結論: rider mesh を現フレーム位置に更新してから camera が同フレームの
+  // lastRiderPlacement を読むようにすれば lag が消える。
+  mapRenderer.updateRider({ course, curIdx, lat: rLat, lon: rLon, spin: snap.spinAngle });
+
   // b12 Phase 2.5: カメラ追随は map_renderer.updateCamera に委譲。 bearing 補間や
   // 横ドラッグ offset の合成は地図描画モジュールの中。 apply=false の時 (= ride 開始前で
   // map idle 待ち) は camera を動かさず進行方位だけ計算して返す (= idle 発火を妨げない)。
@@ -1915,11 +1922,6 @@ function tick(t) {
     apply: course.length > 0 && (snap.active || mapFullyLoaded),
   });
   const riderHeadingRad = camResult.headingRad;
-
-  // rider 立体を現在位置 + 進行方向 + スピン角で更新。 spinAngle は rider.tick 内で
-  // cadence rpm に応じて自動進行済。 位置 / 向き / スピンが動いた時だけ再構築するのは
-  // renderer 内の責務 (= 停止中の重い再アップロードを skip)。
-  mapRenderer.updateRider({ course, curIdx, lat: rLat, lon: rLon, spin: snap.spinAngle });
 
   // ライド HUD (時間/距離/標高/勾配) は hud に集約。 ride 未開始は elapsedSec=null
   // → "00:00:00"。 rider 追随 HUD の slope は常時更新 (= Terrain 経由で取得)。
