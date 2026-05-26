@@ -2,7 +2,21 @@ import { test, expect } from './base-test.js';
 
 const SVELTE_URL = 'http://127.0.0.1:8000/index-svelte.html?svelte_map=1';
 
+// b118: 配布元 (= 国土地理院 GSI / OpenStreetMap) への通信を物理 block。 Svelte Map3D
+// は地形タイルを fetch する経路を持ち、 ?noterrain=1 抑止が svelte ENV gate を尊重するか
+// 不明なため、 page.route mock で物理的に intercept する (= 他 e2e と同方式)。
+const VALID_PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC',
+  'base64',
+);
+
+async function mockDistributorTiles(page) {
+  await page.route(/(?:cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org)/, (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: VALID_PNG_BYTES }));
+}
+
 test('Svelte Map3D mode boots up, connects to test client, and starts ride', async ({ page }) => {
+  await mockDistributorTiles(page);
   // Visit Svelte map mode
   await page.goto(SVELTE_URL);
   
@@ -27,6 +41,7 @@ test('Svelte Map3D mode boots up, connects to test client, and starts ride', asy
 });
 
 test('Svelte Map3D mode mouse controls work without error', async ({ page }) => {
+  await mockDistributorTiles(page);
   await page.goto(SVELTE_URL);
   await expect(page.locator('canvas#s-minimap-top')).toBeVisible({ timeout: 20_000 });
   
