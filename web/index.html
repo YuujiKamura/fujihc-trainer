@@ -219,15 +219,17 @@
     cursor: pointer; border-radius: 3px; pointer-events: auto;
   }
   #minimap-fold-btn:hover { background: #444; border-color: #ccc; }
-  /* fold 時は container を button の実寸に合わせる。 auto にすると absolute button が
-     親 0×0 + overflow:hidden で消えて「戻せない」 user 訂正の原因。 また展開時の button
-     (= 右上 absolute) と fold 時の container を見かけ大で揃えるため、 padding 含めて
-     ぴったりの寸法 (= top:2px right:2px + button 内寸) にする. */
+  /* fold 時は button を normal flow (position:static) に戻し、 container を
+     display:inline-block にして natural width/height で button のサイズにぴったり fit させる。
+     固定 width/height を書くと button の実寸 (font/padding/border に依存) と必ずずれて
+     container 黒帯が周囲に滲む (= 前 commit の 64x22 ハードコード問題)。 */
   body.minimap-folded #minimap-container {
-    width: 64px; height: 22px; padding: 0;
+    width: auto; height: auto; padding: 0;
+    display: inline-block; overflow: visible;
   }
   body.minimap-folded #minimap-fold-btn {
-    top: 0; right: 0;  /* fold 時は container ぴったりに揃える、 オフセット 0 */
+    position: static; top: auto; right: auto;
+    display: block; /* inline-block 親の中で改行折込 / inline 余白を出さない */
   }
   body.minimap-folded #minimap-top,
   body.minimap-folded #minimap-bottom { display: none; }
