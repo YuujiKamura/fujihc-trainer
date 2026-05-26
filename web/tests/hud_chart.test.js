@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SUBCHART_SPECS,
   SUBCHART_HEIGHT_PX,
+  SUBCHART_GAP_PX,
   TIME_RULER_HEIGHT_PX,
   CANVAS_HEIGHT_PX,
   formatSubchartLabel,
@@ -123,9 +124,9 @@ describe('SUBCHART_SPECS 順序 pin (= 「上から speed/power/hr/cadence」 �
 });
 
 describe('CANVAS_HEIGHT_PX 算式 pin (= マジックナンバー化防止)', () => {
-  it('CANVAS_HEIGHT_PX === TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4', () => {
-    expect(CANVAS_HEIGHT_PX).toBe(TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4);
-    expect(CANVAS_HEIGHT_PX).toBe(14 + 50 * 4);
-    expect(CANVAS_HEIGHT_PX).toBe(214);
+  it('CANVAS_HEIGHT_PX === TIME_RULER + SUBCHART * 4 + GAP * 3', () => {
+    expect(CANVAS_HEIGHT_PX).toBe(TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4 + SUBCHART_GAP_PX * 3);
+    expect(CANVAS_HEIGHT_PX).toBe(14 + 50 * 4 + 4 * 3);
+    expect(CANVAS_HEIGHT_PX).toBe(226);
   });
 });

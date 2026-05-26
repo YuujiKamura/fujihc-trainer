@@ -21,11 +21,14 @@ export const SUBCHART_SPECS = [
 ];
 
 export const SUBCHART_HEIGHT_PX = 50;
-export const SUBCHART_GAP_PX = 0;
+// user 訂正「それぞれのチャートエリアが重なって見えるので、 間に僅かなマージンを取ろう」
+// 反映で gap 0 → 4 に。 4 sub-chart の間に 3 個の透明 gap が入る (= 上下 sub-chart の
+// grid 線が近接して「くっついて見える」 状態を解消).
+export const SUBCHART_GAP_PX = 4;
 export const TIME_RULER_HEIGHT_PX = 14;
 export const LEFT_LABEL_WIDTH_PX = 70;
 export const RIGHT_UNIT_WIDTH_PX = 32;
-export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 214
+export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4 + SUBCHART_GAP_PX * 3; // = 226
 
 function isValidNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -232,8 +235,9 @@ export function createChartRenderer(canvas, buffer) {
       const hasSamples = samples.length > 0;
       for (let i = 0; i < SUBCHART_SPECS.length; i++) {
         const spec = SUBCHART_SPECS[i];
-        const top = TIME_RULER_HEIGHT_PX + i * SUBCHART_HEIGHT_PX + 2;
-        const bottom = TIME_RULER_HEIGHT_PX + (i + 1) * SUBCHART_HEIGHT_PX - 2;
+        const subTop = TIME_RULER_HEIGHT_PX + i * (SUBCHART_HEIGHT_PX + SUBCHART_GAP_PX);
+        const top = subTop + 2;
+        const bottom = subTop + SUBCHART_HEIGHT_PX - 2;
 
         // 値の範囲 (= max は sample から、 min は常に 0 固定).
         // user 訂正「チャートの最下部が常にゼロ基準で計算されてない。 区間を飛んだ時に、
