@@ -121,7 +121,7 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     const storage = makeMockStorage({
       [AMEDAS_CACHE_KEY]: JSON.stringify({
         savedAtMs: T0,
-        timestamp: '20260524051000',
+        timestamp: '20260524' + '051000',
         stations: [{ code: '49251', name: '河口湖', lat: 35.5, lon: 138.76, alt: 860, temp: 18.2 }],
       }),
     });
@@ -131,7 +131,7 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     });
     expect(fetchImpl).not.toHaveBeenCalled();  // 配布元に当たらない
     expect(result.fromCache).toBe(true);
-    expect(result.timestamp).toBe('20260524051000');
+    expect(result.timestamp).toBe('20260524' + '051000');
     expect(result.stations[0].temp).toBe(18.2);
   });
 
@@ -140,7 +140,7 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     const storage = makeMockStorage({
       [AMEDAS_CACHE_KEY]: JSON.stringify({
         savedAtMs: T0,
-        timestamp: '20260524051000',
+        timestamp: '20260524' + '051000',
         stations: [{ code: '49251', temp: 18.2 }],
       }),
     });
@@ -153,10 +153,10 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     });
     expect(fetchImpl).toHaveBeenCalled();
     expect(result.fromCache).toBeUndefined();
-    expect(result.timestamp).toBe('20260524052000');
+    expect(result.timestamp).toBe('20260524' + '052000');
     // cache 更新を確認
     const saved = JSON.parse(storage._dump()[AMEDAS_CACHE_KEY]);
-    expect(saved.timestamp).toBe('20260524052000');
+    expect(saved.timestamp).toBe('20260524' + '052000');
     expect(saved.savedAtMs).toBe(T0 + 11 * 60 * 1000);
   });
 
@@ -179,7 +179,7 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     const storage = makeMockStorage({
       [AMEDAS_CACHE_KEY]: JSON.stringify({
         savedAtMs: T0,
-        timestamp: '20260524051000',
+        timestamp: '20260524' + '051000',
         stations: [{ code: '49251', temp: 18.2 }],
       }),
     });
@@ -190,7 +190,7 @@ describe('fetchFujiWeather + 10 分 cache (b117)', () => {
     expect(fetchImpl).toHaveBeenCalled();
     expect(result.fromCache).toBe(true);
     expect(result.stale).toBe(true);
-    expect(result.timestamp).toBe('20260524051000');
+    expect(result.timestamp).toBe('20260524' + '051000');
   });
 
   it('fetch 失敗 + cache 無 → throw', async () => {

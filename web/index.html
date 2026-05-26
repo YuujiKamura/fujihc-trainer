@@ -54,6 +54,17 @@
     --warn: #f0a96a;
     --disabled-bg: #263034;
     --disabled-text: #6e7b7a;
+    /* user 訂正「画面最下段の一行 HUD とか、 高さがバラバラ」 + 「一個上の HUD も
+       配置基準点がバラバラ」 + 「配置基準点とかの管理パラメータを一元化しろ」 反映。
+       画面下端を 2 段に揃える ── row1 (= 最下段、 attrib / status / weather-cloud-mini) と
+       row2 (= 1 段上、 #hud / #rider-hud / #controls)。 各 HUD の bottom はこの 2 var を使い、
+       数値ハードコード (= 2.5rem / 8px / 1rem 等) を排除。 画面端 padding も var で統一. */
+    --hud-edge-pad: 1rem;
+    --hud-row1-bottom: 0.5rem;
+    --hud-row2-bottom: 2.5rem;
+    /* row1 HUD の高さ・font を揃える基準値 (3 つとも同じ font/padding で並べる) */
+    --hud-row1-font: 11px ui-monospace, monospace;
+    --hud-row1-padding: 3px 8px;
   }
   html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: var(--app-bg); font: 14px/1.5 ui-monospace, "Cascadia Code", monospace; color: var(--text); }
   #map { position: fixed; inset: 0; }
@@ -118,17 +129,18 @@
   body.state-checking #dbinit-overlay { display: none !important; }
 
   #hud {
-    /* bottom 2.5rem = 40px: 画面下端の帰属表示 #attrib (= 国土地理院 / OpenStreetMap 出典) に
-       重ならないように UI を上に逃がす. #attrib は画面右下隅・最下部に position:fixed で常時表示する.
-       font-size 18px に拡大 (= rider HUD と統一、 読みやすさ優先). */
-    position: fixed; left: 1rem; bottom: 2.5rem; z-index: 999;
+    /* row2 (= 一段上 HUD 群、 #rider-hud / #controls と同段). bottom は --hud-row2-bottom 経由で
+       一元管理、 ハードコード (旧 2.5rem) を撤去 ── 最下段 #attrib / #status / #weather-cloud-mini
+       (= row1) と上下で噛み合うよう :root の 2 段 var が SoT. */
+    position: fixed; left: var(--hud-edge-pad); bottom: var(--hud-row2-bottom); z-index: 999;
     background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
     pointer-events: none; min-width: 16rem; font-size: 18px; line-height: 1.5;
   }
   #hud b { color: #ffd54a; font-size: 14px; }
-  /* rider HUD: 画面中央下部に固定。 left:50% + translate(-50%,0) で水平中央寄せ。 */
+  /* rider HUD: 画面中央下部に固定。 left:50% + translate(-50%,0) で水平中央寄せ。
+     bottom は row2 var で #hud / #controls と段揃え. */
   #rider-hud {
-    position: fixed; left: 50%; bottom: 2.5rem; z-index: 998;
+    position: fixed; left: 50%; bottom: var(--hud-row2-bottom); z-index: 998;
     background: rgba(0, 0, 0, 0.7); padding: 0.5rem 0.8rem; border-radius: 6px;
     pointer-events: none; font: 18px ui-monospace, monospace;
     transform: translate(-50%, 0);  /* 画面中央下部に固定 */
@@ -141,9 +153,9 @@
   body.state-dbinit #rider-hud,
   body.state-pairing #rider-hud { display: none !important; }
   #controls {
-    /* 帰属表示 #attrib と重ならないよう bottom 2.5rem (= #hud と同じ).
-       font-size 18px に拡大 (= rider HUD と統一)、 button / slider も視認性 up. */
-    position: fixed; right: 1rem; bottom: 2.5rem; z-index: 999;
+    /* row2 (= 1 段上 HUD 群、 #hud / #rider-hud と段揃え). bottom は --hud-row2-bottom 経由で
+       SoT 一元化、 ハードコード (旧 2.5rem) を撤去. */
+    position: fixed; right: var(--hud-edge-pad); bottom: var(--hud-row2-bottom); z-index: 999;
     font: 18px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.65); padding: 0.8rem 1.1rem; border-radius: 6px;
     min-width: 20rem;
@@ -155,31 +167,16 @@
   #controls .row .val { flex: 0 0 4rem; text-align: right; font-size: 16px; }
   #controls .panel-header { cursor: pointer; font-weight: bold; margin-top: 0.6rem; color: #ffd54a; }
   #controls .panel-body {}
-  /* user 訂正「右上に VIEWMODE なんとかっていうのが出てる、 他のパネルの下敷きになってる」 反映。
-     右上は chart wrapper + 区間 panel が既に占有しているので、 画面下中央に逃がす。 */
+  /* user 訂正「画面最下段の一行 HUD 高さがバラバラ」 反映で row1 統一. attrib / weather-cloud-mini と
+     同じ bottom / font / padding / 高さ ── 中央 (= status)、 右 (= attrib)、 左 (= weather) の 3 つが
+     画面最下段で水平に揃って並ぶ. */
   #status {
-    position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 999;
-    color: #aaa; font: 12px ui-monospace, monospace;
-    background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
+    position: fixed; bottom: var(--hud-row1-bottom); left: 50%; transform: translateX(-50%); z-index: 999;
+    color: #aaa; font: var(--hud-row1-font);
+    background: rgba(0, 0, 0, 0.5); padding: var(--hud-row1-padding); border-radius: 4px;
     max-width: calc(100vw - 4rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     pointer-events: none;
   }
-  /* user 訂正「以前に観るモードと走るモードを切り替える UI が画面下部中央に出てた、 出なくなった」 反映。
-     b46 で「起動シーン一本道化」 のため切替 UI を削除、 代替が区間 panel 内の #btnViewModeExit のみ
-     (= 観るモードでしか見えない) だったため、 走るモード中は戻り導線が露出していなかった。
-     #status の上 (bottom:3rem) に常駐 button を置き、 exitViewModeToSetup() で setup-overlay を再表示する。
-     z-index 1499 で setup-overlay (1500) より下、 setup-overlay 表示中は隠す。 */
-  #btnSwitchMode {
-    position: fixed; bottom: 3rem; left: 50%; transform: translateX(-50%); z-index: 1499;
-    padding: 0.4rem 1rem;
-    background: rgba(0, 0, 0, 0.7); color: #ffd54a; border: 1px solid #ffd54a;
-    border-radius: 4px; font: 12px ui-monospace, monospace; cursor: pointer;
-  }
-  #btnSwitchMode:hover { background: #2a2a36; }
-  /* setup / intro / 地形ロード / 接続中 は隠す (= 切替先がそこな state、 出すと自己循環) */
-  body.state-checking #btnSwitchMode,
-  body.state-dbinit #btnSwitchMode,
-  body.state-pairing #btnSwitchMode { display: none; }
   /* task-g: 地図タイル出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
      b12 Phase 4 で描画エンジンが Three.js になり MapLibre 標準 AttributionControl が消えた
      ため、 terrain3d.html の #attrib と同型の静的 HTML 出典 DOM を新設した。
@@ -188,7 +185,9 @@
      setup / dbinit の半透明 overlay 越しにも 3D 地形タイルは見えており、 タイルが見えて
      いる間は出典が要るため、 全 state で常時・読める形で見せる。 */
   #attrib {
-    position: fixed; right: 1rem; bottom: 8px; z-index: 2001;
+    /* row1 (= 最下段) の右. bottom / right は :root var で SoT 一元化、 status / weather と段揃え.
+       font/padding だけは ODbL 出典明示義務の可読性を優先して row1 共通寸法より大きめを維持. */
+    position: fixed; right: var(--hud-edge-pad); bottom: var(--hud-row1-bottom); z-index: 2001;
     font: 12px/1.4 ui-monospace, monospace; color: #e6edf3;
     background: rgba(13, 17, 23, 0.92); border: 1px solid #30363d;
     padding: 5px 10px; border-radius: 6px;
@@ -789,10 +788,6 @@
   </div>
 </div>
 
-<!-- user 訂正で復活させた走る/観る モード選び直し button (= 画面下中央常駐).
-     click で exitViewModeToSetup() を呼び、 走る中・観る中どちらからでも setup-overlay に戻れる. -->
-<button id="btnSwitchMode" type="button" title="モードを選び直す">⇄ モード選び直し</button>
-
 <div id="status">loading...</div>
 
 <div id="dbinit-overlay" role="dialog" aria-modal="true" aria-labelledby="dbinit-title">
@@ -1177,8 +1172,8 @@
      body 直下 fixed (= intro panel の display:none 連鎖の影響を受けない位置)。
      textContent + setAttribute のみ更新 (= XSS 安全)。 -->
 <div id="weather-cloud-mini" data-clouds-state="pending"
-     style="position:fixed; left:8px; bottom:8px; z-index:9000; padding:4px 8px;
-            background:rgba(0,0,0,0.55); color:#dde; font-family:monospace; font-size:11px;
+     style="position:fixed; left:var(--hud-edge-pad); bottom:var(--hud-row1-bottom); z-index:9000; padding:3px 8px;
+            background:rgba(0,0,0,0.55); color:#dde; font:var(--hud-row1-font);
             border-radius:3px; pointer-events:none; display:none;"></div>
 
 <script type="module" src="viewer-maplibre.js?v=46"></script>
