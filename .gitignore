@@ -51,3 +51,6 @@ experiments/cumulus-physical/viewer/field_moist_*.bin
 experiments/cumulus-physical/viewer/field_moist_3d_*.bin
 experiments/cumulus-physical/obs/fixtures/terrain_2d_*.npy
 experiments/cumulus-physical/lcm/output/field_moist_3d_*.png
+experiments/cumulus-physical/viewer/cumulus_widened_*.bin
+experiments/cumulus-physical/viewer/stratocumulus_widened_*.bin
+experiments/cumulus-physical/output/phase1_arabas_*_widened_storage/
