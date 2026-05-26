@@ -4,13 +4,13 @@
 // canvas は <canvas id="hud-chart-canvas"> 1 個に 4 sub-chart を縦積みする (= Strava
 // と同型 form)。 各 sub-chart は独立した sub region (= y 帯) を持つ:
 //   time ruler:  y=0..14
-//   sub-chart 0: y=14..66   ── スピード (cyan)
-//   sub-chart 1: y=66..118  ── パワー (purple)
-//   sub-chart 2: y=118..170 ── 心拍 (red)
-//   sub-chart 3: y=170..222 ── ケイデンス (magenta)
+//   sub-chart 0: y=14..64   ── スピード (cyan)
+//   sub-chart 1: y=64..114  ── パワー (purple)
+//   sub-chart 2: y=114..164 ── 心拍 (red)
+//   sub-chart 3: y=164..214 ── ケイデンス (magenta)
 // 横軸 = ride elapsed 0 〜 maxT (= buffer.maxTime())、 全 sub-chart で共有。
 //
-// 寸法は b99 UI 改訂で 50% 級にコンパクト化 (= ユーザ訂正「でけえよバカ」、 元 70/18/90/40 → 36/12/60/26).
+// 寸法は user 訂正「縦幅もっと取って良い、 テキスト大きく」 反映で 50/14/70/32 + font 12.
 // 折りたたみは index.html の #hud-chart-fold-btn + body.chart-folded で canvas を隠す層.
 
 export const SUBCHART_SPECS = [
@@ -20,12 +20,12 @@ export const SUBCHART_SPECS = [
   { field: 'cadence', label: 'ケイデンス', unit: 'rpm', color: '#e879b6', avgColor: 'rgba(232,121,182,0.55)' },
 ];
 
-export const SUBCHART_HEIGHT_PX = 36;
+export const SUBCHART_HEIGHT_PX = 50;
 export const SUBCHART_GAP_PX = 0;
-export const TIME_RULER_HEIGHT_PX = 12;
-export const LEFT_LABEL_WIDTH_PX = 60;
-export const RIGHT_UNIT_WIDTH_PX = 26;
-export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 156
+export const TIME_RULER_HEIGHT_PX = 14;
+export const LEFT_LABEL_WIDTH_PX = 70;
+export const RIGHT_UNIT_WIDTH_PX = 32;
+export const CANVAS_HEIGHT_PX = TIME_RULER_HEIGHT_PX + SUBCHART_HEIGHT_PX * 4; // = 214
 
 function isValidNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -100,7 +100,7 @@ export function createChartRenderer(canvas, buffer) {
   function drawTimeRuler(width, ticks) {
     // ruler 帯 (y=0..18) の下端に tick の short tick + label を描く。
     ctx.fillStyle = '#bcd';
-    ctx.font = '11px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     const leftPx = LEFT_LABEL_WIDTH_PX;
@@ -189,13 +189,13 @@ export function createChartRenderer(canvas, buffer) {
     // 左端: "ラベル名\n最大 N\n平均 N" を 3 行 fillText.
     // 右端: 上端に axisMax (= 縦軸上限) / 中段に 単位 / 下端に axisMin (= 縦軸下限).
     ctx.fillStyle = '#dfe';
-    ctx.font = '10px ui-monospace, monospace';
+    ctx.font = '12px ui-monospace, monospace';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     const label = formatSubchartLabel(spec, max, avg);
     const lines = label.split('\n');
-    const lineHeight = 11;  // 3 行 × 11px = 33px = sub-chart 36px に収まる
-    const startY = top + 1;
+    const lineHeight = 14;  // 3 行 × 14px = 42px = sub-chart 50px に収まる
+    const startY = top + 2;
     for (let i = 0; i < lines.length; i++) {
       ctx.fillText(lines[i], 3, startY + i * lineHeight);
     }
@@ -204,11 +204,11 @@ export function createChartRenderer(canvas, buffer) {
     const maxStr = formatNumberForLabel(axisMax);
     const minStr = formatNumberForLabel(axisMin);
     ctx.fillStyle = '#bcd';
-    ctx.fillText(maxStr, rightX, top + 1);  // 上端
+    ctx.fillText(maxStr, rightX, top + 2);  // 上端
     ctx.fillStyle = '#dfe';
-    ctx.fillText(spec.unit, rightX, top + (bottom - top) / 2 - 5);  // 中段
+    ctx.fillText(spec.unit, rightX, top + (bottom - top) / 2 - 6);  // 中段
     ctx.fillStyle = '#bcd';
-    ctx.fillText(minStr, rightX, bottom - 11);  // 下端
+    ctx.fillText(minStr, rightX, bottom - 13);  // 下端
   }
 
   return {

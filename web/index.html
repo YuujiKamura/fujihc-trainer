@@ -85,7 +85,7 @@
   }
   #hud-chart {
     flex: 0 0 auto;  /* wrapper の flex で shrink されないよう固定 */
-    width: min(900px, calc(100vw - 42rem));  /* 最大化キャップ + sandwich 余白 */
+    width: min(900px, calc(100vw - 46rem));  /* 最大化キャップ + sandwich 余白 (左 minimap 19rem + 右 section panel 27rem) */
     background: rgba(0, 0, 0, 0.65); padding: 2px 4px 4px 4px; border-radius: 6px;
     pointer-events: none;
     display: flex; flex-direction: column; align-items: stretch;
@@ -759,8 +759,7 @@
     <div style="color:#ffd54a; font-weight:bold; margin-bottom:0.3rem;">現在気象 (気象庁 アメダス)</div>
     <div id="weather-status">取得中…</div>
     <div id="weather-rows" style="font-family:monospace; font-size:11px; line-height:1.4;"></div>
-    <!-- b79: 雲量倍率 slider (= AMeDAS 物理算出値に 0〜1 倍率を掛ける、 mountControlPanel で生やす) -->
-    <div id="weather-sliders" style="margin-top:0.3rem;"></div>
+    <!-- b114: 雲量 slider は「大気環境」 panel (= ATMO_DEFS、 機器設定 button の下) に統合、 ここでは持たない。 -->
   </div>
   <div style="margin-top:0.4rem; font-size:13px; color:#aaa;">
     hillshade dbg:
