@@ -226,10 +226,17 @@ describe('b47: 観る→走る遷移で mode-view フラグが外れる', () => 
     expect(m[0]).toMatch(/classList\.remove\(['"]mode-view['"]\)/);
   });
 
-  it('btnOpenPairing ハンドラが mode-view 中は exitViewModeToSetup へ分岐する', () => {
-    // 観るモード中の「ペアリング画面を開く」 は走るモードへの切替操作。
-    // showPairing だけでなく exitViewModeToSetup を通して mode-view を確実に外す。
-    expect(viewer).toMatch(
-      /btnOpenPairing[\s\S]{0,300}classList\.contains\(['"]mode-view['"]\)[\s\S]{0,150}exitViewModeToSetup\(/);
+  it('btnOpenPairing ハンドラは mode-view 状態に依らず showPairing のみを呼ぶ (= b115)', () => {
+    // user 2026-05-26 訂正: 観るモード中に btnOpenPairing で機器設定 overlay を開いて
+    //   閉じた時、 観るモードに戻る動線が無いと困る。 mode-view 解除は startRideConfirmed
+    //   (= 実走開始の唯一の窓口、 上の test で pin 済) が担う規律なので、 btnOpenPairing
+    //   で先回り解除する必要は無い ── ここでは「分岐せず showPairing のみ」 を pin する。
+    //   handler 本体は addEventListener('click', () => { ... }) の中、 同 listener 内に
+    //   exitViewModeToSetup の呼び出しが含まれないこと + showPairing の呼び出しが
+    //   含まれることを pin。
+    const m = viewer.match(/getElementById\(['"]btnOpenPairing['"]\)\.addEventListener\(['"]click['"],[\s\S]*?\n\}\);/);
+    expect(m, 'btnOpenPairing handler が見つからない').not.toBeNull();
+    expect(m[0]).toMatch(/showPairing\(\)/);
+    expect(m[0]).not.toMatch(/exitViewModeToSetup\(/);
   });
 });

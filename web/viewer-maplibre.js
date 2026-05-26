@@ -2329,15 +2329,14 @@ document.getElementById('btnBackToPairing').addEventListener('click', () => {
   const b = document.getElementById('btnRideStart'); if (b && !b.disabled) requestAnimationFrame(() => b.focus());
 });
 document.getElementById('btnOpenPairing').addEventListener('click', () => {
-  // b47: 観るモード中の btnOpenPairing は「走るモードへ切り替える」 操作。 showPairing
-  //   だけだと mode-view が残り、 トレーナー接続画面・実ライドに移っても観るモードの
-  //   UI / 記録ガードが効いたままになる。 観るモード中は exitViewModeToSetup を通して
-  //   区間 rideState を畳み、 mode-view を外し、 state-pairing に落としてから setup を出す。
-  if (document.body.classList.contains('mode-view')) {
-    exitViewModeToSetup();
-  } else {
-    showPairing();
-  }
+  // b115: 機器設定 button は overlay を出すだけ。 mode-view 解除は startRideConfirmed
+  //   (= 実走開始の唯一の窓口、 line ~2218) が担う ── 経路に依らず矛盾状態を断つ規律は
+  //   そこで満たされる。 btnOpenPairing で先回り解除すると「観るモード中に機器設定だけ
+  //   見て元のコース状態に戻る」 動線が消える (= user 2026-05-26 訂正)。
+  //   観るモード中に閉じる (btnClosePairing) で overlay を消すと mode-view が残り
+  //   観るモードに復帰、 ライド開始 (btnRideStart) を押せば startRideConfirmed が
+  //   mode-view を解除して b47 invariant を満たす。
+  showPairing();
 });
 document.getElementById('btnClosePairing').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('visible');
