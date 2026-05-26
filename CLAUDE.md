@@ -1,8 +1,9 @@
 # fujihc-trainer — AI エージェント向けルール
 
-## 地図タイル配布元への配慮 (最重要、変更禁止)
+## 配布元への配慮 (最重要、変更禁止)
 
-このリポは国土地理院 (GSI) と OpenStreetMap (OSM) のタイルを使う。
+このリポは国土地理院 (GSI) のタイル、 OpenStreetMap (OSM、 Protomaps PMTiles 経由) のタイル、
+気象庁オープンデータ (= AMeDAS、 bosai 系) の現在気象を使う。
 配布元へ迷惑をかけないことを設計の軸に据えている。以下のルールは AI が勝手に変更・回避してはならない。
 
 ### 考え方 (= ルールの文字列より上位、これを念頭に下記ルールを読め)
@@ -23,6 +24,19 @@
 
 - 2026-05-20: Pages live contract test を「GitHub Actions の cron で日次走らせる」 と AI (= Claude) が提案、 配布元から見れば毎日定期的に叩かれる DoS 寄り、 user に「相手の立場で考えろ」 と訂正された
 - 2026-05-14 (= x4 occurrence): 「ローカル DB にタイルを整備したらダメなんか?」 と user が x4 言っていたのに AI は配布元を都度 fetch する path を提案、 「キャッシュは活かす」 の本意 (= 配布元負荷ゼロに近づける) を踏まずに「キャッシュ無効化して全 fetch する mock test」 を書いた
+- 2026-05-26 (= b117): AMeDAS (気象庁 bosai) を viewer 起動の度に 2 req fetch していた (= b72 〜 b116 まで誰も気にせず landed)。 user に「気象庁の配布元を毎回フェッチしてると思うが、 これも頻繁になり過ぎると迷惑掛かりそうなんで、 更新頻度を決めて、 起動のたびに取って来るとかはしない方がいい」「10 分に一回とかに決めておいて、 それ以上 (= 以内) はキャッシュを使うようにしろ」 と訂正、 localStorage で 10 分 cache 実装。 観測値が 10 分 granularity で更新される配布元仕様に合わせる発想を AI が先回りすべきだった
+- 2026-05-26 (= b118): `e2e/debug_capture.spec.js` と `e2e/svelte_map.spec.js` が `?noterrain=1` 抑止も `page.route` mock も無く、 ローカル `npx playwright test` の度に GSI に通信が出ていた (= b74-screenshot / b75-screenshot 等の他 e2e は mock 完備、 この 2 件だけが規律外で放置されていた)。 user に「テスト群の中でも、 こういった配布元にストレスを掛けてるものがないか精査しろ」 と訂正、 全 e2e と CI workflow を精査して 2 件特定 → `page.route` mock 追加で物理 block
+
+### test での配布元 fetch (= 自動経路 / 手動経路の両方で物理 block)
+
+test (= vitest / pytest / playwright e2e) は配布元への通信を **物理層で block** すること。
+mock / route intercept / fixture から fulfill のいずれかで、 1 byte も配布元に出ない設計を保つ。
+
+- **vitest / pytest**: 配布元 client 関数の test は `vi.fn()` / `vi.mock` / `patch('...urlopen')` 等で fetch を mock 駆動。 source-grep gate は `readFileSync` で source を読んで pattern を assert するだけで通信ゼロ。
+- **playwright e2e**: 地形 / 雲 / minimap を描画する spec は `page.route(/(?:cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org)/, ...)` で配布元 URL を intercept、 fixture PNG (= `web/tests/fixtures/gsi_dem_v1_sample.png` 等) を `route.fulfill` で返す。 必要なら `?noterrain=1` で地形 fetch そのものを抑止 (= ENV gate)。
+- **新 spec を書く時の確認手順**: 配布元 URL が走る経路 (= 地形 / minimap / Strava / AMeDAS) を含む spec は、 mock を組まずに commit しない。 既存 mock pattern (`b74-screenshot.spec.js` / `tile_load_budget.spec.js`) を踏襲する。
+- **default config に居る e2e は全部 mock 完備**: `playwright.config.js` の testIgnore に居ない spec は `npx playwright test` で auto 走る = 開発者の手元で何度も叩かれる = 配布元負荷。 default config に新 spec を追加する時は mock 必須。
+- **実 endpoint を叩く test を立てるなら**: `e2e/playwright.pages-live.config.js` 系 (= `workflow_dispatch only` + email + reason 50+ 文字 + 配布元 URL anchored + AUTHOR_HANDLE 制限) と同等の物理 gate を必ず併設、 push / cron 連動禁止。
 
 ### GSI 地理院タイル
 
@@ -39,6 +53,14 @@
 
 - **`tile.openstreetmap.org` を直接叩くな**: OSMF Tile Usage Policy 違反。Protomaps PMTiles 経由のみ。
 - **`bridge.py` は `127.0.0.1` bind 固定**: LAN 内に ODbL タイルを再配布する事故を物理的に防いでいる。`0.0.0.0` への変更禁止。
+
+### 気象庁 AMeDAS (= bosai 系オープンデータ)
+
+- **取得は 10 分に 1 回まで**: 観測値自体が 10 分 granularity で更新されるため、 それより短い間隔で叩く意味は無い。 `web/lib/weather/jma_amedas.js` の `fetchFujiWeather` は `opts.storage` (= localStorage) を渡された時 `AMEDAS_CACHE_TTL_MS = 10 * 60 * 1000` で cache、 10 分以内の再アクセスは fetch しない。 viewer は起動時にこの opts を必ず渡す ── 起動毎 2 req を出さない。
+- **配布元 down 時の挙動**: cache の TTL を超えた古い保存値があれば stale を返す (= `stale: true` フラグ付き)、 画面の連続性を維持。 「観測値が古いまま表示」 のほうが「気象 panel が error 表示で消える」 より user 体験が高い。
+- **観測点は 5 個のみ**: 富士山周辺 (河口湖 / 山中 / 古関 / 御殿場 / 富士山頂) の固定 5 観測点。 観測点を増やす変更は fetch 量を増やさず (= map endpoint は 1 req で全 1286 観測点の値を返す) 抽出を増やすだけ。
+- **出典クレジット必須**: 「現在気象 (気象庁 アメダス)」 を画面に表示する (= `#weather-panel` 内、 b116 で「大気環境」 fold 内に DOM 移動済)。 「気象庁オープンデータ」 を出典として明示する義務を画面で果たす。
+- **新 endpoint 追加禁止**: 現状は `latest_time.txt` + `map/<timestamp>.json` の 2 req。 forecast / radar 等の新 endpoint を追加する前に「観測ではなく予報なら別 source (= 気象 API 商用) を使えないか」 を 1 度問う。
 
 ### DB / バイナリ
 
