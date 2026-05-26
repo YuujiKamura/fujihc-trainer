@@ -601,6 +601,21 @@ if (chartFoldBtn) {
     try { localStorage.setItem(FOLD_KEY, next ? '1' : '0'); } catch (_) { /* privacy mode */ }
   });
 }
+// user 訂正「左上のミニマップもフォールドできるようにして」 反映。 chart fold と同型 pattern.
+const MINIMAP_FOLD_KEY = 'fujihill.minimap-folded';
+const minimapFoldBtn = document.getElementById('minimap-fold-btn');
+function applyMinimapFold(folded) {
+  document.body.classList.toggle('minimap-folded', folded);
+  if (minimapFoldBtn) minimapFoldBtn.textContent = folded ? '▸ map' : '▾ map';
+}
+try { applyMinimapFold(localStorage.getItem(MINIMAP_FOLD_KEY) === '1'); } catch (_) { /* SSR / privacy mode */ }
+if (minimapFoldBtn) {
+  minimapFoldBtn.addEventListener('click', () => {
+    const next = !document.body.classList.contains('minimap-folded');
+    applyMinimapFold(next);
+    try { localStorage.setItem(MINIMAP_FOLD_KEY, next ? '1' : '0'); } catch (_) { /* privacy mode */ }
+  });
+}
 function maybePushAndRenderChart(elapsedSec, paused) {
   if (!chartRenderer || !chartBuffer) return;
   const decision = decideChartPush({
