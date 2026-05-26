@@ -77,6 +77,15 @@ import { mountControlPanel } from './lib/control_panel.js';
 // b99: Strava 形式 chart panel (= 4 sub-chart: speed / power / hr / cadence).
 import { createChartBuffer, decideChartPush } from './lib/hud_chart_buffer.js';
 import { createChartRenderer, CANVAS_HEIGHT_PX } from './lib/hud_chart.js';
+// b114: 雲量 slider を「大気環境」 ATMO_DEFS に統合するため、 wirelib を static import に
+// 格上げ (= ATMO_DEFS の apply から applyCloudAmountToMap を直呼びする)。 純関数 export
+// のみで副作用ゼロ、 static 化に支障なし。
+import {
+  applyAmedasCloudsToPanel,
+  applyCloudAmountToMap,
+  parseForceWeatherFromUrl,
+  applyForceWeatherToPanel,
+} from './lib/weather/weather_panel_wire.js';
 
 // b12 Phase 2: 地図描画 renderer。 viewer 本体が地図を触る唯一の窓口。
 const mapRenderer = createMapRenderer();
@@ -2361,6 +2370,15 @@ const COURSE_DEFS = [
   { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
   { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
 ];
+// b79 (b114 で hoist): 雲量 slider state。 AMeDAS fetch は 1 起動 1 回 (= 配布元負荷ゼロ)、
+// slider 操作は currentBaseWeather × 倍率を mapRenderer.setWeatherClouds に流すだけで
+// 再 fetch しない。 localStorage 'fujihill.cloudAmount' で永続、 mountControlPanel が読み書き
+// を担う ── 初期 mount で apply(localStorage 値) が呼ばれ、 currentCloudAmount が上書きされる
+// 順序。 b114 で「天候」 panel 内の独立 mount から「大気環境」 ATMO_DEFS 統合 mount に
+// 移したため、 ATMO_DEFS の apply からこの state を読む必要があり file-scope で先に宣言。
+let currentBaseWeather = null;
+let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで起動、 slider で 1.0 まで上げて確認用)
+
 const ATMO_DEFS = [
   { key:'lightDir',   label:'光源方向',    min:0,   max:360,  step:5,  value:135, unit:'°',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightDirection(raw); setText('dbgLightDir',String(Math.round(raw))); } },
   { key:'lightStr',   label:'光源強度',    min:0,   max:100,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSunlightStrength(raw/100); setText('dbgLightExag',(raw/100).toFixed(2)); } },
@@ -2385,6 +2403,20 @@ const ATMO_DEFS = [
   { key:'skyIntensity',label:'大気 空の青さ',     min:0,   max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setSkyIntensity(raw/100); } },
   // atmoSun: raw = sunScale ×100 (raw 100 = 1.0 倍)。 ATMO_SUN_COLOR に掛ける露出相当の倍率。
   { key:'atmoSun',     label:'大気 太陽倍率',     min:30,  max:250,  step:10, value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setAtmosphereParams({ sunScale: raw/100 }); } },
+  // b114: 雲量 slider を b79 の独立 mount (= 天候 panel 直下の #weather-sliders) から
+  //   ATMO_DEFS 統合 mount に移植。 AMeDAS 物理算出値 (cloudCover) に user 主観倍率 0..1 を掛けて
+  //   mapRenderer.setWeatherClouds に流す ── apply は (a) currentCloudAmount を更新、
+  //   (b) AMeDAS fetch 済み (= currentBaseWeather 非 null) かつ Pages 環境でなければ
+  //   applyCloudAmountToMap で再適用。 mount は file 起動直後 (AMeDAS 来る前) でも localStorage
+  //   値で値が復元されて currentCloudAmount は正しく seed される、 雲は AMeDAS 到着後の
+  //   applyAmedasCloudsToPanel で currentCloudAmount 経由で適用される。
+  { key:'cloudAmount', label:'雲量',              min:0,   max:1,    step:0.05, value:0, unit:'%',      format:raw=>`${Math.round(raw*100)}`,
+    apply(raw){
+      currentCloudAmount = raw;
+      if (currentBaseWeather && ENV?.mode !== 'static') {
+        applyCloudAmountToMap(mapRenderer, currentBaseWeather, raw);
+      }
+    } },
 ];
 // b82: 自機の画面縦位置を slider で可変 (= orbit lookUp ratio、 0 で画面中央、 0.3 で画面下端寄り)。
 //   ratio=0.1 で「上から 約 77%」、 0.15 で「約 82%」、 0.2 で「約 86%」 (= fov 50° 縦半幅 25° に対する比例)。
@@ -2435,14 +2467,6 @@ const BIKE_SHAPE_DEFS = [
   }
 })();
 
-// b79: 雲量倍率 slider state (= AMeDAS 物理算出値 cloudCover に user 主観倍率を掛ける、 0..1)。
-// AMeDAS fetch は 1 起動 1 回 (= 配布元負荷ゼロ)、 slider 操作は currentBaseWeather × 倍率を
-// mapRenderer.setWeatherClouds に流すだけで再 fetch しない。 localStorage 'fujihill.cloudAmount'
-// で永続、 mountControlPanel が読み書きを担う ── 初期 mount で apply(localStorage 値) が呼ばれ、
-// currentCloudAmount が上書きされる順序。
-let currentBaseWeather = null;
-let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで起動、 slider で 1.0 まで上げて確認用)
-
 // b72 + b74 weather: AMeDAS の現在気象を 1 起動 1 回 fetch して #weather-panel に populate +
 // 気温・湿度・標高 から雲量・雲底・雲頂を算出して mapRenderer.setWeatherClouds に流す。
 // 配布元 (気象庁 bosai) への通信は 1 起動 2 req (= latest_time + map、 b72 既存)、 b74 で
@@ -2461,15 +2485,8 @@ let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで
   const miniEl = document.getElementById('weather-cloud-mini');
   if (!statusEl || !rowsEl || !panelEl) return;
 
-  let wirelib = null;
-  try {
-    wirelib = await import('./lib/weather/weather_panel_wire.js');
-  } catch (e) {
-    console.warn('[weather] weather_panel_wire module load failed:', e);
-    panelEl.setAttribute('data-clouds-state', 'error');
-    return;
-  }
-  const { parseForceWeatherFromUrl, applyForceWeatherToPanel, applyAmedasCloudsToPanel } = wirelib;
+  // b114: wirelib は file top で static import 済 (= ATMO_DEFS の cloudAmount apply で
+  // applyCloudAmountToMap を直呼びするため格上げ)、 ここでの dynamic import は不要。
 
   // URL gate ?weather=fixed: AMeDAS fetch skip して固定値を流す (= e2e screenshot 用)
   let urlParams = null;
@@ -2519,27 +2536,10 @@ let currentCloudAmount = 0;  // b79 user 指示: default 0 (= 雲オミットで
       cloudAmountMultiplier: cloudsDisabledByEnv ? 0 : currentCloudAmount,
     });
 
-    // b79: AMeDAS 取得成功時のみ雲量 slider を生やす (= forceWeather / fetch 失敗時は出さない)。
-    // mountControlPanel が localStorage 'fujihill.cloudAmount' を読んで初期 apply、
-    // その瞬間に currentCloudAmount が上書きされる + applyCloudAmountToMap で再 setWeatherClouds。
-    // b94: Pages では slider 自体も mount しない (= user が触っても雲が出ない、 完全 off を視覚的に統一)。
-    if (currentBaseWeather && !cloudsDisabledByEnv) {
-      const sliderEl = document.getElementById('weather-sliders');
-      if (sliderEl && sliderEl.children.length === 0) {
-        mountControlPanel(sliderEl, [
-          {
-            key: 'cloudAmount',
-            label: '雲量',
-            min: 0, max: 1, step: 0.05, value: 0,
-            format: (raw) => `${Math.round(raw * 100)}%`,
-            apply(raw) {
-              currentCloudAmount = raw;
-              wirelib.applyCloudAmountToMap(mapRenderer, currentBaseWeather, raw);
-            },
-          },
-        ], { collapsible: true, title: '天候', collapsed: false });
-      }
-    }
+    // b114: 雲量 slider は ATMO_DEFS の cloudAmount entry に統合済 (= file top で
+    //   mountControlPanel で「大気環境」 panel に mount される)。 ここで dynamic mount しない。
+    //   currentBaseWeather は applyAmedasCloudsToPanel の戻り値で更新済、 slider 操作が
+    //   来たら ATMO_DEFS.cloudAmount.apply が applyCloudAmountToMap を直呼びする。
   } catch (e) {
     statusEl.textContent = `取得失敗: ${e.message}`;
     panelEl.setAttribute('data-clouds-state', 'error');
