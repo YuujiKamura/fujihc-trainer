@@ -2451,6 +2451,31 @@ mountControlPanel(document.getElementById('control-sliders-bike'),   BIKE_DEFS, 
 mountControlPanel(document.getElementById('control-sliders-course'), COURSE_DEFS, {collapsible:true, title:'コース環境', collapsed:true});
 mountControlPanel(document.getElementById('control-sliders-atmo'),   ATMO_DEFS,   {collapsible:true, title:'大気環境',  collapsed:true});
 
+// b116: 「現在気象 (気象庁 アメダス)」 panel + hillshade dbg 行を「大気環境」 fold の中に
+//   DOM 移動。 user 2026-05-26 訂正:「右下の HUD に気象情報を詳しく表示してるけど、 ここ
+//   まで要るか。 大気環境のフォールド内に収めてしまっていいかも」。 ATMO_DEFS の slider と
+//   並べて畳む、 fold 既定 (collapsed:true) で画面占有を下げる。 mountControlPanel が body を
+//   .panel-body class で生成する (= control_panel.js:183-198) ので query で取れる、 textContent /
+//   setAttribute で動的更新する weather panel の id は不変なので AMeDAS / sun_position 経路に影響なし。
+(() => {
+  const atmoBody = document.getElementById('control-sliders-atmo')?.querySelector('.panel-body');
+  if (!atmoBody) return;
+  const weatherPanel = document.getElementById('weather-panel');
+  if (weatherPanel) {
+    // fold 内側に入るので外側仕切り線 (= border-top) は外す、 上端 padding も 0 に。
+    weatherPanel.style.borderTop = 'none';
+    weatherPanel.style.paddingTop = '0';
+    weatherPanel.style.marginTop = '0.3rem';
+    atmoBody.appendChild(weatherPanel);
+  }
+  // hillshade dbg 行 = #dbgLightDir の親 div、 #controls の直下に居る。
+  const dbgEl = document.getElementById('dbgLightDir');
+  const hillshadeRow = dbgEl ? dbgEl.parentElement : null;
+  if (hillshadeRow) {
+    atmoBody.appendChild(hillshadeRow);
+  }
+})();
+
 // 自機 (自転車) の部品ごと形状エディタ。 各スライダーが bikeShape の 1 フィールドを
 // 更新し、 mapRenderer.setRiderShape で自転車を組み直す。 control_panel が
 // localStorage 永続 (fujihill.bike*) を担う。 「調整」 とは別の折りたたみパネルにする。
