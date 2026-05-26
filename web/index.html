@@ -164,6 +164,22 @@
     max-width: calc(100vw - 4rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     pointer-events: none;
   }
+  /* user 訂正「以前に観るモードと走るモードを切り替える UI が画面下部中央に出てた、 出なくなった」 反映。
+     b46 で「起動シーン一本道化」 のため切替 UI を削除、 代替が区間 panel 内の #btnViewModeExit のみ
+     (= 観るモードでしか見えない) だったため、 走るモード中は戻り導線が露出していなかった。
+     #status の上 (bottom:3rem) に常駐 button を置き、 exitViewModeToSetup() で setup-overlay を再表示する。
+     z-index 1499 で setup-overlay (1500) より下、 setup-overlay 表示中は隠す。 */
+  #btnSwitchMode {
+    position: fixed; bottom: 3rem; left: 50%; transform: translateX(-50%); z-index: 1499;
+    padding: 0.4rem 1rem;
+    background: rgba(0, 0, 0, 0.7); color: #ffd54a; border: 1px solid #ffd54a;
+    border-radius: 4px; font: 12px ui-monospace, monospace; cursor: pointer;
+  }
+  #btnSwitchMode:hover { background: #2a2a36; }
+  /* setup / intro / 地形ロード / 接続中 は隠す (= 切替先がそこな state、 出すと自己循環) */
+  body.state-checking #btnSwitchMode,
+  body.state-dbinit #btnSwitchMode,
+  body.state-pairing #btnSwitchMode { display: none; }
   /* task-g: 地図タイル出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
      b12 Phase 4 で描画エンジンが Three.js になり MapLibre 標準 AttributionControl が消えた
      ため、 terrain3d.html の #attrib と同型の静的 HTML 出典 DOM を新設した。
@@ -772,6 +788,10 @@
     anchor <span id="dbgLightAnchor">map</span>
   </div>
 </div>
+
+<!-- user 訂正で復活させた走る/観る モード選び直し button (= 画面下中央常駐).
+     click で exitViewModeToSetup() を呼び、 走る中・観る中どちらからでも setup-overlay に戻れる. -->
+<button id="btnSwitchMode" type="button" title="モードを選び直す">⇄ モード選び直し</button>
 
 <div id="status">loading...</div>
 

@@ -1353,6 +1353,14 @@ if (typeof document !== 'undefined') {
     exitViewModeToSetup();
   });
 
+  // user 訂正「以前に画面下中央に出てた モード切替 UI が出なくなった」 で復活。
+  // 観るモード中も走るモード中も同じ exitViewModeToSetup() を呼んで setup-overlay に戻る
+  // (= 走るモード中なら rideState.end() で ride を畳んでから setup へ遷移)。
+  const btnSwitchMode = document.getElementById('btnSwitchMode');
+  if (btnSwitchMode) btnSwitchMode.addEventListener('click', () => {
+    exitViewModeToSetup();
+  });
+
   // brief 34 ε-3: consent-overlay の bind. accept で flag を保存 + ride 再発火、
   // cancel で何もしない (= ride 開始されないまま overlay 閉じる).
   const btnConsentAccept = document.getElementById('btnConsentAccept');
