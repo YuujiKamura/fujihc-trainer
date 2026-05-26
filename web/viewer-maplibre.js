@@ -1523,6 +1523,14 @@ function initViewMode() {
         lastT = performance.now();
         rideStartedAt = performance.now();
         setAppState('riding');
+        // user 訂正「区間ジャンプしたらチャートの更新が止まるような気がする」 反映。
+        // ride を区間始点から再開する = elapsedSec が 0 にリセットされるので、 chart buffer に
+        // 旧区間の sample (= 大きな t) が残ったままだと x 軸 min/max が破綻して描画が固まる。
+        // ride 終了 (= 854 行付近) と同型に clear + 空 render で chart をリセットしてから次 sample
+        // 1 Hz push を待つ.
+        if (chartBuffer) chartBuffer.clear();
+        if (chartRenderer) chartRenderer.render();
+        _lastChartPushSec = -1;  // throttle state もリセット (= 即 1 発目の push が通る)
         // 現在 active な行に視覚 marker (= .sec-active class) を付け替え.
         const list = document.getElementById('section-list');
         if (list) {
