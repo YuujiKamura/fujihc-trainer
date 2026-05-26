@@ -155,10 +155,14 @@
   #controls .row .val { flex: 0 0 4rem; text-align: right; font-size: 16px; }
   #controls .panel-header { cursor: pointer; font-weight: bold; margin-top: 0.6rem; color: #ffd54a; }
   #controls .panel-body {}
+  /* user 訂正「右上に VIEWMODE なんとかっていうのが出てる、 他のパネルの下敷きになってる」 反映。
+     右上は chart wrapper + 区間 panel が既に占有しているので、 画面下中央に逃がす。 */
   #status {
-    position: fixed; right: 1rem; top: 1rem; z-index: 999;
+    position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 999;
     color: #aaa; font: 12px ui-monospace, monospace;
     background: rgba(0, 0, 0, 0.5); padding: 0.3rem 0.6rem; border-radius: 4px;
+    max-width: calc(100vw - 4rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none;
   }
   /* task-g: 地図タイル出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
      b12 Phase 4 で描画エンジンが Three.js になり MapLibre 標準 AttributionControl が消えた

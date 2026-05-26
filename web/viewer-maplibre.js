@@ -858,7 +858,23 @@ const wsHandlers = {
 function showPairing() {
   document.getElementById('setup-overlay').classList.add('visible');
   const back = document.getElementById('btnClosePairing');
-  if (back) back.hidden = !(document.body.classList.contains('state-riding'));
+  if (back) {
+    // b115: 戻り先は状況で 2 種。
+    //   state-riding (= 実走中、 機器設定だけ見て戻りたい)        → 「ライドに戻る」
+    //   mode-view    (= 観るモード中、 設定だけ見て戻りたい)      → 「観るモードに戻る」
+    //   それ以外 (= 起動直後 / ride 終了後 / 既定 pairing) → hidden (= 戻り先無し)
+    // button 自体は同じ btnClosePairing (= setup-overlay の visible class を消すだけ)、
+    // mode-view / state-riding は body class に残るので閉じた瞬間に元の画面状態へ。
+    if (document.body.classList.contains('state-riding')) {
+      back.hidden = false;
+      back.textContent = 'ライドに戻る';
+    } else if (document.body.classList.contains('mode-view')) {
+      back.hidden = false;
+      back.textContent = '観るモードに戻る';
+    } else {
+      back.hidden = true;
+    }
+  }
 }
 function hidePairing() {
   document.getElementById('setup-overlay').classList.remove('visible');

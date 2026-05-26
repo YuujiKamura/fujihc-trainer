@@ -226,6 +226,17 @@ describe('b47: 観る→走る遷移で mode-view フラグが外れる', () => 
     expect(m[0]).toMatch(/classList\.remove\(['"]mode-view['"]\)/);
   });
 
+  it('showPairing が mode-view 中に btnClosePairing を「観るモードに戻る」 で visible にする (= b115)', () => {
+    // user 2026-05-26 訂正: 観るモード中に機器設定を開いて閉じる動線が必要。
+    //   btnClosePairing は HTML で hidden 既定、 showPairing で state-riding (= 実走中) と
+    //   mode-view (= 観るモード) の 2 ケースで visible 化 + label 切替する設計。
+    //   ここでは「mode-view 分岐があり、 label が観るモードに戻る」 を pin する。
+    const m = viewer.match(/function\s+showPairing\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    expect(m, 'showPairing が見つからない').not.toBeNull();
+    expect(m[0]).toMatch(/classList\.contains\(['"]mode-view['"]\)/);
+    expect(m[0]).toMatch(/観るモードに戻る/);
+  });
+
   it('btnOpenPairing ハンドラは mode-view 状態に依らず showPairing のみを呼ぶ (= b115)', () => {
     // user 2026-05-26 訂正: 観るモード中に btnOpenPairing で機器設定 overlay を開いて
     //   閉じた時、 観るモードに戻る動線が無いと困る。 mode-view 解除は startRideConfirmed
