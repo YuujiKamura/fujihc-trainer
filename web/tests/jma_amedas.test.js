@@ -8,7 +8,19 @@ import {
   fetchAmedasMap,
   pickFujiStations,
   fetchFujiWeather,
+  AMEDAS_CACHE_KEY,
+  AMEDAS_CACHE_TTL_MS,
 } from '../lib/weather/jma_amedas.js';
+
+// b117: localStorage 互換の最小モック (= setItem/getItem だけ持つオブジェクト).
+function makeMockStorage(initial = {}) {
+  const store = { ...initial };
+  return {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    _dump: () => ({ ...store }),
+  };
+}
 
 describe('FUJI_AMEDAS_STATIONS', () => {
   it('5 観測点 (= 河口湖 / 山中 / 古関 / 御殿場 / 富士山頂) を持つ', () => {
@@ -96,6 +108,105 @@ describe('pickFujiStations', () => {
       expect(s.name).toBeTruthy();
       expect(s.lat).toBeGreaterThan(35);
     }
+  });
+});
+
+describe('fetchFujiWeather + 10 分 cache (b117)', () => {
+  it('AMEDAS_CACHE_TTL_MS は 10 分 (= 600,000 ms)', () => {
+    expect(AMEDAS_CACHE_TTL_MS).toBe(10 * 60 * 1000);
+  });
+
+  it('cache hit (= 保存時刻 + 10 分以内) なら fetch しないで cache を返す', async () => {
+    const T0 = 1_000_000;  // 任意の固定時刻
+    const storage = makeMockStorage({
+      [AMEDAS_CACHE_KEY]: JSON.stringify({
+        savedAtMs: T0,
+        timestamp: '20260524051000',
+        stations: [{ code: '49251', name: '河口湖', lat: 35.5, lon: 138.76, alt: 860, temp: 18.2 }],
+      }),
+    });
+    const fetchImpl = vi.fn();
+    const result = await fetchFujiWeather(fetchImpl, {
+      storage, now: () => T0 + 9 * 60 * 1000,  // 9 分後 = ttl 以内
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();  // 配布元に当たらない
+    expect(result.fromCache).toBe(true);
+    expect(result.timestamp).toBe('20260524051000');
+    expect(result.stations[0].temp).toBe(18.2);
+  });
+
+  it('cache miss (= 10 分超過) なら fetch して cache 更新する', async () => {
+    const T0 = 1_000_000;
+    const storage = makeMockStorage({
+      [AMEDAS_CACHE_KEY]: JSON.stringify({
+        savedAtMs: T0,
+        timestamp: '20260524051000',
+        stations: [{ code: '49251', temp: 18.2 }],
+      }),
+    });
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.includes('latest_time.txt')) return { ok: true, text: async () => '2026-05-24T05:20:00+09:00' };
+      return { ok: true, json: async () => ({ 49251: { temp: [19.5, 0] } }) };
+    });
+    const result = await fetchFujiWeather(fetchImpl, {
+      storage, now: () => T0 + 11 * 60 * 1000,  // 11 分後 = ttl 超
+    });
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(result.fromCache).toBeUndefined();
+    expect(result.timestamp).toBe('20260524052000');
+    // cache 更新を確認
+    const saved = JSON.parse(storage._dump()[AMEDAS_CACHE_KEY]);
+    expect(saved.timestamp).toBe('20260524052000');
+    expect(saved.savedAtMs).toBe(T0 + 11 * 60 * 1000);
+  });
+
+  it('cache 空 (= 初回起動) なら fetch して cache に保存する', async () => {
+    const storage = makeMockStorage({});
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.includes('latest_time.txt')) return { ok: true, text: async () => '2026-05-24T05:10:00+09:00' };
+      return { ok: true, json: async () => ({ 49251: { temp: [15.0, 0] } }) };
+    });
+    const result = await fetchFujiWeather(fetchImpl, {
+      storage, now: () => 1_716_500_000_000,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);  // latest_time + map
+    expect(result.fromCache).toBeUndefined();
+    expect(storage._dump()[AMEDAS_CACHE_KEY]).toBeTruthy();
+  });
+
+  it('fetch 失敗 + stale cache あり → stale を返す (= 配布元 down の保険)', async () => {
+    const T0 = 1_000_000;
+    const storage = makeMockStorage({
+      [AMEDAS_CACHE_KEY]: JSON.stringify({
+        savedAtMs: T0,
+        timestamp: '20260524051000',
+        stations: [{ code: '49251', temp: 18.2 }],
+      }),
+    });
+    const fetchImpl = vi.fn(async () => { throw new Error('network down'); });
+    const result = await fetchFujiWeather(fetchImpl, {
+      storage, now: () => T0 + 30 * 60 * 1000,  // 30 分後 (= ttl 超、 stale 領域)
+    });
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(result.fromCache).toBe(true);
+    expect(result.stale).toBe(true);
+    expect(result.timestamp).toBe('20260524051000');
+  });
+
+  it('fetch 失敗 + cache 無 → throw', async () => {
+    const storage = makeMockStorage({});
+    const fetchImpl = vi.fn(async () => { throw new Error('network down'); });
+    await expect(fetchFujiWeather(fetchImpl, { storage, now: () => 0 })).rejects.toThrow(/network down/);
+  });
+
+  it('opts 省略 (= 旧 caller / test 互換) で cache off、 毎回 fetch する', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.includes('latest_time.txt')) return { ok: true, text: async () => '2026-05-24T05:10:00+09:00' };
+      return { ok: true, json: async () => ({}) };
+    });
+    await fetchFujiWeather(fetchImpl);  // 1 回目
+    await fetchFujiWeather(fetchImpl);  // 2 回目 (cache 無いので必ず fetch)
+    expect(fetchImpl).toHaveBeenCalledTimes(4);  // 各回 2 req
   });
 });
 

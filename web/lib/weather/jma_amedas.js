@@ -69,12 +69,73 @@ export function pickFujiStations(map) {
   });
 }
 
+// b117: AMeDAS fetch の localStorage cache。 user 2026-05-26 訂正:「気象庁の配布元を
+// 毎回フェッチしてると思うが、 これも頻繁になり過ぎると迷惑掛かりそうなんで、 更新頻度を
+// 決めて、 起動のたびに取って来るとかはしない方がいい」「10 分に一回とかに決めておいて、
+// それ以上 (= 以内) はキャッシュを使うようにしろ」。 配布元 (= 気象庁オープンデータ) の
+// 観測値自体が 10 分 granularity で更新されるため、 10 分以内の再アクセスは値も変わらない、
+// cache TTL = 10 分が物理的にも妥当。
+export const AMEDAS_CACHE_KEY = 'fujihill.amedas.cache.v1';
+export const AMEDAS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function readCache(storage) {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(AMEDAS_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj.savedAtMs !== 'number') return null;
+    if (typeof obj.timestamp !== 'string') return null;
+    if (!Array.isArray(obj.stations)) return null;
+    return obj;
+  } catch { return null; }
+}
+
+function writeCache(storage, savedAtMs, timestamp, stations) {
+  if (!storage) return;
+  try {
+    storage.setItem(AMEDAS_CACHE_KEY, JSON.stringify({ savedAtMs, timestamp, stations }));
+  } catch { /* quota 超過等は無視 ── 配布元再 fetch にだけ影響、 観測値は再構築可能 */ }
+}
+
 /**
- * 1 起動 1 回呼ぶ高レベル wrapper。 latest_time → map → 富士山周辺 5 観測点。
- * @returns {Promise<{timestamp:string, stations:Array}>}
+ * 1 起動 1 回 (= cache 経由なら 10 分に 1 回) 呼ぶ高レベル wrapper。
+ * latest_time → map → 富士山周辺 5 観測点。
+ *
+ * cache 規律 (b117): 第 2 引数 opts.storage を渡したら localStorage cache を使う ──
+ *   cache hit (= savedAtMs が ttlMs 以内) なら fetch 行わず cache 返す、 戻り値に fromCache:true。
+ *   cache miss なら fetch して保存、 戻り値に fromCache 無し。
+ *   fetch 失敗 + stale cache (= ttl 超過の保存値) があれば stale 返す (= 配布元 down 時の保険)、
+ *     戻り値に fromCache:true + stale:true。
+ *   opts.storage 未指定 (= 既存 caller / test 経路) は cache off、 旧挙動と同等で backward compatible。
+ *
+ * @param {Function} [fetchImpl] globalThis.fetch 既定。 test で mock 注入。
+ * @param {object} [opts]
+ * @param {object|null} [opts.storage] localStorage 互換 (getItem/setItem)。 null/省略で cache off。
+ * @param {number} [opts.ttlMs] cache 有効期間 (= 10 分既定)。 0 で常に fetch。
+ * @param {()=>number} [opts.now] 現在時刻取得 (= test 用、 Date.now 既定)。
+ * @returns {Promise<{timestamp:string, stations:Array, fromCache?:boolean, stale?:boolean}>}
  */
-export async function fetchFujiWeather(fetchImpl = globalThis.fetch) {
-  const timestamp = await fetchLatestTime(fetchImpl);
-  const map = await fetchAmedasMap(timestamp, fetchImpl);
-  return { timestamp, stations: pickFujiStations(map) };
+export async function fetchFujiWeather(fetchImpl = globalThis.fetch, opts = {}) {
+  const { storage = null, ttlMs = AMEDAS_CACHE_TTL_MS, now = Date.now } = opts;
+  const nowMs = now();
+  const cached = readCache(storage);
+  if (cached && nowMs - cached.savedAtMs >= 0 && nowMs - cached.savedAtMs <= ttlMs) {
+    return { timestamp: cached.timestamp, stations: cached.stations, fromCache: true };
+  }
+  try {
+    const timestamp = await fetchLatestTime(fetchImpl);
+    const map = await fetchAmedasMap(timestamp, fetchImpl);
+    const stations = pickFujiStations(map);
+    writeCache(storage, nowMs, timestamp, stations);
+    return { timestamp, stations };
+  } catch (e) {
+    // 配布元 down / network 失敗 + stale cache (= ttl 超過してても保存値はある) を保険で返す。
+    // 「観測値が古いまま表示」 と「気象 panel が error 表示で気象情報が消える」 の比較で
+    // stale を返す方が画面の連続性が高い、 user 体験を維持。
+    if (cached) {
+      return { timestamp: cached.timestamp, stations: cached.stations, fromCache: true, stale: true };
+    }
+    throw e;
+  }
 }

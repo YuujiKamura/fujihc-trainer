@@ -2548,7 +2548,10 @@ const BIKE_SHAPE_DEFS = [
   // 通常 AMeDAS path (= b72 既存 panel populate + b74 雲行追加)
   try {
     const { fetchFujiWeather } = await import('./lib/weather/jma_amedas.js');
-    const { timestamp, stations } = await fetchFujiWeather();
+    // b117: 10 分以内は localStorage cache を使う (= 配布元負荷を下げる、 起動毎 fetch しない)。
+    const { timestamp, stations } = await fetchFujiWeather(undefined, {
+      storage: globalThis.localStorage,
+    });
     const t = `${timestamp.slice(4,6)}/${timestamp.slice(6,8)} ${timestamp.slice(8,10)}:${timestamp.slice(10,12)}`;
     statusEl.textContent = `${t} 取得`;
     while (rowsEl.firstChild) rowsEl.removeChild(rowsEl.firstChild);
