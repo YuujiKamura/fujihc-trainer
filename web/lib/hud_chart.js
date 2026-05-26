@@ -235,14 +235,18 @@ export function createChartRenderer(canvas, buffer) {
         const top = TIME_RULER_HEIGHT_PX + i * SUBCHART_HEIGHT_PX + 2;
         const bottom = TIME_RULER_HEIGHT_PX + (i + 1) * SUBCHART_HEIGHT_PX - 2;
 
-        // 値の範囲 (= min/max を求める、 有効値ゼロなら polyline skip)
-        let minV = Infinity;
+        // 値の範囲 (= max は sample から、 min は常に 0 固定).
+        // user 訂正「チャートの最下部が常にゼロ基準で計算されてない。 区間を飛んだ時に、
+        // はじめから一定のスピードとかパワーが出てた場合、 チャートが下端に張り付くけど、
+        // 下端はあくまでゼロにしてほしい」 反映。 minV を 0 で固定すれば、 一定値 v でも
+        // 「0..v」 の縦軸で v 線は top 寄りに描かれ、 sample 内変動も「0 から伸びる graph」
+        // として読める. hr/cadence/power/speed すべて 0 が物理的に意味ある下限なので 0 固定 OK.
+        const minV = 0;
         let maxV = -Infinity;
         let hasValid = false;
         for (const s of samples) {
           const v = s[spec.field];
           if (isValidNumber(v)) {
-            if (v < minV) minV = v;
             if (v > maxV) maxV = v;
             hasValid = true;
           }
