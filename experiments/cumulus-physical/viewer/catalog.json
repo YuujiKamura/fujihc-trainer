@@ -605,6 +605,38 @@
         28,
         29
       ]
+    },
+    "lfm_fuji_2022_12_21": {
+      "label": "LFM 2km cloud_score (2022-12-21 02:00 JST +1h)",
+      "atlas_layout": [
+        5,
+        5
+      ],
+      "atlas_tile_cells": 25,
+      "source": "JMA LFM GPV sample (= 気象庁 局地数値予報モデル 2km、 lfmmodel_221221.zip、 https://www.data.jma.go.jp/developer/gpv_sample.html)",
+      "products": {
+        "cloud_score": {
+          "unit": "score 0..100 (= ice-saturated RH max-blend cover_3d + ascent bonus - subsid penalty)",
+          "n_step": 2,
+          "grid": [
+            25,
+            25
+          ],
+          "atlas_layout": [
+            5,
+            5
+          ],
+          "min": 0.0,
+          "max": 92.90461,
+          "mean": 30.20512,
+          "bin_size_kb": 122.1,
+          "bin_file": "lfm_fuji_2022_12_21_cloud_score.bin"
+        }
+      },
+      "steps": [
+        0,
+        1
+      ]
     }
   },
   "schema_version": 1
