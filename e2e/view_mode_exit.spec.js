@@ -7,6 +7,7 @@
 // 切り替わる」)。 b47 で btnOpenPairing を観るモード中は exitViewModeToSetup
 // 経由にした。 この test は観る→走る遷移が 1 回で mode-view を外すことを pin する。
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 
@@ -44,6 +45,10 @@ test('b47: 観るモード区間ライド → btnOpenPairing で mode-view が 1
   await page.locator('#section-list li').first().click();
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 5_000 });
   await expect(page.locator('body')).toHaveClass(/mode-view/);
+
+  // b130: MapLibre idle event で描画完了を待つ. minimap canvas は本 spec の関心外、
+  // terrain mesh も off (= 観るモードの区間ライド画面、 地形タイルは GSI mock 経由).
+  await waitForPaintComplete(page, { waitCanvasPixels: false, waitTerrainMesh: false });
 
   // 区間ライド中に押せる脱出ボタンは btnOpenPairing。 JS click (= 他 fixed 要素に
   // 重なって actionability check を通らないため、 実発火だけ検証する)。

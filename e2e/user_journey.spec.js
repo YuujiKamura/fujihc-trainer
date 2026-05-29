@@ -18,6 +18,7 @@
 // viewer-maplibre.js の実コードをブラウザで動かすので、 導線が壊れれば落ちる。
 import { test, expect } from './base-test.js';
 import { RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE } from '../web/lib/ride_db.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 
@@ -63,6 +64,9 @@ test('ライド開始 → 終了 → 履歴に保存 → 履歴を見る (= 履�
   // ?test=1 でライドが自動開始する (= トレーナー不要のテストモード、 地形ローダー画面を介さない開発者経路)。
   await page.goto(`${VIEWER_URL}?test=1&noterrain=1`);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // b130: state-riding 遷移だけでなく実 paint 完了も pin (= MapLibre idle + minimap canvas).
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
 
   // 20 秒走らせる (= 慣性設定が大きく漕ぎ出しが遅いので、 動いたと分かる距離まで走らせる)
   await page.waitForTimeout(20_000);

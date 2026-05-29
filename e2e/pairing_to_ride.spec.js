@@ -16,6 +16,7 @@
 // 本体のバグを検出できない。
 
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 test('ペアリング完了 → ライド開始 → state-riding に遷移する', async ({ page }) => {
   // console.error をキャプチャして致命的 JS エラーを検出
@@ -32,6 +33,10 @@ test('ペアリング完了 → ライド開始 → state-riding に遷移する
   // body に state-riding を付与するまで待つ。
   // タイムアウト 20s: bootEnv (setup_status fetch) + MapLibre init + 500ms timer の合計。
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // b130: 状態遷移だけでなく実 paint が完了したかも assert. ?noterrain=1 mode のため
+  // terrain mesh は off、 MapLibre idle と minimap canvas 非空 pixel を確認.
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
 
   // 走行画面でクリティカルな JS エラーが出ていないこと。
   // MapLibre の tile 404 (DB が空ないし一部欠損) は許容するためフィルタする。
