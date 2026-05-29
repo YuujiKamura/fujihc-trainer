@@ -23,8 +23,8 @@ describe('brief 33 fix: viewer tick が trkpts を蓄積する (= 整合性 gate
 
   it('tick 内で rideState.appendTrkpt が 1Hz で呼ばれる', () => {
     expect(viewer).toMatch(/rideState\.appendTrkpt\s*\(/);
-    // 1000ms gate (= 1Hz cadence)
-    expect(viewer).toMatch(/lastTrkptT[\s\S]{0,200}>=\s*1000/);
+    // b125b: 1Hz cadence gate は ride_clock.js の clock.shouldPushTrkpt に集約 (= 旧 lastTrkptT>=1000 を置換)
+    expect(viewer).toMatch(/clock\.shouldPushTrkpt\s*\(/);
   });
 
   it('appendTrkpt の extras に t / power / cad / hr が rider 経由で渡される', () => {
@@ -37,7 +37,9 @@ describe('brief 33 fix: viewer tick が trkpts を蓄積する (= 整合性 gate
     expect(body).toMatch(/hr:\s*rider\??\.hr/);
   });
 
-  it('btnRideStart で lastTrkptT を 0 にリセット', () => {
-    expect(viewer).toMatch(/lastTrkptT\s*=\s*0/);
+  it('b125b: ride start で trkpt cadence が clock.start 経由でリセットされる (= 旧 lastTrkptT=0 の後継)', () => {
+    // lastTrkptT=0 の生リセットは ride_clock.js の start() (lastTrkptT=0) に移送済。
+    // viewer 側は ride start で clock.start を呼ぶことで cadence を初期化する。
+    expect(viewer).toMatch(/clock\.start\s*\(/);
   });
 });

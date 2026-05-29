@@ -32,6 +32,8 @@ import { createRideState } from './lib/ride_state.js';
 // 内側に持つため二重 state にはならない).
 import { createRider } from './lib/rider.js';
 import { createPhysicsState } from './lib/physics_state.js';
+// b125b: ride 時計 6 state (ride 開始時刻 / cadence / 確定走行時間) は ride_clock.js の closure に集約。
+import { createRideClock } from './lib/ride_clock.js';
 // b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は minimap.js に切り出し済。
 //   tile 座標変換 / 再描画判定もそちらが内側で import する。
 import { createMinimap } from './lib/minimap.js';
@@ -359,12 +361,11 @@ let manualPowerW = _lsNum('fujihill.power', 250);
 // (state push 期待間隔 1.0s) は web/lib/physics_state.js の closure に集約済。 viewer は描画と入力
 // 配線だけを持つ。 state push は physicsState.advance、 rAF tick は physicsState.interpolate を叩く。
 const physicsState = createPhysicsState();
-let lastPositionSendT = 0;
-let rideStartedAt = null;
-// ride 終了時の走行時間 (秒) を確定保存する。 ended ハンドラが rideStartedAt を null に
-// する前にここへ書き、 postride の buildRideSummary がこれを参照する (= 保存時間 0 バグ修正)。
-let lastRideDurationS = 0;
-const POSITION_SEND_INTERVAL_MS = 1000;
+// b125b: ride 時計 6 state (rideStartedAt / rideStartedIso / lastRideDurationS /
+// lastPositionSendT / lastTrkptT / lastAutosaveT) と cadence 定数 (1Hz position / 1Hz trkpt /
+// 30s autosave) は web/lib/ride_clock.js の closure に集約済。 viewer は時刻 (performance.now /
+// new Date().toISOString()) を渡すだけで、 ride start / end / restore / cadence 判定は clock 経由。
+const clock = createRideClock();
 let scanMode = 'ftms';
 
 let riderMarker = null;
@@ -376,11 +377,8 @@ const minimap = createMinimap();
 // b124: sensor 値 (ケイデンス / パワー / 心拍 / trainer 報告速度) の旧 module-global 4 つは
 // 撤去した。 単一 source は rider のみ。 trainer message は handleTrainerStatePush() で rider に
 // sticky 反映し、 全 read 経路は rider.cadence / rider.power / rider.hr / rider.speed を直接読む。
-// brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
-let lastTrkptT = 0;
-// autosave: 30 秒毎 cadence で IndexedDB に進行状態を保存するための前回 save 時刻
-let lastAutosaveT = 0;
-let rideStartedIso = null;  // ride 開始時の ISO 文字列 (= autosave に保存する rideStartedAt)
+// b125b: trkpt 1Hz cadence (lastTrkptT) / autosave 30s cadence (lastAutosaveT) / ride 開始 ISO
+// (rideStartedIso) は ride_clock.js の closure に集約済 (= 上の clock 宣言)。
 
 // brief 26b: state 種は checking / dbinit / pairing / riding の 4 値。
 // - checking: 起動直後、 /tiles/_setup_status を fetch 中、 UI は最小
@@ -833,8 +831,7 @@ const wsHandlers = {
     if (msg.state === 'started') {
       if (rideState) rideState.start();
       else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
-      rideStartedAt = performance.now();
-      lastRideDurationS = 0;  // 新しい ride 開始、 前回の確定走行時間をクリア
+      clock.start({ nowMs: performance.now(), isoString: new Date().toISOString() });
       hidePairing();
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = false;
     } else if (msg.state === 'ended') {
@@ -842,13 +839,10 @@ const wsHandlers = {
       // b99: ride 終了で chart buffer を cut + 空 chart を 1 度描画 (= 画面クリア).
       chartBuffer && chartBuffer.clear();
       chartRenderer && chartRenderer.render();
-      // 2026-05-19 fix: rideStartedAt を null にする前に走行時間を確定させる。
-      // 旧コードは ended で rideStartedAt=null にした後 showPostride → buildRideSummary が
-      // 呼ばれるため、 保存される duration_s が常に 0 だった (=「記録の時間が 0」の正体)。
-      lastRideDurationS = rideStartedAt
-        ? Math.round((performance.now() - rideStartedAt) / 1000) : lastRideDurationS;
-      rideStartedAt = null;
-      rideStartedIso = null;
+      // b125b: duration 確定 → null clear の順序は ride_clock.js の end() に移送済
+      // (= 2026-05-19 fix「ended で時計を止める前に走行時間を確定させないと duration_s=0 が漏れる」
+      //  の構造的予防)。
+      clock.end({ nowMs: performance.now() });
       // ride 終了で autosave を消す (= 復元 dialog の対象から外す).
       clearAutosave().catch((err) => console.warn('clearAutosave failed:', err));
       const endBtn = document.getElementById('btnRideEnd'); if (endBtn) endBtn.disabled = true;
@@ -892,8 +886,8 @@ function showPostride(gpxPath, points) {
     const summary = buildSaveSummary({
       trkpts,
       course,
-      rideStartedAt,
-      durationS: lastRideDurationS,  // ride 終了で rideStartedAt は null、 確定値を渡す
+      rideStartedAt: clock.snapshot().rideStartedAt,  // ride 終了後は null (= 旧と同じ)
+      durationS: clock.getDurationS(),  // ride 終了で確定した走行時間
       distanceM: snap.distance,
       courseName: 'fujihill',
     });
@@ -1505,7 +1499,7 @@ function initViewMode() {
         if (rider) rider.setSpeed(20 / 3.6);
         physicsState.reset({ nowMs: performance.now(), speedMps: 20 / 3.6 });
         lastT = performance.now();
-        rideStartedAt = performance.now();
+        clock.start({ nowMs: performance.now(), isoString: new Date().toISOString() });
         setAppState('riding');
         // user 訂正「区間ジャンプしたらチャートの更新が止まるような気がする」 反映。
         // ride を区間始点から再開する = elapsedSec が 0 にリセットされるので、 chart buffer に
@@ -1809,10 +1803,10 @@ function applyPendingRestore() {
       console.warn('applyPendingRestore: autosave record が不正のため復元を skip');
       return;
     }
-    rideStartedAt = performance.now();  // restore 後の経過時間は再起算 (= 旧 ride の wall-clock は autosave に保存済)
-    rideStartedIso = rec.rideStartedAt || new Date().toISOString();
-    lastTrkptT = performance.now();
-    lastAutosaveT = performance.now();
+    // restore 経路: rideStartedAt を「今」 に再起算 (= 旧 ride の wall-clock は isoString に保存済)、
+    // cadence 群 (position / trkpt / autosave) も全部「今」 に揃えて復元直後の即発火を防ぐ。
+    // 詳細は ride_clock.js の restore()。
+    clock.restore({ nowMs: performance.now(), isoString: rec.rideStartedAt || new Date().toISOString() });
     status(`途中 ride を復元しました (${applied.trkptCount} 点, ${(applied.distanceM / 1000).toFixed(2)} km)`);
   } catch (err) {
     console.warn('applyPendingRestore failed:', err);
@@ -1855,7 +1849,7 @@ function initMapMode() {
     if (!mapIdle || !rideReady) return;
     if (loader) loader.style.display = 'none';
     rideState.start();
-    rideStartedAt = performance.now();
+    clock.start({ nowMs: performance.now(), isoString: new Date().toISOString() });
   }
   mapRenderer.onceIdle(() => { mapIdle = true; tryStart(); });
   // fallback: 6 秒待っても idle が来なければ強制 start (= terrain dem の継続 fetch で
@@ -2046,9 +2040,7 @@ function tick(t) {
 
   // ライド HUD (時間/距離/標高/勾配) は hud に集約。 ride 未開始は elapsedSec=null
   // → "00:00:00"。 rider 追随 HUD の slope は常時更新 (= Terrain 経由で取得)。
-  const elapsedSec = rideStartedAt !== null
-    ? Math.floor((performance.now() - rideStartedAt) / 1000)
-    : null;
+  const elapsedSec = clock.elapsedSec(performance.now());
   hud.ride({ elapsedSec, dist: curDist, ele: rEle, slope: pos.slope_pct });
   // b99: 1 Hz で chart buffer に push、 4 Hz で render. paused / elapsedSec<0 は
   // decideChartPush (= pure helper) 内で skip 判定、 viewer 側は state を渡すだけ.
@@ -2056,7 +2048,7 @@ function tick(t) {
 
   // b39: ゴール ETA。 paused / 開始 30 秒以内は avgSpeed_kmh を NaN にして渡し、
   // hud 側の整形規律 (= NaN → "--") に判定を移譲する (= hud SoT 規律維持)。
-  const paused = !rideStartedAt;
+  const paused = !clock.isActive();
   const avgSpeedForEta = (paused || elapsedSec == null || elapsedSec < 30 || curDist <= 0)
     ? NaN
     : (curDist / elapsedSec * 3.6);  // m/s → km/h
@@ -2148,9 +2140,8 @@ function tick(t) {
   if (!snap.paused) maybeSendSlope(pos.slope_pct);
   if (snap.active && !snap.paused && connected) {
     const now = performance.now();
-    if (now - lastPositionSendT >= POSITION_SEND_INTERVAL_MS) {
+    if (clock.shouldPushPosition(now)) {
       client.sendPosition(curDist, rLat, rLon, rEle);
-      lastPositionSendT = now;
     }
   }
   // brief 33: ride 中 1Hz で trkpt 蓄積 (= GPX / Strava upload / IndexedDB 履歴の元データ).
@@ -2158,25 +2149,23 @@ function tick(t) {
   // brief 35: rideState.appendTrkpt は legacy raw point ベース、 shim の grep gate 通過に必要.
   if (snap.active && !snap.paused) {
     const nowT = performance.now();
-    if (nowT - lastTrkptT >= 1000) {
+    if (clock.shouldPushTrkpt(nowT)) {
       rideState.appendTrkpt({
         t: new Date().toISOString(),
         power: rider?.power,
         cad: rider?.cadence,
         hr: rider?.hr,
       });
-      lastTrkptT = nowT;
     }
-    // autosave: 30 秒毎に IndexedDB へ進行状態を save.
-    if (nowT - lastAutosaveT >= 30000) {
+    // autosave: 30 秒毎に IndexedDB へ進行状態を save (= cadence 判定は ride_clock.js).
+    if (clock.shouldRunAutosave(nowT)) {
       const trkpts = rideState.getTrkpts();
       saveAutosave({
-        rideStartedAt: rideStartedIso || new Date().toISOString(),
+        rideStartedAt: clock.getRideStartedIso() || new Date().toISOString(),
         distanceM: snap.distance,
         courseName: 'fujihill',
         trkpts,
       }).catch((err) => console.warn('autosave failed:', err));
-      lastAutosaveT = nowT;
     }
   }
   // b12 Phase 2.5: 1 フレーム描画を地図描画モジュールに頼む。 MapLibre は状態変化で
@@ -2250,9 +2239,9 @@ function startRideConfirmed() {
   document.body.classList.remove('mode-view');
   if (rideState) rideState.start();
   else _pendingRideStart = true;  // rideState 未生成: loadCourse 完了時に start を適用
-  lastT = performance.now(); lastPositionSendT = 0; lastTrkptT = 0;
-  lastAutosaveT = performance.now();  // autosave 30 秒 cadence をリセット
-  rideStartedIso = new Date().toISOString();  // autosave に保存する ride 開始時刻
+  const startNow = performance.now();
+  clock.start({ nowMs: startNow, isoString: new Date().toISOString() });
+  lastT = startNow;  // lastT (= rAF 描画ループ時計) は b125d の責務、 本 brief では集約しない
   _autoEnded = false;  // 2026-05-15: 完走自動終了 flag を ride 開始毎にリセット
   client.sendRideStart();
 }
@@ -2700,7 +2689,9 @@ function buildRideSummary(rideState, course) {
     id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
     date: new Date().toISOString(),
     distance_m: snap.distance || 0,
-    duration_s: rideStartedAt ? Math.round((performance.now() - rideStartedAt) / 1000) : lastRideDurationS,
+    duration_s: clock.isActive()
+      ? Math.round((performance.now() - clock.snapshot().rideStartedAt) / 1000)
+      : clock.getDurationS(),
     elevation_gain_m: 0,  // TODO: course から差分計算 (= 別 brief、 brief 33 範囲外)
     avg_power_w: null,
     course_name: 'fujihill',
