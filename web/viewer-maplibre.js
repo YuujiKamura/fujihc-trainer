@@ -1924,7 +1924,7 @@ async function loadCourse() {
   // b51: minimap.js に切り出し済。buildTopBase は async (= OSM タイル fetch 完了待ち)、
   //   await はせず fire-and-forget。env / 各 base URL は viewer 側の値を渡す。
   minimap.buildTopBase({
-    course, env: ENV, bridgeTileBase: BRIDGE_TILE_BASE_URL,
+    course, env: viewerSession.getEnv(), bridgeTileBase: BRIDGE_TILE_BASE_URL,
     httpBase: HTTP_BASE_URL, skipTerrain: SKIP_TERRAIN,
   });
   minimap.buildBottomBase({ course, terrain });
