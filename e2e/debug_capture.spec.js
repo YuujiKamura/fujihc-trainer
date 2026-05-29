@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 // b118: 配布元 (= 国土地理院 GSI / OpenStreetMap) への通信を物理 block。
 // 旧 spec は #btnTerrainLoaderStart を click して地形 fetch を発火していたが、
@@ -24,5 +25,8 @@ test('debug capture', async ({ page }) => {
 
   await page.click('#btnTerrainLoaderStart');
   await page.waitForTimeout(3000);
+  // b130: 既存の timeout 待ちに加えて MapLibre 描画完了を pin (= 「fetch は走ったが
+  // 描画されてない」 regression を block). canvas pixel は debug 中心の本 spec で省略.
+  await waitForPaintComplete(page, { waitCanvasPixels: false, waitTerrainMesh: false }).catch(() => {});
   console.log('HTML AFTER CLICK:', await page.content());
 });

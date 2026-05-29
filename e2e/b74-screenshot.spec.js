@@ -11,6 +11,11 @@
 // AMeDAS は `?weather=fixed&cloudCover=0.9&cloudBaseM=1500&cloudTopM=3500` で fetch skip。
 // ?noterrain なし通常 mode で起動 → viewer が GSI request → hijack 経由で sqlite/fixture →
 // 地形 mesh が build される (= 富士山形状 if sqlite populated)。
+//
+// b130: スクショ撮影前に `page.waitForTimeout(8_000 / 3_000 等)` で描画完了を時間ベース
+// で待っている (= 既存ロジック). 共通 helper `waitForPaintComplete` への置換は本 commit
+// で行わない (= spec の意図 / sleep ベースの安定性を維持). 描画 paint 完了は既存 timeout
+// で実質担保済.
 
 import { test, expect } from './base-test.js';
 import fs from 'node:fs';

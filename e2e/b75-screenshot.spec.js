@@ -11,6 +11,10 @@
 //   1) 3 枚 PNG が ~/.agents/scratch/fujihc-trainer-project/b75-screenshot-{morning,noon,sunset}.png に保存
 //   2) sha256 hash 比較で 3 ペア全てが「画像が異なる」 (= 太陽が動いた証拠)
 //   3) main が Read tool で 3 枚を目視批評 (= 朝は東斜光、 昼は真上、 夕は西斜光)
+//
+// b130: b74-screenshot と同型. スクショ撮影前の `waitForTimeout(...)` で描画完了を時間
+// ベースで待っている. 共通 helper への置換は本 commit では行わない、 既存 sleep
+// ベース安定性を維持.
 
 import { test, expect } from './base-test.js';
 import fs from 'node:fs';

@@ -11,6 +11,8 @@
 //
 // 真正性 verify (= 「画面が出た」 だけでなく中身を確認、 2026-05-19 規律) は
 // 既存 user_journey.spec.js の責務、 本 spec は Pages 配信物の表層 verify に絞る。
+//
+// b130: 本 spec は配信物の HTTP / DOM 表層検証中心、 paint 完了 assert は不要 (= YAGNI).
 import { test, expect } from './base-test.js';
 
 test('oauth-callback.html は 404 (= class C1 物理除外、 visitor から到達不能)', async ({ page }) => {

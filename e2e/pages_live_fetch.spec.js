@@ -8,6 +8,8 @@
 // 直に開いて、 配信物の fetch 経路と b35 ロード overlay の visible 化を実走 verify する。
 // 既存 e2e は localhost (http://127.0.0.1:8000/) を相手に走るが、 本 spec は absolute URL で
 // Pages を相手にする。 webServer 経由ではないので「配布元の本物」 が動いてるか即判別できる。
+//
+// b130: 本 spec は実 endpoint の HTTP 検証中心、 paint 完了 assert は不要 (= YAGNI).
 
 import { test, expect } from '@playwright/test';
 

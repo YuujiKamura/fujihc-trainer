@@ -15,6 +15,7 @@
 // 進行、noterrain で地形タイルを配布元から取らず平坦地形で組む (= b40 見張りに触れない)。
 // noterrain でも map3d boot は走り scene / atmosphere は生成される。
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/index.html?test=1&consent=dev&noterrain=1';
 
@@ -46,6 +47,8 @@ test('atmoMie スライダー操作で atmosphere の Mie uniform が実際に�
   // riding まで自動進行 (attribution.spec.js と同経路)。この間に map3d boot が走り
   // scene + atmosphere が生成される。
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+  // b130: slider 操作前に描画完了を pin (= atmosphere uniform は描画が走らないと意味なし).
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
   // atmosphere uniform が読める state まで待つ (= scene 生成完了)。
   await page.waitForFunction(() => !!(window.__goalTest && window.__goalTest.atmo),
     { timeout: 30_000 });
@@ -69,6 +72,8 @@ test('atmoMie スライダー操作で atmosphere の Mie uniform が実際に�
 test('atmoMie スライダー操作後も描画ループが固まらない', async ({ page }) => {
   await page.goto(VIEWER_URL);
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+  // b130: slider 操作前に描画完了を pin (= atmosphere uniform は描画が走らないと意味なし).
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
   await page.waitForFunction(() => !!(window.__goalTest && window.__goalTest.atmo),
     { timeout: 30_000 });
 

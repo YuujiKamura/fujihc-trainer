@@ -15,6 +15,11 @@
 // 1 本通す + 真正性 (= IndexedDB 保存中身) で verify。 各 test 内で「観るモード state
 // 到達 + body.mode-view 確認」 を共通ジャーニーとし、 配布元通信の実測を真正性 verify
 // として読む。
+//
+// b130: 本 spec は配布元通信の実測カウントが核心、 paint 完了 assert は副次. 描画完了
+// の前にも tile fetch count は計測される (= 訪問者導線の最初の数秒で発火する fetch
+// budget の検証). YAGNI に従い paint 完了 helper の import は行わない、 描画系拡張時に
+// `import { waitForPaintComplete } from './_helpers/paint_complete.js'` を呼ぶ.
 
 import { test, expect } from './base-test.js';
 
