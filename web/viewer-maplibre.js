@@ -33,6 +33,7 @@ import { createRideState } from './lib/ride_state.js';
 import { createRider } from './lib/rider.js';
 import { createPhysicsState } from './lib/physics_state.js';
 import { createBikeSettings } from './lib/bike_settings.js';
+import { createViewerSession } from './lib/viewer_session.js';
 // b125b: ride 時計 6 state (ride 開始時刻 / cadence / 確定走行時間) は ride_clock.js の closure に集約。
 import { createRideClock } from './lib/ride_clock.js';
 // b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は minimap.js に切り出し済。
@@ -142,24 +143,24 @@ export const FUJIHILL_DB_CENTER = fujihill.dbCenter;
 // brief 31 commit β: bridge/static mode 判定を immutable env object に集約
 // (= 旧 `let _bridgeReachable = true` の mutable + race door を廃止)。
 // ENV は `bootEnv()` 完了後に Object.freeze 済の値が入り、 以後変更されない。
-// 全 caller (loadCourse / loadOsmTile / buildMapStyle 等) は `ENV.mode === 'bridge'`
-// の形で参照する。 起動完了前に ENV が読まれた場合は null、 caller は ENV 未確定として扱う。
-let ENV = null;
+// b125d: env / scanMode / advancedFromDbinit を viewer_session.js の closure に集約.
+// 全 caller (loadCourse / loadOsmTile / buildMapStyle 等) は `viewerSession.getEnv()?.mode === 'bridge'`
+// の形で参照する。 起動完了前は null、 caller は ENV 未確定として扱う.
+const viewerSession = createViewerSession();
 
 // checkSetupStatus を 1 回だけ呼び、 結果から ENV (immutable) を構築する。
 // 既に呼ばれていれば同一 instance を返す (= idempotent)。
 async function bootEnv() {
-  if (ENV) return ENV;
+  if (viewerSession.getEnv()) return viewerSession.getEnv();
   const s = await checkSetupStatus();
   const mode = s.bridgeReachable ? 'bridge' : 'static';
-  ENV = Object.freeze({
+  return viewerSession.setEnv({
     mode,
     bridgeReachable: s.bridgeReachable,
     tileBase: s.bridgeReachable ? BRIDGE_TILE_BASE_URL : STATIC_TILE_BASE_URL,
     courseUrl: s.bridgeReachable ? fujihill.courseFile : `${BASE_PATH}static/${fujihill.courseFile}`,
     setupStatus: s,
   });
-  return ENV;
 }
 
 // b12 Phase 2: 地図インスタンス生成 / protocol 登録 / load・idle・error 結線は
@@ -310,7 +311,7 @@ const physicsState = createPhysicsState();
 // 30s autosave) は web/lib/ride_clock.js の closure に集約済。 viewer は時刻 (performance.now /
 // new Date().toISOString()) を渡すだけで、 ride start / end / restore / cadence 判定は clock 経由。
 const clock = createRideClock();
-let scanMode = 'ftms';
+// b125d: scanMode は viewer_session.js の closure に集約 (= getScanMode / setScanMode 経由).
 
 let riderMarker = null;
 // b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は web/lib/minimap.js に
@@ -337,12 +338,8 @@ function updateStartGoalVisibility() {
 
 // b12 Phase 2.5: 距離ラベルの文字画像生成・symbol レイヤー・距離窓フィルタは
 // map_renderer.js が持つ。 viewer は機器設定 slider から setLabelScale を頼むだけ。
-// ラベル表示倍率の起動時 default は localStorage 永続値 (= slider 表示の初期化用に読む)。
-let labelSizeScale = 1;
-try {
-  const _ls = parseFloat(localStorage.getItem('fujihill.labelSize'));
-  if (Number.isFinite(_ls) && _ls > 0) labelSizeScale = _ls;
-} catch { /* localStorage 不可は default のまま */ }
+// b125d: ラベル表示倍率は bike_settings.js の labelScale に集約 (= localStorage fujihill.labelSize
+// と互換). bikeSettings constructor で localStorage を読むので viewer 側の起動時 default 読込は撤去.
 
 function setAppState(s) {
   // 2026-05-15 fix: 旧 `body.className = 'state-X'` は全クラス上書きで、 mode-view (= 観るモード)
@@ -366,12 +363,12 @@ async function checkSetupStatus() {
   return checkSetupStatusLib(HTTP_BASE_URL);
 }
 
-let _advancedFromDbinit = false;
+// b125d: dbinit overlay からの進入 flag は viewer_session.js の closure に集約.
 async function maybeAdvanceToPairing() {
-  if (_advancedFromDbinit) return;
+  if (viewerSession.isAdvancedFromDbinit()) return;
   const s = await checkSetupStatus();
   if (s.overall === 'ready') {
-    _advancedFromDbinit = true;
+    viewerSession.markAdvancedFromDbinit();
     hideDbinit();
     setAppState('pairing');
     connectBridge();
@@ -732,7 +729,7 @@ const wsHandlers = {
   },
   scan_result(msg) {
     const devices = msg.devices || [];
-    if (scanMode === 'ftms') {
+    if (viewerSession.getScanMode() === 'ftms') {
       const ftms = devices.find(d => d.is_ftms);
       if (ftms && client && client.isOpen()) {
         setText('setup-status', `${ftms.name || ftms.address} を検出、 接続中...`);
@@ -866,7 +863,7 @@ function hideConfirm() { document.getElementById('confirm-overlay').classList.re
 function showSetupResults(devices) {
   const list = document.getElementById('setup-list'); if (!list) return;
   list.replaceChildren();
-  const isHrmMode = scanMode === 'hrm';
+  const isHrmMode = viewerSession.getScanMode() === 'hrm';
   const filtered = isHrmMode ? devices.filter(d => d.is_hrm) : devices;
   if (filtered.length === 0) { setText('setup-status', isHrmMode ? '心拍計が見つかりません' : '機器が見つかりません'); return; }
   setText('setup-status', isHrmMode ? `${filtered.length} 個の心拍計候補` : `${filtered.length} 個検出`);
@@ -1833,7 +1830,7 @@ function startOsmExtract() {
 function skipDbinit() {
   // 「スキップ (地形だけで進む)」 = OSM 抽出を後回しにして BLE pairing flow に移る。
   // dbinit overlay を閉じて state-pairing へ、 setup-overlay を明示 visible 化 (= 2026-05-15 fix)。
-  _advancedFromDbinit = true;
+  viewerSession.markAdvancedFromDbinit();
   hideDbinit();
   setAppState('pairing');
   document.getElementById('setup-overlay')?.classList.add('visible');
@@ -1844,7 +1841,7 @@ function skipDbinit() {
 // btnDbinitClose   = 「× 閉じる」 (= 何も進めない、 intro overlay に戻る or close)。
 function proceedFromDbinit() {
   // DB 構築 panel から強制で機器選択画面 (setup-overlay) に進む。 自動遷移を待たない明示 exit。
-  _advancedFromDbinit = true;
+  viewerSession.markAdvancedFromDbinit();
   hideDbinit();
   setAppState('pairing');
   document.getElementById('setup-overlay')?.classList.add('visible');
@@ -1855,7 +1852,7 @@ function closeDbinit() {
   // b46: 旧「intro overlay を再表示」 は撤去。 起動シーン一本道化で intro overlay は
   //   地形ローダー画面 (= 地形ロード前の画面) に変わり、 地形ロード済の dbinit から
   //   そこへ戻すのは不整合。 戻り先はトレーナー接続画面 (#setup-overlay)。
-  _advancedFromDbinit = false;
+  viewerSession.resetAdvancedFromDbinit();
   hideDbinit();
   setAppState('pairing');
   document.getElementById('setup-overlay')?.classList.add('visible');
@@ -1866,7 +1863,8 @@ async function loadCourse() {
   // brief 31 commit β: ENV (= immutable env object) から URL を取得。
   // bootEnv() で freeze 済の値、 caller 全部 await 経由なので未確定状態で呼ばれることはない。
   // 万一 ENV 未初期化なら bridge mode の旧 default で fallback (= localhost 起動の従来挙動)。
-  const url = ENV ? ENV.courseUrl : 'course.json';
+  const env = viewerSession.getEnv();
+  const url = env ? env.courseUrl : 'course.json';
   // b50: fetch → 平滑化 → terrain 構築の純粋部は course_loader.js に切り出し済。
   //   失敗時の status 文言は旧挙動を維持 ── 空 course は「course.json empty」、
   //   それ以外 (HTTP / network / JSON parse) は「course.json load failed: …」。
@@ -2253,14 +2251,14 @@ document.getElementById('btnRideEnd').addEventListener('click', () => {
 document.getElementById('btnScan').addEventListener('click', () => {
   // brief 34 ε-9: 地形 load 未完なら何もしない.
   if (!terrainReady) return;
-  scanMode = 'ftms';
+  viewerSession.setScanMode('ftms');
   setText('scan-mode-label', '(trainer モード)');
   if (client && client.isOpen()) client.sendScan();
 });
 document.getElementById('btnScanHrm').addEventListener('click', () => {
   // brief 34 ε-9: 地形 load 未完なら何もしない.
   if (!terrainReady) return;
-  scanMode = 'hrm';
+  viewerSession.setScanMode('hrm');
   setText('scan-mode-label', '(心拍計モード)');
   if (client && client.isOpen()) client.sendScan();
 });
@@ -2327,7 +2325,7 @@ const BIKE_DEFS = [
   { key:'riderScale', label:'ライダー倍率', min:10,  max:500,  step:5,  value:36,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setRiderScale(raw/10); } },
 ];
 const COURSE_DEFS = [
-  { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ labelSizeScale=raw/100; mapRenderer.setLabelScale(raw/100); } },
+  { key:'labelSize',  label:'ラベルサイズ', min:40,  max:200,  step:10, value:100, unit:'x',      format:raw=>(raw/100).toFixed(1),         apply(raw){ bikeSettings.setLabelScale(raw/100); mapRenderer.setLabelScale(raw/100); } },
   { key:'courseWidth',label:'コース幅',     min:4,   max:40,   step:2,  value:10,  unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setCourseWidth(raw); } },
   { key:'roadHeight', label:'路面高さ',     min:0,   max:30,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setRoadHeight(raw); } },
   { key:'labelHeight',label:'ラベル高さ',   min:1,   max:20,   step:1,  value:2,   unit:'m',      format:raw=>String(Math.round(raw)),      apply(raw){ mapRenderer.setLabelHeight(raw); } },
@@ -2375,7 +2373,7 @@ const ATMO_DEFS = [
   { key:'cloudAmount', label:'雲量',              min:0,   max:1,    step:0.05, value:0, unit:'%',      format:raw=>`${Math.round(raw*100)}`,
     apply(raw){
       currentCloudAmount = raw;
-      if (currentBaseWeather && ENV?.mode !== 'static') {
+      if (currentBaseWeather && viewerSession.getEnv()?.mode !== 'static') {
         applyCloudAmountToMap(mapRenderer, currentBaseWeather, raw);
       }
     } },
@@ -2532,7 +2530,7 @@ const BIKE_SHAPE_DEFS = [
     // b94: Pages (= ENV.mode === 'static') では雲シミュ視覚品質が cumulus に届かない (user 判断
     //      「およそ雲って感じではない、 Pages では当面オフ」)、 multiplier 強制 0 + slider mount skip
     //      で完全 off。 dev (= bridge mode) では既存挙動 (= AMeDAS 由来 × slider) を維持して改修継続。
-    const cloudsDisabledByEnv = ENV?.mode === 'static';
+    const cloudsDisabledByEnv = viewerSession.getEnv()?.mode === 'static';
     currentBaseWeather = applyAmedasCloudsToPanel({
       mapRenderer, panelEl, rowsEl, miniEl, stations,
       cloudAmountMultiplier: cloudsDisabledByEnv ? 0 : currentCloudAmount,

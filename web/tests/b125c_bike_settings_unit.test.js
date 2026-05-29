@@ -37,8 +37,8 @@ describe('createBikeSettings: 5 state を closure に閉じ、 storage と双方
       [BIKE_SETTINGS_KEYS.power]:   '300',
     });
     const bs = createBikeSettings({ storage: s });
-    // halfMode は b128 で追加された 6 番目 field. default false.
-    expect(bs.snapshot()).toEqual({ inertia: 1500, mass: 75, crr: 0.003, cda: 0.25, power: 300, halfMode: false });
+    // halfMode (b128) + labelScale (b125d) を含む 7 field.
+    expect(bs.snapshot()).toEqual({ inertia: 1500, mass: 75, crr: 0.003, cda: 0.25, power: 300, halfMode: false, labelScale: 1 });
   });
 
   it('storage に不正値 (= 文字列 / NaN) があれば DEFAULTS で初期化', () => {

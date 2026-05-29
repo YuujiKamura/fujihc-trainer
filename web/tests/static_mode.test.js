@@ -158,20 +158,20 @@ describe('b46: 起動シーンの一本道化 (= 地形データローダー画�
   });
 });
 
-describe('brief 31 commit β: ENV (= immutable env object) と bootEnv が race door を構造消去', () => {
-  it('module-scope に `let ENV = null` (= bootEnv が freeze 済 instance を代入する hook)', () => {
-    expect(viewer).toMatch(/^let\s+ENV\s*=\s*null/m);
+describe('brief 31 commit β / b125d: ENV (= immutable env object) は viewer_session.js に集約', () => {
+  it('b125d: env は viewer_session.js の closure に集約 (= module-global let ENV は撤去済)', () => {
+    expect(viewer).not.toMatch(/^let\s+ENV\s*=\s*null/m);
+    expect(viewer).toMatch(/import\s+\{[^}]*createViewerSession[^}]*\}\s+from\s+['"]\.\/lib\/viewer_session\.js['"]/);
+    expect(viewer).toMatch(/const\s+viewerSession\s*=\s*createViewerSession\s*\(/);
   });
 
   it('旧 `let _bridgeReachable = true` の mutable 宣言は撤去済 (= module top の宣言のみ pin)', () => {
     expect(viewer).not.toMatch(/^let\s+_bridgeReachable\s*=/m);
   });
 
-  it('bootEnv() 関数が定義されていて、 内部で Object.freeze を呼ぶ (= mutation 不可)', () => {
+  it('bootEnv() は viewerSession.setEnv に env を渡して freeze (= immutable は viewer_session 内で保証)', () => {
     expect(viewer).toMatch(/async\s+function\s+bootEnv\s*\(\s*\)/);
-    // 全 source 上で bootEnv 内の Object.freeze と mode 三項演算を pin する
-    // (= body 抽出は brace nesting で誤動作するため、 全 viewer 上での grep に簡素化)
-    expect(viewer).toMatch(/Object\.freeze\(/);
+    expect(viewer).toMatch(/viewerSession\.setEnv\s*\(/);
     expect(viewer).toMatch(/s\.bridgeReachable\s*\?\s*['"]bridge['"]\s*:\s*['"]static['"]/);
   });
 });
@@ -208,9 +208,10 @@ describe('brief 31 / b12 Phase 2: bootMap helper (= 地図生成は map_renderer
   });
 });
 
-describe('brief 31 commit β: course.json fetch URL は ENV.courseUrl 経由', () => {
-  it('loadCourse 内で ENV.courseUrl を使う (= bootEnv が mode 別に予め resolve 済)', () => {
-    expect(viewer).toMatch(/ENV\s*\?\s*ENV\.courseUrl\s*:/);
+describe('brief 31 commit β / b125d: course.json fetch URL は env.courseUrl 経由', () => {
+  it('loadCourse 内で viewerSession.getEnv() の courseUrl を使う (= bootEnv が mode 別に予め resolve 済)', () => {
+    // b125d で ENV → viewerSession.getEnv() に集約、 const env = ... で取り出して使う形に.
+    expect(viewer).toMatch(/const\s+env\s*=\s*viewerSession\.getEnv\s*\(\s*\);[\s\S]{0,100}env\s*\?\s*env\.courseUrl\s*:/);
   });
 
   it('bootEnv 内で courseUrl が bridge / static 別に設定される', () => {

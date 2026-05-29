@@ -7,30 +7,33 @@
 const STORAGE_PREFIX = 'fujihill.';
 
 const KEY = Object.freeze({
-  inertia:  STORAGE_PREFIX + 'inertiaKg',
-  mass:     STORAGE_PREFIX + 'mass',
-  crr:      STORAGE_PREFIX + 'crr',
-  cda:      STORAGE_PREFIX + 'cda',
-  power:    STORAGE_PREFIX + 'power',
-  halfMode: STORAGE_PREFIX + 'halfMode',
+  inertia:    STORAGE_PREFIX + 'inertiaKg',
+  mass:       STORAGE_PREFIX + 'mass',
+  crr:        STORAGE_PREFIX + 'crr',
+  cda:        STORAGE_PREFIX + 'cda',
+  power:      STORAGE_PREFIX + 'power',
+  halfMode:   STORAGE_PREFIX + 'halfMode',
+  labelScale: STORAGE_PREFIX + 'labelSize',  // b125d: 旧 viewer の key 名と互換
 });
 
 const DEFAULTS = Object.freeze({
-  inertia:  800,    // kg 相当 (フライホイール慣性)
-  mass:     88,     // kg (rider + bike)
-  crr:      0.001,  // 転がり抵抗 (1‰、 競技寄り default)
-  cda:      0.35,   // 空気抵抗 m² (CdA、 area=1 で c_d に 1 本化)
-  power:    250,    // W (fake trainer power 初期値)
-  halfMode: false,  // b128: 勾配半減モード (= おまけ、 時間ない時用、 default OFF)
+  inertia:    800,    // kg 相当 (フライホイール慣性)
+  mass:       88,     // kg (rider + bike)
+  crr:        0.001,  // 転がり抵抗 (1‰、 競技寄り default)
+  cda:        0.35,   // 空気抵抗 m² (CdA、 area=1 で c_d に 1 本化)
+  power:      250,    // W (fake trainer power 初期値)
+  halfMode:   false,  // b128: 勾配半減モード (= おまけ、 時間ない時用、 default OFF)
+  labelScale: 1,      // b125d: コース ラベルの倍率 (= 1.0 = 通常). mapRenderer.setLabelScale に流す
 });
 
 // UI 範囲と整合する内部値の clamp 範囲. setter は範囲外の値を min/max に丸める.
 const RANGE = Object.freeze({
-  inertia: { min: 0,    max: 3000 },
-  mass:    { min: 60,   max: 110  },
-  crr:     { min: 0,    max: 0.025 },
-  cda:     { min: 0.18, max: 0.60 },
-  power:   { min: 50,   max: 600  },
+  inertia:    { min: 0,    max: 3000 },
+  mass:       { min: 60,   max: 110  },
+  crr:        { min: 0,    max: 0.025 },
+  cda:        { min: 0.18, max: 0.60 },
+  power:      { min: 50,   max: 600  },
+  labelScale: { min: 0.4,  max: 2.0  },  // UI は 40..200、 内部は 0.4..2.0
 });
 
 // b125c 起票時点で削除対象の旧 key. 新 key (= 上記 KEY.*) と衝突しないものだけ列挙、
@@ -99,12 +102,13 @@ export function createBikeSettings(opts = {}) {
     ? opts.storage
     : (typeof globalThis !== 'undefined' && globalThis.localStorage ? globalThis.localStorage : null);
 
-  let inertia  = clamp(readNumberOr(storage, KEY.inertia, DEFAULTS.inertia), RANGE.inertia);
-  let mass     = clamp(readNumberOr(storage, KEY.mass,    DEFAULTS.mass),    RANGE.mass);
-  let crr      = clamp(readNumberOr(storage, KEY.crr,     DEFAULTS.crr),     RANGE.crr);
-  let cda      = clamp(readNumberOr(storage, KEY.cda,     DEFAULTS.cda),     RANGE.cda);
-  let power    = clamp(readNumberOr(storage, KEY.power,   DEFAULTS.power),   RANGE.power);
-  let halfMode = readBoolOr(storage, KEY.halfMode, DEFAULTS.halfMode);
+  let inertia    = clamp(readNumberOr(storage, KEY.inertia,    DEFAULTS.inertia),    RANGE.inertia);
+  let mass       = clamp(readNumberOr(storage, KEY.mass,       DEFAULTS.mass),       RANGE.mass);
+  let crr        = clamp(readNumberOr(storage, KEY.crr,        DEFAULTS.crr),        RANGE.crr);
+  let cda        = clamp(readNumberOr(storage, KEY.cda,        DEFAULTS.cda),        RANGE.cda);
+  let power      = clamp(readNumberOr(storage, KEY.power,      DEFAULTS.power),      RANGE.power);
+  let halfMode   = readBoolOr(storage, KEY.halfMode, DEFAULTS.halfMode);
+  let labelScale = clamp(readNumberOr(storage, KEY.labelScale, DEFAULTS.labelScale), RANGE.labelScale);
 
   return {
     getInertia() { return inertia; },
@@ -121,6 +125,9 @@ export function createBikeSettings(opts = {}) {
     // 観測表示 (= 実コース勾配) は raw のまま、 楽さ / 記録だけ半分.
     getHalfMode() { return halfMode; },
     setHalfMode(v) { halfMode = !!v; writeBool(storage, KEY.halfMode, halfMode); },
+    // b125d: コース ラベル文字の倍率. mapRenderer.setLabelScale に流して view 側で実反映.
+    getLabelScale() { return labelScale; },
+    setLabelScale(v) { labelScale = clamp(v, RANGE.labelScale); writeNumber(storage, KEY.labelScale, labelScale); },
 
     // physicsState.advance に渡す形 { mass, c_rr, c_d, area, inertia }. area=1 で c_d=CdA に 1 本化.
     getPhysicsOpts() {
@@ -143,7 +150,7 @@ export function createBikeSettings(opts = {}) {
     },
 
     snapshot() {
-      return { inertia, mass, crr, cda, power, halfMode };
+      return { inertia, mass, crr, cda, power, halfMode, labelScale };
     },
   };
 }

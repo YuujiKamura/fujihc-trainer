@@ -53,11 +53,13 @@ describe('brief 26b: viewer-maplibre.js dbinit logic snippets', () => {
     expect(m[0]).toMatch(/setAppState\(['"]pairing['"]\)/);
   });
 
-  it('maybeAdvanceToPairing は idempotent flag (_advancedFromDbinit) で再入防止', () => {
-    expect(viewer).toMatch(/_advancedFromDbinit/);
+  it('b125d: maybeAdvanceToPairing は idempotent flag (viewerSession.isAdvancedFromDbinit) で再入防止', () => {
+    // 旧 module-global `_advancedFromDbinit` は viewer_session.js の closure に集約済.
+    expect(viewer).toMatch(/viewerSession\.isAdvancedFromDbinit\s*\(/);
+    expect(viewer).toMatch(/viewerSession\.markAdvancedFromDbinit\s*\(/);
     const m = viewer.match(/function\s+maybeAdvanceToPairing[\s\S]*?\n\}/);
     expect(m).toBeTruthy();
-    expect(m[0]).toMatch(/_advancedFromDbinit\s*=\s*true/);
+    expect(m[0]).toMatch(/viewerSession\.markAdvancedFromDbinit\s*\(/);
   });
 
   it('updateDbinitBar / handleDbinitProgress / showDbinit / hideDbinit が定義済', () => {
