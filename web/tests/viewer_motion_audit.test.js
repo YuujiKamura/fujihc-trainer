@@ -6,7 +6,7 @@
 //      (b50: terrain 構築 createTerrain は course_loader.js に切り出し済)
 //   2. 旧 module global (playSpeed / curIdx / curDist / spinAngle) は live コードに無い
 //      (= コメント内の言及はマイグレーション履歴として許容)
-//   3. wsHandlers.state は rider.setSpeed / rider.setSensors を呼ぶ (= 1 経路化)
+//   3. wsHandlers.state は handleTrainerStatePush 経由で rider に sensor / speed を流す (b124: 1 経路化)
 //   4. 観るモード section click は rider.setSpeed(20/3.6) を呼ぶ (= 1Hz 待ち workaround 撤去)
 //   5. tick は rider.tick + rider.snapshot 経路 (= 旧 rideState.advance / rideState.snapshot
 //      の inline 補間計算は撤去)
@@ -104,10 +104,11 @@ describe('brief 35 → b83: state は physicsSpeedMps を更新、 setSpeed は 
     expect(m[0]).toMatch(/rider\.setSpeed\(\s*displaySpeedMps\s*\)/);
   });
 
-  it('state ハンドラ内に rider.setSensors の呼出がある', () => {
+  it('state ハンドラ内で sensor 流入が handleTrainerStatePush に集約されている (b124)', () => {
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/rider\.setSensors\(/);
+    // b124: rider.setSensors は trainer_handler.js に切り出し、 state ハンドラは handler を呼ぶだけ。
+    expect(m[0]).toMatch(/handleTrainerStatePush\s*\(\s*msg\s*,\s*\{\s*rider\s*\}\s*\)/);
   });
 });
 

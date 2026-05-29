@@ -13,14 +13,12 @@ const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 describe('brief 33 fix: viewer tick が trkpts を蓄積する (= 整合性 gate)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
-  it('currentPower / currentHr の global 変数が定義済', () => {
-    expect(viewer).toMatch(/let\s+currentPower\s*=\s*0/);
-    expect(viewer).toMatch(/let\s+currentHr\s*=\s*0/);
-  });
-
-  it('wsHandlers.state で msg.power_w / msg.hr_bpm を currentPower / currentHr に保存', () => {
-    expect(viewer).toMatch(/msg\.power_w\s*===?\s*['"]number['"][\s\S]{0,80}currentPower\s*=\s*msg\.power_w/);
-    expect(viewer).toMatch(/msg\.hr_bpm\s*===?\s*['"]number['"][\s\S]{0,80}currentHr\s*=\s*msg\.hr_bpm/);
+  it('b124: sensor 流入は handleTrainerStatePush 経由に集約 (= 旧 currentPower 直書きの廃止)', () => {
+    // brief 33 当時は module-global の直書きを pin していたが、 b124 で sensor SoT を rider に
+    // 一本化。 ここでは handler 集約と旧直書きの不在を pin する (= SoT 移送への追随)。
+    expect(viewer).toMatch(/handleTrainerStatePush\s*\(/);
+    expect(viewer).not.toMatch(/currentPower\s*=\s*msg\.power_w/);
+    expect(viewer).not.toMatch(/currentHr\s*=\s*msg\.hr_bpm/);
   });
 
   it('tick 内で rideState.appendTrkpt が 1Hz で呼ばれる', () => {
@@ -29,14 +27,14 @@ describe('brief 33 fix: viewer tick が trkpts を蓄積する (= 整合性 gate
     expect(viewer).toMatch(/lastTrkptT[\s\S]{0,200}>=\s*1000/);
   });
 
-  it('appendTrkpt の extras に t / power / cad / hr が渡される', () => {
+  it('appendTrkpt の extras に t / power / cad / hr が rider 経由で渡される', () => {
     const m = viewer.match(/rideState\.appendTrkpt\s*\(\s*\{[\s\S]{0,400}\}\s*\)/);
     expect(m).not.toBeNull();
     const body = m[0];
     expect(body).toMatch(/t:/);
-    expect(body).toMatch(/power:\s*currentPower/);
-    expect(body).toMatch(/cad:\s*currentCadence/);
-    expect(body).toMatch(/hr:\s*currentHr/);
+    expect(body).toMatch(/power:\s*rider\??\.power/);
+    expect(body).toMatch(/cad:\s*rider\??\.cadence/);
+    expect(body).toMatch(/hr:\s*rider\??\.hr/);
   });
 
   it('btnRideStart で lastTrkptT を 0 にリセット', () => {

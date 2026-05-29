@@ -422,3 +422,46 @@ test('b46 edge: 諦め button click でロード overlay が即時消えて view
   // overlay が fade out して visible class が外れる
   await expect(page.locator('#loading-indicator')).not.toHaveClass(/visible/, { timeout: 3_000 });
 });
+
+// ============================================================
+// b124: sensor SoT 統一の振る舞い pin (= 妥協 1 の e2e 観測)
+//
+// 旧 viewer は trainer 報告速度を module-global currentSpeedMps 経由で #p-speed に出して
+// いた。 b124 で sensor 4 値 (power / cadence / hr / trainer 報告速度) を rider に一本化した
+// ため、 #p-speed は rider.speed 経由で出る。 観測対象は trainer 報告速度 (#p-speed)、
+// power ではない (= 妥協 1 の対象)。
+//
+// test mode (?test=1) は fake trainer が 1Hz で speed_mps 付き state を push する。 ride
+// 開始後、 #p-speed が初期 '--' (= index.html の静的値) から数値表記に変わることを pin。
+// これが落ちる時: rider.speed への流入が壊れた / sticky 集約が cad キー違いで silent no-op に
+// なった / handleTrainerStatePush の呼び順が崩れた、 のいずれか。 grep gate (= 静的解析) では
+// 拾えない実 DOM の振る舞い regression を捕まえる。
+//
+// 配布元配慮: ?noterrain=1 で GSI 地形 fetch を skip、 base-test.js の auto fixture が
+// GSI / OSM を物理 abort + 接触で fail させる。 AMeDAS (jma) は base-test の見張り対象外
+// なので、 ?weather=fixed で起動時 AMeDAS fetch を designed skip し、 さらに jma host を
+// page.route で明示 abort して二重に塞ぐ (= fujihc CLAUDE.md「AMeDAS を含む spec は mock
+// 無しで commit しない」)。
+// ============================================================
+test('b124: ride 中に trainer 報告速度の HUD (#p-speed) が -- でなく数値表記になる', async ({ page }) => {
+  // AMeDAS (気象庁 bosai) への起動時 fetch を物理 block (= ?weather=fixed の designed skip に
+  // 加えた belt-and-suspenders、 万一 gate が regress しても配布元に 1 byte も出さない)。
+  await page.route(/www\.jma\.go\.jp/, (route) => route.abort('blockedbyclient'));
+
+  // ?test=1: fake trainer + 自動 ride 開始 (= WebSocket / BLE / DB 不要)。
+  // ?noterrain=1: GSI 地形 fetch を skip。
+  // ?weather=fixed&cloud*: AMeDAS fetch を skip して固定雲量を流す (= 配布元非接触)。
+  await page.goto(`${VIEWER_URL}?test=1&noterrain=1&weather=fixed&cloudCover=0.3&cloudBaseM=1500&cloudTopM=3000`);
+  await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // fake trainer の state push (1Hz) が rider.speed に流れ、 #p-speed が '--' から数値表記に
+  // 変わるまで待つ (= b124 の rider.speed → #p-speed 流入の物理確認)。
+  await page.waitForFunction(() => {
+    const el = document.getElementById('p-speed');
+    return el && /^\d+(\.\d+)?$/.test((el.textContent || '').trim());
+  }, { timeout: 20_000 });
+
+  const speedText = ((await page.locator('#p-speed').textContent()) || '').trim();
+  expect(speedText, 'b124: #p-speed は rider.speed 経由で数値表記 (= 妥協 1 受容、 旧 -- を出さない)').not.toBe('--');
+  expect(speedText, 'b124: #p-speed は数値 (= 0.0 / 20.0 等)').toMatch(/^\d+(\.\d+)?$/);
+});

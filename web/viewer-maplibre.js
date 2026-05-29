@@ -58,6 +58,10 @@ import { runPreflight } from './lib/preflight_check.js';
 import { renderPreflightPanel, hidePreflight } from './lib/preflight_panel.js';
 import { buildSaveSummary, detectAnomalies, summaryToDisplay } from './lib/save_summary.js';
 import { renderSaveSummary } from './lib/save_summary_panel.js';
+// b124: sensor SoT 統一の pure 部品。 viewer は top-level で document を触り node import で
+// 落ちるため、 handler と trkpt 整形を DOM 非依存の lib に切り出して vitest から直接 import 可能にする。
+import { handleTrainerStatePush } from './lib/trainer_handler.js';
+import { buildSaveSummaryTrkptPoint } from './lib/save_summary_trkpt.js';
 import {
   saveAutosave, loadAutosave, clearAutosave, hasPendingAutosave,
   applyAutosaveToRideState,
@@ -317,9 +321,10 @@ function onMapLoaded() {
 let course = [];
 let totalDist = 0;
 // brief 35: 移動モデルの第一級表現は Rider (= 主体) + Terrain (= 客観). 旧 module global
-// (= playSpeed / curIdx / curDist / currentCadence / currentPower / currentHr / spinAngle) は
-// すべて rider 内部に集約済. rideState は createRideState() の戻り値 (= 後方互換 shim、
-// 同じ Rider を内側に持つ) で、 HTML 既存 grep gate + viewer 既存 caller の名前空間互換を取る.
+// (= playSpeed / curIdx / curDist / spinAngle) は rider 内部に集約済. b124 で sensor 値
+// (ケイデンス / パワー / 心拍 / trainer 報告速度) の module global も撤去し rider に一本化.
+// rideState は createRideState() の戻り値 (= 後方互換 shim、 同じ Rider を内側に持つ) で、
+// HTML 既存 grep gate + viewer 既存 caller の名前空間互換を取る.
 let terrain = null;
 let rider = null;
 let rideState = null;
@@ -378,14 +383,9 @@ let riderMarker = null;
 const minimap = createMinimap();
 // b12 Phase 2.5: カメラ状態 (zoom/pitch/bearing offset) と ホイール/ドラッグ操作は
 // map_renderer.js が保持・処理する。 viewer は setCameraDefaults / updateCamera 経由で頼む。
-// brief 35: 旧 spinAngle / currentCadence / currentPower / currentHr は rider 内部に集約.
-// 互換のため symbol を残す (= brief 33 grep gate / 既存 source 経路の名前互換). 値は
-// wsHandlers.state で rider.setSensors を呼ぶ際の経由口で、 単一 source of truth は rider.
-// 各値の生存範囲 = wsHandlers.state ハンドラ内のみ、 tick 経路は rider.cadence/power/hr を読む.
-let currentCadence = 0;
-let currentPower = 0;
-let currentHr = 0;
-let currentSpeedMps = 0;  // trainer 速度の last-known (= power/cad/hr と同じく sticky 保持)
+// b124: sensor 値 (ケイデンス / パワー / 心拍 / trainer 報告速度) の旧 module-global 4 つは
+// 撤去した。 単一 source は rider のみ。 trainer message は handleTrainerStatePush() で rider に
+// sticky 反映し、 全 read 経路は rider.cadence / rider.power / rider.hr / rider.speed を直接読む。
 // brief 33: 1Hz cadence で rideState.appendTrkpt するための前回 push 時刻
 let lastTrkptT = 0;
 // autosave: 30 秒毎 cadence で IndexedDB に進行状態を保存するための前回 save 時刻
@@ -582,7 +582,8 @@ if (chartCanvas) {
   chartCanvas.height = CANVAS_HEIGHT_PX;
 }
 const chartRenderer = chartCanvas ? createChartRenderer(chartCanvas, chartBuffer) : null;
-let _lastSpeed = null, _lastPower = null, _lastCadence = null, _lastHr = null;
+// b124: chart 合成バッファ (旧 4 個の直近値 module-global) は撤去。
+// chart sample は maybePushAndRenderChart で rider から直接読む (= 同じ sticky 値)。
 let _lastChartPushSec = -1;
 let _lastChartRenderMs = 0;
 // b99 ui-tune: 折りたたみボタン. body.chart-folded を toggle、 localStorage で persist
@@ -622,7 +623,11 @@ function maybePushAndRenderChart(elapsedSec, paused) {
     paused,
     elapsedSec,
     lastPushSec: _lastChartPushSec,
-    snapshot: { speed: _lastSpeed, power: _lastPower, hr: _lastHr, cadence: _lastCadence },
+    // b124: chart sample は rider から直接読む。 speed は表示 km/h (= speedMult 込み) に換算、
+    // power/cadence/hr は rider の sticky 値。 rider 未生成時は null で旧 (未受信 null) 挙動を保つ。
+    snapshot: rider
+      ? { speed: rider.speed * speedMult * 3.6, power: rider.power, hr: rider.hr, cadence: rider.cadence }
+      : { speed: null, power: null, hr: null, cadence: null },
   });
   if (decision.push && decision.sample) {
     chartBuffer.push(decision.sample);
@@ -719,8 +724,8 @@ const SLOPE_SEND_INTERVAL_MS = 1000;
 const wsHandlers = {
   state(msg) {
     // brief 35: speed / sensor 値はすべて rider 経由で 1 経路に集約.
-    // 旧 viewer は playSpeed / currentCadence / currentPower / currentHr の 4 つを module global
-    // に直書きしていた。 fake state push (1Hz) と section click (即時) が同じ場所を奪い合うため、
+    // 旧 viewer は playSpeed と sensor 値 (ケイデンス / パワー / 心拍) を module global に
+    // 直書きしていた。 fake state push (1Hz) と section click (即時) が同じ場所を奪い合うため、
     // 観るモードで「click → 動かない」 体感 bug の元凶になっていた. 新 path では rider.setSpeed /
     // rider.setSensors が唯一の入口、 fake state も BLE も section click も同じ API を叩く.
     // 2026-05-17: rider の速度は trainer の speed_mps を直接使わず、 viewer 側で物理積分する。
@@ -728,19 +733,17 @@ const wsHandlers = {
     // ため「足を止めて即減速」 の不自然挙動になっていた。 新経路は web/lib/bike_physics.js の
     // applyPhysicsStep で power とコース勾配から速度を時間積分する (= inertia-sim.html と同じ計算)。
     // state push は値が部分的に届く ── パワーメーターと心拍センサーは別デバイスで、
-    // power_w だけ / hr_bpm だけ の message が別々のタイミングで来る。 各値は届いた時
-    // だけ current* に sticky 保持し、 物理計算・HUD・rider.setSensors はすべて「最後に
-    // 届いた各値」を使う。 生の msg.* を直接使うと 2 つの実害が出る:
+    // power_w だけ / hr_bpm だけ の message が別々のタイミングで来る。 handleTrainerStatePush は
+    // 届いた値だけ rider に sticky 保持し (未到来 field は undefined で前値維持)、 物理計算・HUD は
+    // すべて rider の「最後に届いた各値」を読む。 生の msg.* を直接使うと 2 つの実害が出る:
     //   (1) 心拍だけの message を物理に渡すと power=0 とみなされ「足を止めた」減速が
     //       混入、 速度が実際より大幅に遅く・断続的になる (= ストラバ記録の速度が掛けた
     //       パワーに対しておかしくなる実害)。
     //   (2) HUD が power だけの message で心拍を、 心拍だけの message で power を "--"
     //       に明滅させる。
-    // sticky 更新は物理ブロックより前に置く (= 物理が currentPower を読めるように)。
-    if (typeof msg.cadence_rpm === 'number') currentCadence = msg.cadence_rpm;
-    if (typeof msg.power_w === 'number') currentPower = msg.power_w;
-    if (typeof msg.hr_bpm === 'number') currentHr = msg.hr_bpm;
-    if (typeof msg.speed_mps === 'number') currentSpeedMps = msg.speed_mps;
+    // b124: sensor 値 (power/cad/hr/speed) を rider に sticky 集約する唯一の入口。
+    // physics ブロックより前に呼び、 physics が rider.power の最新値を読めるようにする。
+    handleTrainerStatePush(msg, { rider });
 
     if (rider) {
       const now = performance.now();
@@ -749,9 +752,9 @@ const wsHandlers = {
       lastPhysicsStateT = now;
       if (dt < 0.1) dt = 0.1;
       if (dt > 2.0) dt = 2.0;
-      // パワーは sticky 保持の currentPower を使う ── 生の msg.power_w を使うと、 power を
+      // パワーは rider に sticky 保持された値を使う ── 生の msg.power_w を使うと、 power を
       // 含まない心拍 message のたびに 0 となり、 物理に偽の「足止め」減速が入る。
-      const power = Number.isFinite(currentPower) ? currentPower : 0;
+      const power = Number.isFinite(rider.power) ? rider.power : 0;
       // 2026-05-17 (Critical fix): コース勾配は rider の現在位置から都度引く。
       // 旧経路は tick() で更新する module global を読んでいたが、
       // state push (約 1Hz) が初回 tick より先に来ると slope=0 で積分してしまい、
@@ -772,17 +775,16 @@ const wsHandlers = {
     }
     // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
     // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
-    if (rider) rider.setSensors({ power: currentPower, cad: currentCadence, hr: currentHr });
-    const pw = formatPower(currentPower);
-    const cd = formatCadence(currentCadence);
-    const hr = formatHr(currentHr);
-    const sp = (currentSpeedMps != null && currentSpeedMps >= 0) ? (currentSpeedMps * 3.6).toFixed(1) : '--';
+    // b124: trainer 値の整形は hud.js が SoT。 全 read 経路は rider。 setSensors は上の
+    // handleTrainerStatePush に集約済 (= ここでの再呼び出しは廃止)。
+    const pw = formatPower(rider?.power);
+    const cd = formatCadence(rider?.cadence);
+    const hr = formatHr(rider?.hr);
+    const sp = (rider && rider.speed >= 0) ? (rider.speed * 3.6).toFixed(1) : '--';
     // HUD (#power/#cadence/#hr + #rider-hud の r-power/r-cadence/r-hr)。
     // r-speed (rider-hud の速度) は tick() の hud.speed() が物理速度で書く ──
-    // trainer 生速度 (currentSpeedMps) は下の #p-speed にのみ出す。
-    hud.trainer({ powerW: currentPower, cadenceRpm: currentCadence, hrBpm: currentHr });
-    // b99: chart 用 snapshot. trainer 受信時に最新値を保持 (= 1 Hz tick で sample 合成).
-    _lastPower = currentPower; _lastCadence = currentCadence; _lastHr = currentHr;
+    // trainer 報告速度 (rider.speed) は下の #p-speed にのみ出す。
+    hud.trainer({ powerW: rider?.power, cadenceRpm: rider?.cadence, hrBpm: rider?.hr });
     // ペアリングパネル p-* は本石の対象外、 viewer 側で従来通り更新。
     setText('p-power', pw); setText('p-cadence', cd); setText('p-speed', sp); setText('p-hr', hr);
     if (msg.slope_sent_pct != null) setText('slope-sent', msg.slope_sent_pct.toFixed(1));
@@ -2114,8 +2116,8 @@ function tick(t) {
   setText('d-brng', camResult.bearingDeg.toFixed(1));
   setText('d-dt', dtMs.toFixed(1));
   setText('d-fps', dtMs > 0 ? (1000 / dtMs).toFixed(0) : '--');
-  setText('d-pow', currentPower != null ? String(currentPower) : '--');
-  setText('d-cad', currentCadence != null ? String(currentCadence) : '--');
+  setText('d-pow', rider && rider.power != null ? String(rider.power) : '--');
+  setText('d-cad', rider && rider.cadence != null ? String(rider.cadence) : '--');
   // 2026-05-16 user 要望: 走行中 trkpt 蓄積状態を debug HUD に出す.
   // 0km 起点固定 bug (= commit de57ce1) の即時検出 + power/cad/hr 欠損率の visibility.
   // 2 時間走って保存壊れる事故再演防止のため、 走行中に「異常パターン」 を user が目視できる.
@@ -2162,8 +2164,7 @@ function tick(t) {
   const dispKmh = snap.speed * speedMult * 3.6;
   const connected = !!(client && client.isOpen());
   hud.speed(dispKmh, { paused: snap.paused, connected });
-  // b99: chart 用 snapshot. 物理速度更新時に最新値を保持.
-  _lastSpeed = dispKmh;
+  // b124: chart 用 speed は maybePushAndRenderChart で rider.speed から換算する (= 旧直近値 buffer 撤去)。
 
   if (!snap.paused) maybeSendSlope(pos.slope_pct);
   if (snap.active && !snap.paused && connected) {
@@ -2181,9 +2182,9 @@ function tick(t) {
     if (nowT - lastTrkptT >= 1000) {
       rideState.appendTrkpt({
         t: new Date().toISOString(),
-        power: currentPower,
-        cad: currentCadence,
-        hr: currentHr,
+        power: rider?.power,
+        cad: rider?.cadence,
+        hr: rider?.hr,
       });
       lastTrkptT = nowT;
     }
@@ -2296,13 +2297,15 @@ async function showPreflightAndStart() {
     const db = await getRideDb();
     pastRides = await rideDbList(db);
   } catch { /* DB 開けなくても preflight 自体は出す (= IndexedDB check が fail を返す) */ }
+  // b124: trainer 値は rider から null 正規化して取り出す (= 未受信 0 を null 化、 偽 0W を出さない)。
+  const trainerSnap = buildSaveSummaryTrkptPoint({ rider, t: new Date().toISOString() });
   const result = await runPreflight({
     course,
     trainer: {
       connected: !!(client && client.isOpen()),
-      power: Number.isFinite(currentPower) ? currentPower : null,
-      cadence: Number.isFinite(currentCadence) ? currentCadence : null,
-      hr: Number.isFinite(currentHr) ? currentHr : null,
+      power: trainerSnap.power,
+      cadence: trainerSnap.cadence,
+      hr: trainerSnap.hr,
     },
     pastRides,
     consent: {
