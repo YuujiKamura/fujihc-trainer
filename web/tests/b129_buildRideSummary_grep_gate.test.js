@@ -17,8 +17,10 @@ describe('b129: viewer-maplibre.js の buildRideSummary が calcElevationGainM �
     );
   });
 
-  it('elevation_gain_m に calcElevationGainM 呼び出しの戻り値が入っている', () => {
-    expect(src).toMatch(/elevation_gain_m:\s*calcElevationGainM\s*\(/);
+  it('calcElevationGainM(trkpts) の戻り値が elevation_gain_m に流れる (= halfMode 反映を挟むため中間変数経由でも可)', () => {
+    // b128 後: calcElevationGainM(trkpts) → rawElevationGainM → halfMode で 0.5 倍 → elevation_gain_m
+    expect(src).toMatch(/calcElevationGainM\s*\(\s*trkpts\s*\)/);
+    expect(src).toMatch(/elevation_gain_m:\s*(calcElevationGainM\s*\(|elevationGainM\b)/);
   });
 
   it('旧 TODO コメント (「course から差分計算」) が残っていない', () => {

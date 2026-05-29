@@ -690,7 +690,10 @@ const wsHandlers = {
       // 富士ヒルの登坂で登り抵抗が抜けて速度が過大になる。 rider.snapshot().position は
       // Terrain query 経由でいつでも現在位置のコース勾配を返すので、 そこを直接 source にする。
       const riderPos = rider.snapshot().position;
-      const slopePct = (riderPos && Number.isFinite(riderPos.slope_pct)) ? riderPos.slope_pct : 0;
+      const rawSlopePct = (riderPos && Number.isFinite(riderPos.slope_pct)) ? riderPos.slope_pct : 0;
+      // b128: 勾配半減モードが ON なら物理 slope だけ 0.5 倍 (= 観測表示 / コース描画 / 大気は
+      // 不変、 楽さだけ半分). 富士ヒル本物コースの勾配は section panel と HUD で raw のまま見える.
+      const slopePct = bikeSettings.getHalfMode() ? rawSlopePct * 0.5 : rawSlopePct;
       // b125a: dt 算出 / [0.1, 2.0] clamp / 固定 1/120s サブステップ積分 / 補間 seed pin は
       // physics_state.js の advance() に集約 (= SoT 三重複の解消は維持)。 viewer は now + power +
       // slope + 自転車 opts を渡すだけ。 空気抵抗は CdA を 1 本にまとめるため c_d=CdA / area=1。
@@ -2387,6 +2390,18 @@ mountControlPanel(document.getElementById('control-sliders-bike'),   BIKE_DEFS, 
 mountControlPanel(document.getElementById('control-sliders-course'), COURSE_DEFS, {collapsible:true, title:'コース環境', collapsed:true});
 mountControlPanel(document.getElementById('control-sliders-atmo'),   ATMO_DEFS,   {collapsible:true, title:'大気環境',  collapsed:true});
 
+// b128: 勾配半減モード checkbox の bind (= 自機挙動 panel 直下の独立 row、 index.html L789 隣).
+// view (= html) は静的 DOM、 controller (= ここ) は bike_settings との両向 sync を 1 か所に閉じる.
+{
+  const halfModeToggle = document.getElementById('halfModeToggle');
+  if (halfModeToggle) {
+    halfModeToggle.checked = bikeSettings.getHalfMode();
+    halfModeToggle.addEventListener('change', () => {
+      bikeSettings.setHalfMode(halfModeToggle.checked);
+    });
+  }
+}
+
 // b116: 「現在気象 (気象庁 アメダス)」 panel + hillshade dbg 行を「大気環境」 fold の中に
 //   DOM 移動。 user 2026-05-26 訂正:「右下の HUD に気象情報を詳しく表示してるけど、 ここ
 //   まで要るか。 大気環境のフォールド内に収めてしまっていいかも」。 ATMO_DEFS の slider と
@@ -2634,6 +2649,11 @@ function buildRideSummary(rideState, course) {
   const riderDistance = (rider && Number.isFinite(rider.distanceTraveled))
     ? rider.distanceTraveled
     : (snap.distance || 0);
+  // b128: halfMode ON で実走中の物理 slope を 0.5 倍してるので、 記録される獲得標高も
+  // 0.5 倍で整合させる (= raw 値だけ取ると物理体感と記録が乖離してしまう).
+  const halfMode = bikeSettings.getHalfMode();
+  const rawElevationGainM = calcElevationGainM(trkpts);
+  const elevationGainM = halfMode ? Math.round(rawElevationGainM * 0.5) : rawElevationGainM;
   return {
     id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
     date: new Date().toISOString(),
@@ -2645,12 +2665,14 @@ function buildRideSummary(rideState, course) {
     duration_s: clock.isActive()
       ? Math.round((performance.now() - clock.snapshot().rideStartedAt) / 1000)
       : clock.getDurationS(),
-    elevation_gain_m: calcElevationGainM(trkpts),
+    elevation_gain_m: elevationGainM,
     avg_power_w: null,
     course_name: 'fujihill',
     // b127: 続きから復元用の物理 snapshot + rider 距離.
     physicsSnap: physicsState.snapshot(),
     riderDistance,
+    // b128: 履歴一覧で「半減」 chip 表示用. 通常 ride と視覚的に分けるため.
+    halfMode,
   };
 }
 

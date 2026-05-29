@@ -69,6 +69,17 @@ export function appendHistoryRow(cfg) {
   const dateEl = doc.createElement('div');
   dateEl.className = 'ride-date';
   dateEl.textContent = ride.date || ride.id || '(no date)';
+  // b128: 勾配半減モードで走った ride は「半減」 chip を date 行に追加 (= 通常 ride と
+  // 視覚的に区別). ride.summary.halfMode (b128 commit 後) と ride.halfMode 直下 (= legacy /
+  // 後方互換) の両方を見る.
+  const isHalfMode = !!((ride.summary && ride.summary.halfMode) || ride.halfMode);
+  if (isHalfMode) {
+    const chip = doc.createElement('span');
+    chip.className = 'ride-half-chip';
+    chip.textContent = ' 半減';
+    chip.setAttribute('aria-label', '勾配半減モードで走った ride');
+    dateEl.appendChild(chip);
+  }
   const sumEl = doc.createElement('div');
   sumEl.className = 'ride-summary';
   sumEl.textContent = formatSummary(ride);

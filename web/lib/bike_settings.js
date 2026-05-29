@@ -7,19 +7,21 @@
 const STORAGE_PREFIX = 'fujihill.';
 
 const KEY = Object.freeze({
-  inertia: STORAGE_PREFIX + 'inertiaKg',
-  mass:    STORAGE_PREFIX + 'mass',
-  crr:     STORAGE_PREFIX + 'crr',
-  cda:     STORAGE_PREFIX + 'cda',
-  power:   STORAGE_PREFIX + 'power',
+  inertia:  STORAGE_PREFIX + 'inertiaKg',
+  mass:     STORAGE_PREFIX + 'mass',
+  crr:      STORAGE_PREFIX + 'crr',
+  cda:      STORAGE_PREFIX + 'cda',
+  power:    STORAGE_PREFIX + 'power',
+  halfMode: STORAGE_PREFIX + 'halfMode',
 });
 
 const DEFAULTS = Object.freeze({
-  inertia: 800,    // kg 相当 (フライホイール慣性)
-  mass:    88,     // kg (rider + bike)
-  crr:     0.001,  // 転がり抵抗 (1‰、 競技寄り default)
-  cda:     0.35,   // 空気抵抗 m² (CdA、 area=1 で c_d に 1 本化)
-  power:   250,    // W (fake trainer power 初期値)
+  inertia:  800,    // kg 相当 (フライホイール慣性)
+  mass:     88,     // kg (rider + bike)
+  crr:      0.001,  // 転がり抵抗 (1‰、 競技寄り default)
+  cda:      0.35,   // 空気抵抗 m² (CdA、 area=1 で c_d に 1 本化)
+  power:    250,    // W (fake trainer power 初期値)
+  halfMode: false,  // b128: 勾配半減モード (= おまけ、 時間ない時用、 default OFF)
 });
 
 // UI 範囲と整合する内部値の clamp 範囲. setter は範囲外の値を min/max に丸める.
@@ -38,6 +40,23 @@ const LEGACY_KEYS = Object.freeze([
   STORAGE_PREFIX + 'spd',
   STORAGE_PREFIX + 'labelSize',
 ]);
+
+function readBoolOr(storage, key, def) {
+  if (!storage) return def;
+  try {
+    const v = storage.getItem(key);
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    return def;
+  } catch {
+    return def;
+  }
+}
+
+function writeBool(storage, key, value) {
+  if (!storage) return;
+  try { storage.setItem(key, value ? 'true' : 'false'); } catch { /* silent */ }
+}
 
 function readNumberOr(storage, key, def) {
   if (!storage) return def;
@@ -80,11 +99,12 @@ export function createBikeSettings(opts = {}) {
     ? opts.storage
     : (typeof globalThis !== 'undefined' && globalThis.localStorage ? globalThis.localStorage : null);
 
-  let inertia = clamp(readNumberOr(storage, KEY.inertia, DEFAULTS.inertia), RANGE.inertia);
-  let mass    = clamp(readNumberOr(storage, KEY.mass,    DEFAULTS.mass),    RANGE.mass);
-  let crr     = clamp(readNumberOr(storage, KEY.crr,     DEFAULTS.crr),     RANGE.crr);
-  let cda     = clamp(readNumberOr(storage, KEY.cda,     DEFAULTS.cda),     RANGE.cda);
-  let power   = clamp(readNumberOr(storage, KEY.power,   DEFAULTS.power),   RANGE.power);
+  let inertia  = clamp(readNumberOr(storage, KEY.inertia, DEFAULTS.inertia), RANGE.inertia);
+  let mass     = clamp(readNumberOr(storage, KEY.mass,    DEFAULTS.mass),    RANGE.mass);
+  let crr      = clamp(readNumberOr(storage, KEY.crr,     DEFAULTS.crr),     RANGE.crr);
+  let cda      = clamp(readNumberOr(storage, KEY.cda,     DEFAULTS.cda),     RANGE.cda);
+  let power    = clamp(readNumberOr(storage, KEY.power,   DEFAULTS.power),   RANGE.power);
+  let halfMode = readBoolOr(storage, KEY.halfMode, DEFAULTS.halfMode);
 
   return {
     getInertia() { return inertia; },
@@ -97,6 +117,10 @@ export function createBikeSettings(opts = {}) {
     setCda(v) { cda = clamp(v, RANGE.cda); writeNumber(storage, KEY.cda, cda); },
     getPower() { return power; },
     setPower(v) { power = clamp(v, RANGE.power); writeNumber(storage, KEY.power, power); },
+    // b128: 勾配半減モード (おまけ機能). ON で物理 slope を 0.5 倍 + 獲得標高も 0.5 倍.
+    // 観測表示 (= 実コース勾配) は raw のまま、 楽さ / 記録だけ半分.
+    getHalfMode() { return halfMode; },
+    setHalfMode(v) { halfMode = !!v; writeBool(storage, KEY.halfMode, halfMode); },
 
     // physicsState.advance に渡す形 { mass, c_rr, c_d, area, inertia }. area=1 で c_d=CdA に 1 本化.
     getPhysicsOpts() {
@@ -119,7 +143,7 @@ export function createBikeSettings(opts = {}) {
     },
 
     snapshot() {
-      return { inertia, mass, crr, cda, power };
+      return { inertia, mass, crr, cda, power, halfMode };
     },
   };
 }

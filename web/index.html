@@ -787,6 +787,15 @@
   <!-- b89: 調整スライダー群を 3 カテゴリにフォールド (= 自機挙動 / コース環境 / 大気環境)。
        旧 #control-sliders 1 つに全 19 項目混在で見通し悪化、 分類で開閉スコープを限定する。 -->
   <div id="control-sliders-bike"></div>
+  <!-- b128: 勾配半減モード (おまけ機能). default OFF. ON で物理 slope を 0.5 倍 +
+       獲得標高記録も 0.5 倍. 富士ヒル本物コースではなくなるので「上級者向け」 ラベル.
+       view は raw コース勾配のまま (= 観測表示と物理体感の分離). -->
+  <div id="half-mode-row" style="margin-top:0.4rem; padding:0.3rem 0.4rem; border-top:1px solid #333; font-size:12px; color:#bbb;">
+    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+      <input type="checkbox" id="halfModeToggle" />
+      <span>勾配半減モード <span style="color:#888; font-size:11px;">(おまけ / 時間ない時用、 富士ヒル本物ではなくなります)</span></span>
+    </label>
+  </div>
   <div id="control-sliders-course"></div>
   <div id="control-sliders-atmo"></div>
   <div id="bike-shape-sliders"></div>
