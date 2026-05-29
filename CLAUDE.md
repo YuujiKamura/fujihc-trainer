@@ -273,6 +273,17 @@ class.
 - 2026-05-29 (= 上記の構造批判): 「テストでなんで確認できてないんだ」「モックでゴミ
   test しかしてない」 user 訂正、 本 section はこの訂正の永続化.
 
+#### 6. b130 で全 16 e2e spec に適用済 (2026-05-29 着地)
+
+本規約 1-4 は b130 commit 群 (c510fef base / e76ade3 wave1 / 5f773fe wave2 / f1211a4 wave3)
+で全 16 e2e spec に適用済. 新 spec を追加する時は:
+
+- 描画系 (= MapLibre / Three.js 描画を assert する spec): `e2e/_helpers/paint_complete.js`
+  から `waitForPaintComplete` を import、 `page.goto(...)` 後 + state 遷移確認後に 1 行
+  call. opts は spec 性質で調整 (= `?noterrain=1` mode は `waitTerrainMesh: false`).
+- 表層系 (= HTTP / DOM 中心、 描画と無関係な spec): import しない、 「paint 完了 assert
+  は不要 (= YAGNI)」 を冒頭 comment で明示. 描画系に拡張する時に呼ぶ.
+
 ## scratch / draft の置き場
 
 調査メモ・レポート・brief は `~/.agents/scratch/fujihc-trainer-project/` に書け。
