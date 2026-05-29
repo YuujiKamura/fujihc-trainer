@@ -5,6 +5,9 @@
 // MapLibre 実装 (web/lib/map_renderer.js) も同じ差し替え口を満たすので、 import 行を
 // web/lib/map3d/index.js に差し替えるだけで描画エンジンが入れ替わる。
 import { createMapRenderer } from './lib/map3d/index.js';
+// b130: e2e helper paint_complete.js が描画完了を待つために使う hook.
+// viewer 起動後に globalThis.__mapIdle(cb) で mapRenderer.onceIdle を呼べる.
+// production code path は touch しない (= e2e 専用、 削除しても挙動不変).
 // 自機形状エディタ: 自転車の部品ごと形状パラメータの既定値と範囲 (control panel 用).
 import { BIKE_SHAPE_DEFAULTS, BIKE_SHAPE_RANGE } from './lib/map3d/rider_mesh3d.js';
 // b12 Phase 1: 富士ヒル固有値 (bounds / center / course file) は course 定義に集約.
@@ -99,6 +102,11 @@ import {
 
 // b12 Phase 2: 地図描画 renderer。 viewer 本体が地図を触る唯一の窓口。
 const mapRenderer = createMapRenderer();
+// b130: e2e helper paint_complete.js が描画完了を待つための hook.
+// production code path は touch しない (= e2e 専用、 削除しても挙動不変).
+if (typeof globalThis !== 'undefined') {
+  globalThis.__mapIdle = (cb) => mapRenderer.onceIdle(cb);
+}
 
 const status = (msg) => { document.getElementById('status').textContent = msg; };
 
