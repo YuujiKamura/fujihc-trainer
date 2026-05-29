@@ -201,6 +201,78 @@ npm test                  # JS (vitest) — web/tests/
 
 変更後は触ったモジュールのテストを両方走らせてから次の action に移れ。
 
+### test 規約 (= 2026-05-29 改訂、 mock fixture / grep gate の限界を物理層で補う)
+
+`npm test` が全 PASS であっても **「機能が動く」 ではなく「コードが読める」 を確認している
+だけ**の場合がある. 2026-05-29 の minimap regression (= b125d で `let ENV` を撤去したが
+viewer 内の `minimap.buildTopBase({env: ENV, ...})` の object value 位置の `ENV` 参照を
+grep gate が見逃し、 全 test PASS のまま push、 user が Pages で「地形タイル消えた」 と
+発見) で根本的に露呈した. 規約で物理層に補う:
+
+#### 1. grep gate には strict gate を必ず併設
+
+旧型 grep gate は「`let X =` 宣言」 と「`X = value` 代入」 の 2 形式を block するが、
+**object literal の value 位置で identifier を裸で書く参照** (= `env: ENV`) は素通り
+する. 撤去 / 移行した identifier については、 live コード全体で `\b<name>\b` の参照が
+0 件であることを strict gate で pin する.
+
+実装例 (= `web/tests/b125d_viewer_wiring.test.js` 参照):
+
+```js
+it.each(REMOVED_IDENTIFIERS)('strict gate: 撤去済 %s が live コードで参照されてない', (name) => {
+  const pattern = new RegExp(`\\b${name}\\b`, 'g');
+  const matches = [...srcLive.matchAll(pattern)];
+  // 失敗時に L番号と行内容を表示するため.
+  const lines = matches.map(m => /* L番号と行内容を返す */);
+  expect({ count: matches.length, lines }).toEqual({ count: 0, lines: [] });
+});
+```
+
+「object key 位置に同名が出るかもしれない」 を例外でゆるめるな ── 例外をゆるめた瞬間
+value 位置の参照も素通りする (= 今回の事故の直接因).
+
+#### 2. mock fulfill e2e は paint 完了 event を assert する
+
+配布元 fetch を `page.route` で fixture fulfill する e2e は、 描画 path が一見走るが
+**実 paint が完了したか / 何が描かれたか** を assert していない. これだと minimap
+canvas が「fetch は走ったが描かれてない」 でも spec が緑になる ── 今回の漏れがこの
+class.
+
+修正方針 (= 順次 e2e に組み込む):
+
+- MapLibre 側: `await page.evaluate(() => new Promise(r => map.once('idle', r)))` で
+  描画完了 event を待ってから assert.
+- Canvas 描画 (minimap / chart): `canvas.toDataURL()` or `getImageData()` で非空 pixel
+  が存在することを assert (= 「全 0 = 何も描かれてない」 regression を block).
+- 既存の「test PASS = green」 を「test PASS + paint 完了 event 取得 = green」 に変える.
+
+#### 3. 完了宣言前に実画面を 1 度目視する (= mandatory)
+
+`npm test` 全 PASS + commit + push の前に、 **windows-mcp / Pages / localhost で実画面を
+1 度目視する**. 観る手段が有る (= windows-mcp の desk_capture / Read で開いて批評) のに
+使わないのは CLAUDE.md global「完了宣言前 self-check」 ルール違反.
+
+特に下記の change を含む commit は目視必須:
+- module-global 撤去 / 別 module 集約 (= b124 / b125 系の class)
+- DOM 構造変更 (= setup-overlay / controls / HUD の wire 変更)
+- UI 要素追加 / 削除 (= 場所 / 部品 / ラベル の確定後)
+
+#### 4. 撤去 / 移行 commit ルール
+
+「`let X` 撤去」 を含む commit は **同 commit に strict gate (= identifier 参照 0 件 pin)
+を必ず追加**する. これを怠ると同型 regression が landed する確率が高い (= 私が
+今回踏んだ罠).
+
+#### 5. 過去 anti-example
+
+- 2026-05-29 (= b125d): viewer から `let ENV = null` を撤去、 `viewerSession.getEnv()`
+  経由に集約した. 4 箇所の `ENV` 参照を置換したが、 1 箇所 (`minimap.buildTopBase({env: ENV, ...})`)
+  の object value 位置を見逃した. 旧 grep gate `(?<!:\\s*)\\bENV\\s*=(?!=)` は `:` の後の
+  identifier を例外として除外していたため、 value 位置の `ENV` 参照を素通りさせた. 全 test PASS、
+  Pages 反映後 minimap が描画されず user 発見.
+- 2026-05-29 (= 上記の構造批判): 「テストでなんで確認できてないんだ」「モックでゴミ
+  test しかしてない」 user 訂正、 本 section はこの訂正の永続化.
+
 ## scratch / draft の置き場
 
 調査メモ・レポート・brief は `~/.agents/scratch/fujihc-trainer-project/` に書け。
