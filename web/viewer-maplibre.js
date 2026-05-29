@@ -719,7 +719,8 @@ const wsHandlers = {
     // 観るモードで「click → 動かない」 体感 bug の元凶になっていた. 新 path では rider.setSpeed /
     // rider.setSensors が唯一の入口 (= b124 以降 trainer message は handleTrainerStatePush 経由で
     // この 2 setter を叩く)、 fake state も BLE も section click も同じ API を叩く.
-    // 2026-05-17: rider の速度は trainer の speed_mps を直接使わず、 viewer 側で物理積分する。
+    // 2026-05-17: rider の速度は trainer の speed_mps を直接使わず、 物理積分する。
+    // b125a: 積分ロジック自体は web/lib/physics_state.js に集約、 viewer は advance / interpolate を呼ぶだけ。
     // trainer の speed は「平地 + power のみ」 の機種が多く、 下り勾配の重力加速や慣性が入らない
     // ため「足を止めて即減速」 の不自然挙動になっていた。 新経路は web/lib/bike_physics.js の
     // applyPhysicsStep で power とコース勾配から速度を時間積分する (= inertia-sim.html と同じ計算)。

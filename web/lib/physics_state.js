@@ -50,7 +50,8 @@ export function createPhysicsState({ initialSpeedMps = 0 } = {}) {
     },
     interpolate(nowMs) {
       // 軸 7 セキュリティ: nowMs=NaN / Infinity は guard で displaySpeedMps を返す。
-      // 振る舞い不変保証 (= viewer-maplibre.js:2030 の `Math.min(1, Math.max(0, ...))` と完全一致):
+      // 振る舞い不変保証 (= b125a 以前の viewer tick 補間ブロック `Math.min(1, Math.max(0, ...))`
+      // をそのまま移送、 計算は完全一致):
       // elapsed が負 (= clock skew で nowMs < lastPhysicsStateT) でも frac=0 で floor、
       // displaySpeedMps が逆走しない設計を Math.max(0, ...) で物理 pin する。
       if (!Number.isFinite(nowMs) ||
