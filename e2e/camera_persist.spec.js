@@ -5,6 +5,7 @@
 // この test は実ブラウザで viewer を動かし、 (1) drag で保存されること、 (2) reload を
 // 跨いで復元されることを確認する。
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 const GSI_PNG = Buffer.from(
@@ -28,6 +29,9 @@ async function reachViewModeMap(page) {
   }, { timeout: 20_000 });
   await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 5_000 });
+  // b130: 地図描画が完了するまで待ってから drag を実行 (= drag 中に MapLibre が
+  // まだ load 中だと event 取りこぼしの risk あり).
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
 }
 
 // 地図中央を右ボタンで水平 dx px ドラッグして orbit (= bearing) を回す。

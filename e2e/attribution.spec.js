@@ -18,6 +18,7 @@
 // 他 state でも可視。
 
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 test('地図タイルの帰属表示 (#attrib) が riding 画面で可視、 GSI / OSM 両方の出典を含む', async ({ page }) => {
   // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 #attrib の可視性は地形と
@@ -26,6 +27,9 @@ test('地図タイルの帰属表示 (#attrib) が riding 画面で可視、 GSI
 
   // riding 到達まで待つ (pairing_to_ride.spec.js 同様、 bootEnv + 地形 boot + 500ms timer)。
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
+
+  // b130: state 遷移後の MapLibre 描画完了を pin (= #attrib が他要素に覆われない pin の前提).
+  await waitForPaintComplete(page, { waitCanvasPixels: false, waitTerrainMesh: false });
 
   const attrib = page.locator('#attrib');
 

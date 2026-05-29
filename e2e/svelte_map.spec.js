@@ -1,4 +1,5 @@
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const SVELTE_URL = 'http://127.0.0.1:8000/index-svelte.html?svelte_map=1';
 
@@ -22,6 +23,14 @@ test('Svelte Map3D mode boots up, connects to test client, and starts ride', asy
   
   // Wait for the Map3D canvas to be mounted and the initial loading text to disappear
   await expect(page.locator('canvas#s-minimap-top')).toBeVisible({ timeout: 20_000 });
+
+  // b130: svelte mode は __mapIdle hook を export しない、 canvas pixel だけ pin.
+  // svelte 移行が完了して Svelte Map3D が定着すれば idle hook を svelte 側にも追加.
+  await waitForPaintComplete(page, {
+    waitMapIdle: false,
+    canvasSelector: 'canvas#s-minimap-top',
+    waitTerrainMesh: false,
+  });
   
   // Wait for test BLE client to connect (Start button becomes enabled)
   const btnStart = page.locator('#s-btnRideStart');

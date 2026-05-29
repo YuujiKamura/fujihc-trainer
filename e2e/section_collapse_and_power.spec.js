@@ -8,6 +8,7 @@
 // power_w が manualPowerW (= スライダー値) になり、 wsHandlers.state → integratePhysics
 // → rider.setSpeed に届く。 スライダーを変えれば収束速度が変わる。
 import { test, expect } from './base-test.js';
+import { waitForPaintComplete } from './_helpers/paint_complete.js';
 
 const VIEWER_URL = 'http://127.0.0.1:8000/index.html';
 
@@ -40,6 +41,8 @@ async function reachViewMode(page) {
   }, { timeout: 20_000 });
   await page.locator('#btnSetupGoView').click();
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 5_000 });
+  // b130: 区間 panel / slider 操作の前に MapLibre 描画完了 + minimap canvas 描画を待つ.
+  await waitForPaintComplete(page, { waitTerrainMesh: false });
 }
 
 test('b53: 区間パネルの折りたたみトグルで区間リスト本体が隠れる / 出る', async ({ page }) => {

@@ -23,6 +23,9 @@ import { test, expect } from './base-test.js';
 import {
   RIDE_DB_NAME, RIDE_DB_VERSION, RIDE_STORE, RIDE_INDEX_DATE,
 } from '../web/lib/ride_db.js';
+// b130: 本 spec は IndexedDB / DOM 中心の検証で、 MapLibre 描画とは独立して動く.
+// 描画系 spec に拡張する時は `import { waitForPaintComplete } from './_helpers/paint_complete.js'`
+// を呼ぶ. 現状不要 (= YAGNI に従い import しない).
 
 // ?noterrain=1: 地形タイルを取得しない (= 配布元を叩かない)。 履歴機能は IndexedDB 上の
 // 動作で地形と無関係なので、 地形ゼロでこのテストは成立する (= b40 / handoff 方針)。
