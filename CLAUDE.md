@@ -1,5 +1,90 @@
 # fujihc-trainer — AI エージェント向けルール
 
+## MVC 規約 (= 新 module の責務を最初から分けろ、 後で剥がすな)
+
+新規 module / 既存 module を編集する時、 **その module が Model / View / Controller の
+どれに属するか冒頭コメントで宣言**、 1 module に 2 つ以上の責務を混ぜない。 後から
+「ビューに癒着したライダー」 (= 2026-05-15 incident) を剥がすコストは AI が「最初から
+混ぜない」 で防ぐべき、 user が毎回訂正しなくて済むようにする物理 gate.
+
+3 区分:
+
+- **Model** (`web/lib/*.js` の大半): data + 純粋関数寄りの振る舞い. DOM / window /
+  document / performance.now / localStorage を **直接参照しない**, 全て引数 / deps /
+  opts で受ける. node 単独 test で副作用ゼロで pin 可能. 例: `rideState` /
+  `physicsState` / `rider` / `ride_db` / `save_summary` / `bike_physics` /
+  `ride_clock` / `ride_resume` / `course_loader`.
+- **View** (`web/lib/{history_row,hud,hud_chart,postride_buttons,minimap,...}.js`):
+  DOM 組み立て helper. `document` を `cfg.document` で受ける形 (= 既存
+  `history_row.js` を踏襲)、 ride 状態を直接読まず caller (Controller) が値を
+  渡す形. ride 開始 / state 遷移 / IDB 書込はしない、 callback で Controller に
+  上げるだけ.
+- **Controller** (`web/viewer-maplibre.js`、 当面これ 1 つ): Model と View の協調、
+  event bind、 state 遷移、 ride 開始 / 終了の orchestration. **当面 1 file** だが
+  軽量化方向 (= 上 section) に常に動かす、 Model と View に運べる部分は運ぶ.
+
+規約:
+
+- **冒頭コメントで責務宣言**: 新 module の最初の数行に `// model:` / `// view:` /
+  `// controller:` のいずれかを書く (= 例: `// model: bike 設定 slider 値の SoT.
+  pure module、 DOM 不参照、 deps + opts で受ける.`).
+- **Model に DOM 参照を書こうとした瞬間止まれ**: `document` / `window` /
+  `localStorage` を Model module に直接書いてる時、 必ず caller から `cfg.storage`
+  / `cfg.document` で受け取る形に変えろ. 既存 `save_summary.js` /
+  `physics_state.js` / `ride_clock.js` が踏襲モデル.
+- **View に ride state を読みに行く logic を書くな**: `rideState.snapshot()` を
+  View 内で呼ぶのは Controller が値を作って渡す形に直す. View は受け取った値を
+  DOM に描くだけ.
+- **Controller から Model を呼ぶ正規経路**: 新機能を viewer 直書きで済ますな (= 上
+  section と同じ)、 Model 側に API を生やして Controller から呼ぶ.
+
+過去 anti-example:
+
+- 2026-05-15 (= b1 復元バグ): rider が view に癒着、 model 側で位置が更新されないのに
+  view が動いて見える bug. JS 地形コンポーネントは問題なかった、 壊れたのは「ビューに
+  癒着したライダー」 だけ. MVC 分離が事故境界そのもの.
+- 2026-05-29: AI が viewer-maplibre.js に新規 inline 関数を生やそうとして user 訂正
+  「MVC モデルを規約にしておけ。 違反してるようなのを最初から作りこませるな」.
+  本 section はこの訂正の永続化.
+
+## viewer 軽量化 + Svelte 移行準備 (= 機能追加と同位の最優先)
+
+viewer-maplibre.js (= 3000+ 行の塊) は **常に軽量化方向に動かす**。 svelte-poc/ への
+移行準備として、 viewer 内の module-global / inline 関数 / DOM bind / 物理積分 /
+時計 state は **別 file (= `web/lib/*.js`) に切り出すのを default**。 機能追加だけが
+食えるコードではなく、 「viewer を分けて Svelte 側に運べる形にする」 こと自体が
+user 価値 (= 後で user 自身が Svelte 移植を引き取る時のコストを軽くする).
+
+ルール:
+
+- **viewer 内 module-global / inline 関数の新規追加は禁止寄り**: 新機能を viewer
+  直書きで済ませようとした瞬間、 「これは別 module に出せるか?」 を 1 度問う。
+  出せるなら出す、 出せない理由が即答できなければ出す。
+- **「食える機能 vs 内部 refactor」 の二項対立で refactor を切るな**: AI は「内部
+  整理は user benefit ゼロ」 と判断しがちだが user 訂正済 (2026-05-29)。 viewer
+  軽量化は user 価値そのもの。 機能追加 brief と viewer 軽量化 brief は二者択一
+  ではなく、 両方やる。
+- **brief を縮めて module 化を skip するな**: 「viewer 内 local 関数で済ます」 と
+  短絡したら user 訂正「モジュールは作れ、 頭おかしいのかお前は」 で叩き直される。
+  brief が module を指定したら作る、 「管理コスト」 を理由に縮めない (= 管理コスト
+  は viewer の 3000 行 の方が圧倒的に大きい)。
+- **既存 module 系統を踏襲**: `physics_state.js` / `ride_clock.js` / `rider.js` /
+  `bike_physics.js` 等の既存 SoT 分離パターンに従う、 新規 module は同じ語彙で命名。
+- **node 単独 test で pin できる純粋関数寄り**: DOM / window / performance.now を
+  直接参照せず、 deps と nowMs を引数で受ける形 (= `physics_state.js` /
+  `ride_clock.js` と同じ形)。 viewer を import せずに振る舞いを test できる状態を
+  保つ。
+
+過去 anti-example:
+
+- 2026-05-29: b127 (= 履歴続きから) で「ride_resume.js を別 module で作らず viewer
+  内 local 関数で済ます」 と AI が判断、 user 訂正「アホ。 モジュールは作れ。 頭
+  おかしいのかお前は」。 本 section はこの訂正の永続化。
+- 2026-05-29: b125c (= bike_settings 集約) / b125d (= viewer runtime 切り出し) を
+  AI が「user benefit ゼロの内部 refactor だから切る」 と判断、 user 訂正
+  「viewer 軽量化してスベルテ化の準備に寄せていけ。 ルールに書いとけバカ」 で復活。
+  viewer 軽量化は user benefit そのもの、 切る判断をするな。
+
 ## 配布元への配慮 (最重要、変更禁止)
 
 このリポは国土地理院 (GSI) のタイル、 OpenStreetMap (OSM、 Protomaps PMTiles 経由) のタイル、

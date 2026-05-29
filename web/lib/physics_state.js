@@ -18,7 +18,8 @@ const DT_CLAMP_MAX_S = 2.0;
  *   advance(args: {nowMs:number, power:number, slopePct:number, physicsOpts:object}): void,
  *   interpolate(nowMs:number): number,
  *   reset(args: {nowMs:number, speedMps:number}): void,
- *   snapshot(): {physicsSpeedMps:number, displaySpeedMps:number, prevPhysicsSpeedMps:number, lastPhysicsStateT:number|null}
+ *   snapshot(): {physicsSpeedMps:number, displaySpeedMps:number, prevPhysicsSpeedMps:number, lastPhysicsStateT:number|null},
+ *   restoreFromSnapshot(snap: object|null, args?: {nowMs?:number}): void
  * }}
  */
 export function createPhysicsState({ initialSpeedMps = 0 } = {}) {
@@ -72,6 +73,31 @@ export function createPhysicsState({ initialSpeedMps = 0 } = {}) {
     },
     snapshot() {
       return { physicsSpeedMps, displaySpeedMps, prevPhysicsSpeedMps, lastPhysicsStateT };
+    },
+    // b127: 過去 ride の snapshot から 4 state を一括復元する (= 履歴続きから機能).
+    // snap が null / 必須 field 欠落 / 非数値の時は 0 速度で reset、 lastPhysicsStateT は
+    // 復元直後に「次の state push を遅延扱いさせない」 ため args.nowMs を入れる (= 与えられなければ null).
+    // 復元成功でも lastPhysicsStateT は args.nowMs で上書きする (= 過去 ride 終了時刻のまま残すと
+    // 次 advance で dt が異常値になり物理が荒れる).
+    restoreFromSnapshot(snap, args = {}) {
+      const nowMs = Number.isFinite(args?.nowMs) ? args.nowMs : null;
+      const validSnap = snap
+        && Number.isFinite(snap.physicsSpeedMps)
+        && Number.isFinite(snap.displaySpeedMps)
+        && Number.isFinite(snap.prevPhysicsSpeedMps)
+        && snap.physicsSpeedMps >= 0
+        && snap.displaySpeedMps >= 0
+        && snap.prevPhysicsSpeedMps >= 0;
+      if (!validSnap) {
+        physicsSpeedMps = 0;
+        prevPhysicsSpeedMps = 0;
+        displaySpeedMps = 0;
+      } else {
+        physicsSpeedMps = snap.physicsSpeedMps;
+        prevPhysicsSpeedMps = snap.prevPhysicsSpeedMps;
+        displaySpeedMps = snap.displaySpeedMps;
+      }
+      lastPhysicsStateT = nowMs;
     },
   };
 }

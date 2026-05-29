@@ -1,6 +1,8 @@
-// brief 33+: history-overlay の 1 行 (= 1 ride) を組み立てる pure helper.
-// `viewer-maplibre.js` の showHistoryOverlay() から呼ばれる (= postride_buttons.js と同じ
-// 「inline DOM → testable helper」 extraction 構造).
+// view: history-overlay の 1 行 (= 1 ride) を組み立てる DOM helper.
+// `viewer-maplibre.js` の showHistoryOverlay() (= Controller) から呼ばれる (=
+// postride_buttons.js と同じ「inline DOM → testable helper」 extraction 構造).
+// ride 状態は読まない、 cfg.ride を受け取って描く、 click は cfg.onDelete /
+// onResume / onGpxDownloaded callback で Controller に上げる.
 //
 // 過去 ride の .gpx 出力は Strava 連携 / consent と完全独立 (= ローカル Blob のみ).
 // → consent flag を読まない、 単純に ride.trkpts → buildGpxXml() → Blob download。
@@ -34,12 +36,17 @@ export function rideFilename(ride) {
 /**
  * 1 ride の `<li>` を作って `<ul>` に append する.
  *
+ * b127: onResume callback を渡すと「続きから」 button を 1 個追加する.
+ * click すると caller (= viewer-maplibre.js の showHistoryOverlay) が resumeFromRecord
+ * を呼んで rider 位置 + 物理を復元、 新 ride として走り出す.
+ *
  * @param {{
  *   document: Document,
  *   listEl: Element,
  *   ride: {id: string, date?: string, summary?: object, trkpts?: Array},
  *   courseName?: string,
  *   onDelete: () => void|Promise<void>,
+ *   onResume?: () => void|Promise<void>,
  *   onGpxDownloaded?: (info: {filename: string, points: number}) => void,
  *   URL?: { createObjectURL: (b: Blob) => string, revokeObjectURL: (u: string) => void },
  *   Blob?: typeof Blob,
@@ -70,6 +77,20 @@ export function appendHistoryRow(cfg) {
 
   const actions = doc.createElement('div');
   actions.className = 'ride-actions';
+
+  // b127: 「続きから」 button. onResume が渡された時だけ生やす (= 旧 caller 互換、
+  // node test で onResume 抜きで呼ぶと button 数は従来通り 2 個).
+  if (typeof cfg.onResume === 'function') {
+    const bResume = doc.createElement('button');
+    bResume.textContent = '続きから';
+    bResume.setAttribute('data-action', 'resume');
+    bResume.setAttribute('aria-label', 'この ride の続きから走る');
+    bResume.addEventListener('click', (ev) => {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      Promise.resolve(cfg.onResume && cfg.onResume()).catch(() => {});
+    });
+    actions.appendChild(bResume);
+  }
 
   // GPX download button: Strava 非依存、 trkpts → buildGpxXml → Blob → a.click.
   // history-overlay 自体が history consent 満足下でのみ到達するため、
