@@ -1,5 +1,5 @@
 // 進行方位の計算 (pure functions).
-// viewer-maplibre.js の atan2 ベースの heading 計算と同 logic.
+// viewer-map3d.js の atan2 ベースの heading 計算と同 logic.
 // 戻り値は degrees, 0=北, 90=東, 180=南, 270=西 (時計回り).
 
 /**

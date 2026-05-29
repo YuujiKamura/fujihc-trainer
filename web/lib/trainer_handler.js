@@ -1,6 +1,6 @@
 // b124: trainer state push の sensor 値を Rider に sticky 反映する pure 関数。
 //
-// viewer-maplibre.js から切り出した理由 ── viewer は top-level で document.getElementById を
+// viewer-map3d.js から切り出した理由 ── viewer は top-level で document.getElementById を
 // 呼ぶため、node 環境 (vitest は environment:'node') で import すると ReferenceError で落ちる。
 // sensor の単一 source を Rider に統一する入口を DOM 非依存の lib に置くことで、vitest から
 // 直接 import して振る舞いを pin できる。後続 (物理 intermediate state の剥離) の足場にもなる。

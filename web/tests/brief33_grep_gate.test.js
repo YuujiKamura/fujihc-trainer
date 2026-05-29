@@ -10,7 +10,7 @@ const WEB_DIR = resolve(__dirname, '..');
 const INDEX_PATH = join(WEB_DIR, 'index.html');
 const OAUTH_HTML_PATH = join(WEB_DIR, 'oauth-callback.html');
 const LIB_DIR = join(WEB_DIR, 'lib');
-const VIEWER_PATH = join(WEB_DIR, 'viewer-maplibre.js');
+const VIEWER_PATH = join(WEB_DIR, 'viewer-map3d.js');
 
 function listJsFiles(dir) {
   const out = [];
@@ -115,7 +115,7 @@ describe('brief 33 §11.1: STRAVA_*_URL const が strava_oauth.js / strava_uploa
   });
 });
 
-describe('brief 33 §11.2: viewer-maplibre.js に strava.com 直リテラル ゼロ', () => {
+describe('brief 33 §11.2: viewer-map3d.js に strava.com 直リテラル ゼロ', () => {
   it('viewer は strava.com URL を直接 literal で持たない (= module 経由のみ)', () => {
     const viewer = readFileSync(VIEWER_PATH, 'utf8');
     expect(viewer).not.toMatch(/strava\.com/);

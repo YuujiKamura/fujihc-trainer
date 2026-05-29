@@ -2,7 +2,7 @@
 
 > **v3 改訂の経緯**: 元ブリーフ `task-g-gsi-attribution.md` を 7 軸 audit にかけ全軸 LOAD-BEARING NG
 > で REDRAFT したのが v1。v1 は「production viewer は MapLibre を使う」と誤認していた (audit
-> subagent 7 名と main がそろって import 文を辿らず、ファイル名 `viewer-maplibre.js` と
+> subagent 7 名と main がそろって import 文を辿らず、ファイル名 `viewer-map3d.js` と
 > `.maplibregl-ctrl-attrib` を querySelect する関数から MapLibre と推論)。実コードを ground-truth
 > した結果、b12 Phase 4 で描画エンジンは **Three.js** (`web/lib/map3d/`) に差し替え済で、
 > MapLibre 実装 (`web/lib/map_renderer.js`) は **import されていない dormant コード**だった。
@@ -25,7 +25,7 @@ viewer 利用者本人ではなく**第三者である配布元 (GSI / OSMF) と
 - b12 Phase 4 で描画エンジンが Three.js に差し替えられた。Three.js レンダラ
   (`web/lib/map3d/index.js` が返す 15 メソッドのオブジェクト) は地形メッシュを描くだけで、
   **帰属表示の機構を一切持たない**。MapLibre の `AttributionControl` は engine 差し替えで消えた。
-- 一方 `viewer-maplibre.js` の `verifyAttributionVisible()` (帰属表示の消失を監視する関数) は
+- 一方 `viewer-map3d.js` の `verifyAttributionVisible()` (帰属表示の消失を監視する関数) は
   依然 `.maplibregl-ctrl-attrib` を探しており、engine 差し替え後はこれが常に不在 → viewer は
   起動のたびに「attribution control が DOM に存在しません」warning を自分で発火している。
 - `index.html` に出典を表示する DOM 要素 (`#attrib` 等) は無い。**production viewer の画面に
@@ -40,10 +40,10 @@ viewer 利用者本人ではなく**第三者である配布元 (GSI / OSMF) と
 
 本タスクの「viewer」は **production viewer = `web/index.html`** 1 つに確定する。構成:
 
-- `web/index.html` — DOM / CSS / CSP。`<script type="module" src="viewer-maplibre.js?v=40">` で viewer を load。
-- `web/viewer-maplibre.js` — viewer 本体 (ファイル名は歴史的、中身は MapLibre 非依存)。
+- `web/index.html` — DOM / CSS / CSP。`<script type="module" src="viewer-map3d.js?v=40">` で viewer を load。
+- `web/viewer-map3d.js` — viewer 本体 (ファイル名は歴史的、中身は MapLibre 非依存)。
 - `web/lib/map3d/` — Three.js 地図描画モジュール (`index.js` が `createMapRenderer()` を export、
-  `viewer-maplibre.js:7` が import)。
+  `viewer-map3d.js:7` が import)。
 
 対象外 (触らない):
 
@@ -57,7 +57,7 @@ viewer 利用者本人ではなく**第三者である配布元 (GSI / OSMF) と
 
 元ブリーフ・v1 の機構記述はいずれも誤り。正しい実機構は以下:
 
-- **描画エンジン** = Three.js。`viewer-maplibre.js:7` の
+- **描画エンジン** = Three.js。`viewer-map3d.js:7` の
   `import { createMapRenderer } from './lib/map3d/index.js';` が SoT。`map3d/index.js` の
   `createMapRenderer()` が返すオブジェクトは地形・コース・ライダー・カメラの 15 メソッドのみで、
   **帰属表示に関わるメソッド・DOM・文字列は一つも無い**。
@@ -66,13 +66,13 @@ viewer 利用者本人ではなく**第三者である配布元 (GSI / OSMF) と
     (`${origin}/tiles/gsi_dem/{z}/{x}/{y}.png`) から取得。bridge 配信の DEM は GSI dem_png 形式。
   - GSI 航空写真 (seamlessphoto): 同 `tile_loader3d.js` の `loadPhotoCanvas` が GSI online
     (`https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/`) から取得し 3D 地形メッシュに貼る。
-  - OSM ラスタ: `viewer-maplibre.js` の `loadOsmTile` が bridge
+  - OSM ラスタ: `viewer-map3d.js` の `loadOsmTile` が bridge
     (`${BRIDGE_TILE_BASE_URL}/osm_raster/{z}/{x}/{y}.png`) から取得し minimap 上半分
     (`#minimap-top` canvas) に描く。
   → **3D 地形は GSI、minimap は OSM**。両方の出典が画面に要る。
 - **現状の帰属表示** = 無い。`index.html` に `#attrib` 等の出典 DOM 要素は存在しない。
   MapLibre `AttributionControl` は engine 差し替えで消失。Three.js 版に出典 DOM は未実装。
-- **監視 (壊れている)** = `viewer-maplibre.js` の `verifyAttributionVisible()` (815-835 行)。
+- **監視 (壊れている)** = `viewer-map3d.js` の `verifyAttributionVisible()` (815-835 行)。
   `.maplibregl-ctrl-attrib` を `querySelector` するが、Three.js viewer にこの class は存在しない
   → 常に `showAttributionWarning('attribution control が DOM に存在しません')` を発火し、
   `#status` 要素に「[警告] 帰属表示 (国土地理院 / OSM / MapLibre) が消えています」を出す。
@@ -105,7 +105,7 @@ viewer 利用者本人ではなく**第三者である配布元 (GSI / OSMF) と
   `e2e/history.spec.js`、`e2e/user_journey.spec.js`。**attribution の e2e は現状 1 本も無い。**
 - **Service Worker**: `web/sw.js` は 2026-05-17 改修で「アプリ本体 (html/js/css) は network-first /
   重い静的資産 (tile/pmtiles/json/画像) は cache-first」の資産種別分岐になっている。`index.html` /
-  `viewer-maplibre.js` は network-first 経路 → online の限り常に最新版が配られ、cache-first 時代の
+  `viewer-map3d.js` は network-first 経路 → online の限り常に最新版が配られ、cache-first 時代の
   stale door (= 修正がユーザに届かない) は閉じている。
 
 ## やること
@@ -158,14 +158,14 @@ viewer を映した Chrome ウィンドウが無ければ自分で 1 回だけ�
      背後の 3D 地形タイルは画面に見えている (overlay を半透明にしたのは「何のアプリか地図で
      伝える」ため = index.html の既存コメント)。タイルが見えている=出典が要る。全 state
      (checking / dbinit / pairing / riding) で常時・読める形で見せるには overlay より上に置く。
-3. **`viewer-maplibre.js` の `verifyAttributionVisible()` の監視対象を `#attrib` に更新する**
+3. **`viewer-map3d.js` の `verifyAttributionVisible()` の監視対象を `#attrib` に更新する**
    (815-835 行)。`.maplibregl-ctrl-attrib` の `querySelector` を `#attrib` の取得
    (`getElementById('attrib')`) に置き換える。display/visibility/opacity を check して隠れて
    いたら `showAttributionWarning()` を呼ぶロジックは維持。warning 文言の「MapLibre」表記は
    実態に合わせて整理してよい (例: 「国土地理院 / OSM」)。
 4. **stale なコメントを正す**。`index.html` の `#hud` / `#controls` CSS の「MapLibre attribution」
    を指すコメント (55-56 / 78 行付近) を、新設の `#attrib` 要素を指す記述に直す。
-   `viewer-maplibre.js` の `verifyAttributionVisible` / `showAttributionWarning` 周辺コメントの
+   `viewer-map3d.js` の `verifyAttributionVisible` / `showAttributionWarning` 周辺コメントの
    「MapLibre」表記も実態に合わせる。コメント修正のみ、挙動は変えない。
 5. **既存テスト 5 件を Three.js 実機構に合わせて書き換える** (`integration_overlay_z_order.test.js`):
    - (b) の `.maplibregl-ctrl-attrib` を `#attrib` (= `getElementById('attrib')`) に。
@@ -235,7 +235,7 @@ misleading grep テスト (catalog NG-RG-5)。書き換えた後のテストが�
   イベントハンドラを足さない。外部サイトへの `<a href>` 遷移は CSP の resource-loading 制約
   (`connect-src` / `default-src`) の対象外なので問題ない。
 - **Service Worker の `CACHE_NAME` / `?v=` は bump しない**。`sw.js` は 2026-05-17 改修で
-  app shell (html/js/css) を network-first にしており、`index.html` / `viewer-maplibre.js` を
+  app shell (html/js/css) を network-first にしており、`index.html` / `viewer-map3d.js` を
   変えても online ユーザには常に最新が届く (= cache-first 時代の stale door は閉じている)。
   catalog の「app shell 変更で CACHE_NAME bump 必須 (NG-R2-1)」は cache-first 時代のルール。
   `web/tests/sw_cache_version.test.js` は index.html と sw.js の `?v=` 一致のみを判定するため、
@@ -254,7 +254,7 @@ misleading grep テスト (catalog NG-RG-5)。書き換えた後のテストが�
    消失 warning が出ているか。
 2. 分岐 A / B のどちらだったか。
 3. 修復内容 ── 直したファイルと該当箇所 (`index.html` の `#attrib` 要素・CSS、
-   `viewer-maplibre.js` の `verifyAttributionVisible` 監視対象、stale コメント)。
+   `viewer-map3d.js` の `verifyAttributionVisible` 監視対象、stale コメント)。
 4. 追加 / 書き換えたテスト ── ファイル名、テスト名、各テストが何を pin するか。書き換えた
    既存 5 件と新規 e2e を区別して書く。
 5. step 4 の真正性確認の結果 ── わざと壊したら新規 e2e が落ちたか、戻して `git diff` ゼロを
@@ -270,7 +270,7 @@ misleading grep テスト (catalog NG-RG-5)。書き換えた後のテストが�
 (MapLibre → Three.js) で、MapLibre が自動描画していた `AttributionControl` が消え、Three.js 版に
 出典 DOM が引き継がれなかったこと。修復は terrain3d.html と同型の静的 `#attrib` 要素を
 `index.html` に新設し (GSI + OSM 両方の出典、GSI 一覧リンク付き、全 overlay より上の z-index で
-常時可視)、`viewer-maplibre.js` の消失監視 `verifyAttributionVisible()` の対象を `#attrib` に
+常時可視)、`viewer-map3d.js` の消失監視 `verifyAttributionVisible()` の対象を `#attrib` に
 更新する。既存 5 件の grep テストは dead な MapLibre 機構を pin して「壊れているのに green」な
 misleading test になっているので Three.js 実機構を pin する形に書き換え、実ブラウザでの可視性は
 新規 e2e (`e2e/attribution.spec.js`) で固定する。タイル取得経路・CSP・SW・配布元配慮ルールには

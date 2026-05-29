@@ -9,7 +9,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 
 describe('brief 29: index.html minimap DOM 構成 (= 2 canvas、 brief 28 の div+canvas を rollback)', () => {
@@ -37,7 +37,7 @@ describe('brief 29: index.html minimap DOM 構成 (= 2 canvas、 brief 28 の di
 });
 
 describe('b51: minimap は web/lib/minimap.js が OSM 直叩き minimap を持つ', () => {
-  // b51: minimap (loadOsmTile / 上下 base 画像 / update) は viewer-maplibre.js から
+  // b51: minimap (loadOsmTile / 上下 base 画像 / update) は viewer-map3d.js から
   //   web/lib/minimap.js の createMinimap() factory へ切り出し済。
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
   const minimapSrc = readFileSync(resolve(__dirname, '..', 'lib', 'minimap.js'), 'utf8');

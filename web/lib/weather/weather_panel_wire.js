@@ -1,7 +1,7 @@
 // b74: weather panel への雲行追加 + #weather-panel の data-clouds-state 属性更新 +
 // mapRenderer.setWeatherClouds の呼び出しを 1 箇所に集約する。
 //
-// viewer-maplibre.js は AMeDAS fetch 完了後に本 module を呼ぶだけにし、 viewer 内に
+// viewer-map3d.js は AMeDAS fetch 完了後に本 module を呼ぶだけにし、 viewer 内に
 // 雲算出 / panel DOM 操作 / facade 接続のロジックを撒き散らさない (= 設計境界 軸 5)。
 // 本 module は document global に依存しない (= 引数で受けた element の ownerDocument を
 // 使う、 node の vitest から mock DOM で test 可能)。

@@ -14,10 +14,10 @@ viewer の「履歴」（過去ライドの一覧）が機能しない。直し�
 - `web/lib/ride_db.js` — IndexedDB の CRUD（openRideDb / addRide / listRides / getRide / deleteRide / auto-prune）。
 - `web/lib/history_row.js` — appendHistoryRow が 1 ライド = 1 li、GPX ボタンと削除ボタン付き。
 - `web/lib/postride_buttons.js` — ライド終了後の 4 ボタン（GPX / Strava / 履歴に保存 / 履歴を見る）。
-- `viewer-maplibre.js` — showHistoryOverlay()（2364 行付近）が setAppState('history') → rideDbList → appendHistoryRow で一覧描画。削除コールバックは rideDbDelete 後に再描画。
+- `viewer-map3d.js` — showHistoryOverlay()（2364 行付近）が setAppState('history') → rideDbList → appendHistoryRow で一覧描画。削除コールバックは rideDbDelete 後に再描画。
 
 部品は在るのに「機能しない」。実際に動かして正体を特定しろ。疑わしい点:
-- 履歴が空 ── ライドが保存されていない可能性。TEST_MODE（?test=1）のライドが記録対象外なら、テストモードで走ってきた user には履歴が常に空に見える。viewer-maplibre.js の addRide guard /「観るモードは記録対象外」（2323 行付近）を確認しろ。
+- 履歴が空 ── ライドが保存されていない可能性。TEST_MODE（?test=1）のライドが記録対象外なら、テストモードで走ってきた user には履歴が常に空に見える。viewer-map3d.js の addRide guard /「観るモードは記録対象外」（2323 行付近）を確認しろ。
 - 一覧 overlay が出ない / 行が描画されない / 削除・GPX ボタンが効かない、等。
 
 ## やること

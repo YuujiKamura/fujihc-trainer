@@ -17,7 +17,7 @@ rider が実際にコースを物理で前進し、それを**実画面で目視
   フライホイール慣性 / 転がり抵抗 c_rr / 空気抵抗 CdA 入り)。
 - それを単独 3D シミュレータ `web/inertia-sim.html` で検証。整備不良車〜世界記録TT〜
   プロの登坂まで全レンジで現実と一致。**シミュは動く、これがリファレンス**。
-- 物理を本体 viewer `web/viewer-maplibre.js` に統合 (commit ab7d89f, 02b03ae)。
+- 物理を本体 viewer `web/viewer-map3d.js` に統合 (commit ab7d89f, 02b03ae)。
   だが viewer が壊れていた。
 - loadCourse 起動不全を修正 (commit 38fa121) + SW キャッシュ版数 bump (ea31253)。
   viewer は今は起動する。HEAD は ea31253。
@@ -28,7 +28,7 @@ rider が実際にコースを物理で前進し、それを**実画面で目視
    power 150W が出ているのに bottom HUD の `dist` が 0 のまま増えない。rider が
    コース上を 1m も進んでいない。物理が「速度の数字」止まりで「コース上の前進」に
    なっていない。これを直さないと物理フィードバックは機能していない。
-   - 手がかり: `web/viewer-maplibre.js` の `tick()` (2222行付近) が `rider.tick(dt, ...)`
+   - 手がかり: `web/viewer-map3d.js` の `tick()` (2222行付近) が `rider.tick(dt, ...)`
      を呼び `snap.distance` を `dist` HUD に出す。MAP_MODE の fake state generator
      (`initMapMode`, 1663行付近) は `snap.active && !snap.paused` の時だけ power 150 を
      出す。`wsHandlers.state` (620行付近) が `applyPhysicsStep` で `physicsSpeedMps` を

@@ -1,4 +1,4 @@
-// b125a: physics_state.js を切り出した後、 viewer-maplibre.js 内で physicsState が
+// b125a: physics_state.js を切り出した後、 viewer-map3d.js 内で physicsState が
 // state push (advance) / rAF tick (interpolate → rider.setSpeed) に正しく配線され、
 // handleTrainerStatePush → advance の順序 (b124 follow-up の順序保証) が physicsState 経由で
 // 再現されていることを source-grep で pin する (= integration、 viewer は maplibre-gl/DOM 依存で
@@ -9,7 +9,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
 describe('b125a: viewer 内で physics_state が state push / tick に配線されている', () => {

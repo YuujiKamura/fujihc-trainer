@@ -10,21 +10,21 @@ viewer の TEST_MODE（URL の `?test` パラメータで起動時に決まる�
 
 ## 現状（調査済みの手がかり）
 
-- `web/viewer-maplibre.js`: `TEST_MODE` 定数が `new URLSearchParams(location.search).has('test')` で起動時に確定（428 行付近）。`initTestMode()` が 775 行付近。起動ディスパッチで `else if (TEST_MODE) initTestMode()`（1132 行付近）── TEST_MODE が立つと本番ペアリング経路の代わりにテスト経路へ分岐している。
+- `web/viewer-map3d.js`: `TEST_MODE` 定数が `new URLSearchParams(location.search).has('test')` で起動時に確定（428 行付近）。`initTestMode()` が 775 行付近。起動ディスパッチで `else if (TEST_MODE) initTestMode()`（1132 行付近）── TEST_MODE が立つと本番ペアリング経路の代わりにテスト経路へ分岐している。
 - このため `?test=1` で開くと、トレーナースキャン → 本番 BLE ハンドシェイクの経路に入れない。
 
 行番号は手がかり。現物を読んで確定しろ。
 
 ## やること
 
-1. `viewer-maplibre.js` の TEST_MODE 分岐を読み、テストモードが本番ハンドシェイク経路をどう塞いでいるか正確に把握する。
+1. `viewer-map3d.js` の TEST_MODE 分岐を読み、テストモードが本番ハンドシェイク経路をどう塞いでいるか正確に把握する。
 2. viewer の画面に「テストモード ⇄ 本番モード」を切り替えるボタン（または明示的なトグル UI）を足す。現在どちらのモードかが一目で分かる表示にする。
 3. 本番モードに切り替えたら、実機トレーナーのスキャン → BLE ハンドシェイク経路が実際に立ち上がること。テストモードに切り替えたら従来どおりテスト経路。
 4. 切替方式: `?test` の有無を変えてページを再読込する方式が最も単純で堅い（TEST_MODE は起動時定数のまま、ボタンは URL を書き換えて reload）。再読込なしのランタイム切替は、TEST_MODE 定数の参照箇所が広く init 経路が既に走っているため侵襲的 ── 明確に安全だと確認できる時だけ採れ。どちらを採ったか完了報告に書け。
 5. 走るテストを足す（既存のテスト機構を使え。Task A で導入済みの Playwright E2E が使える）。「ボタンでモードを切り替えられる」「本番モードでトレーナースキャン経路に到達する」を pin しろ。
 6. 真正性確認（必須）: 切替経路を 1 箇所わざと壊すとテストが落ちることを手元で 1 回試せ（確認したら戻す）。落ちないなら真正でない、書き直し。
 
-既存の関連コード・テスト（`viewer-maplibre.js` の TEST_MODE / initTestMode、BLE ペアリング系、`integration_ble_ride_start.test.js` 等）をまず読め。「既にある物を直す/強める」が優先、新規ファイルは必要なときだけ。
+既存の関連コード・テスト（`viewer-map3d.js` の TEST_MODE / initTestMode、BLE ペアリング系、`integration_ble_ride_start.test.js` 等）をまず読め。「既にある物を直す/強める」が優先、新規ファイルは必要なときだけ。
 
 ## 検証
 

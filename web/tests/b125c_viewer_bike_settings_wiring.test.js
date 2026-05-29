@@ -1,13 +1,13 @@
-// b125c: viewer-maplibre.js が bike_settings 経由に集約された pin (= grep gate).
+// b125c: viewer-map3d.js が bike_settings 経由に集約された pin (= grep gate).
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
-describe('b125c: bike 5 module-global が viewer-maplibre.js から撤去されている', () => {
+describe('b125c: bike 5 module-global が viewer-map3d.js から撤去されている', () => {
   it.each([
     'inertiaKg',
     'bikeMass',

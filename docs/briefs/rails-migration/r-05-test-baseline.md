@@ -4,7 +4,7 @@ depends-on: r-00, r-04
 
 ## はじめに
 
-旧 fujihc-trainer は **frontend test runner 自体不在** (= NG-R1-8 CRITICAL) で、 tile 計算 / terrarium 変換 / prefetch 順序 / FPS のいずれも検証手段ゼロのまま 2200 行の viewer-maplibre.js が育った。 Rails 移植では Tier 0 で test framework を確定し、 後段 brief (= r-10 / r-11 / r-20 / r-22 ...) が test 規律を**未決事項に依存せず**書き始められる baseline を立てる。
+旧 fujihc-trainer は **frontend test runner 自体不在** (= NG-R1-8 CRITICAL) で、 tile 計算 / terrarium 変換 / prefetch 順序 / FPS のいずれも検証手段ゼロのまま 2200 行の viewer-map3d.js が育った。 Rails 移植では Tier 0 で test framework を確定し、 後段 brief (= r-10 / r-11 / r-20 / r-22 ...) が test 規律を**未決事項に依存せず**書き始められる baseline を立てる。
 
 更に、 user 過去訂正「**無駄な test を大量に作ってそうだな**」 (= NG-R5-6) に基づき、 量的 gate (= coverage 80%) ではなく **質的 gate** を採用 ── 触った全 class / module に対し happy / error / 1 edge case の最小 3 種、 misleading test は禁止、 tautological test の量産も禁止。
 

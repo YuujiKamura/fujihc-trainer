@@ -63,7 +63,7 @@ import 可能にする。export を付け忘れると test 不能 = NG-R1-9 再�
   zoom 16 が「500m 間隔の 90px ラベルが余裕で分離する」最小 zoom。これ未満では全
   ラベルを隠す。default zoom は 21 なので通常走行中は常に表示される。
 
-### 2. `viewer-maplibre.js`: ラベル Marker の生成
+### 2. `viewer-map3d.js`: ラベル Marker の生成
 
 - `route-line` レイヤー追加の直後 (= `polygonData` が確定している箇所) で
   `buildSegmentLabels(polygonData, 500)` を呼ぶ
@@ -109,8 +109,8 @@ default zoom は 21 なので通常走行中はラベルが見える。
     - 戻り値 properties (`lon/lat/text/distance_m/slope_pct`) の存在と型
     - 中点座標 = polygon 4 角平均であることの数値 assert
     - 空 FC / `features` 不在 / `distance_m_start` null セグメントの skip
-- `web/tests/segment_labels_viewer.test.js` (= viewer-maplibre.js の source-grep pin、
-  build_map_style.test.js と同じ方式): viewer-maplibre.js を読み、(a) `buildSegmentLabels`
+- `web/tests/segment_labels_viewer.test.js` (= viewer-map3d.js の source-grep pin、
+  build_map_style.test.js と同じ方式): viewer-map3d.js を読み、(a) `buildSegmentLabels`
   を import・呼出している、(b) `segmentLabelMarkers` へ Marker を貯めている、(c) zoom
   ハンドラで表示 toggle している、を正規表現で pin (= 純粋でない viewer 統合層を物理 verify)
 - 既存テスト (route_styling / road_polygon / sw_cache_version 等) を壊さない
@@ -123,10 +123,10 @@ viewer を TEST MODE (`?test=1&consent=dev`) で開き、道路の勾配帯の�
 
 ## SW cache の bump (NG-R2-1 必須)
 
-`viewer-maplibre.js` / `index.html` / `web/lib/*.js` の実体を変更するため、
+`viewer-map3d.js` / `index.html` / `web/lib/*.js` の実体を変更するため、
 `web/sw.js` の `CACHE_NAME` を bump し (`fujihill-v8` → `fujihill-v9`)、
-`index.html` の `viewer-maplibre.js?v=36` と `sw.js` PRECACHE_URLS 内の
-`viewer-maplibre.js?v=36` を同値で `?v=37` に揃える (= 半 bump 禁止、
+`index.html` の `viewer-map3d.js?v=36` と `sw.js` PRECACHE_URLS 内の
+`viewer-map3d.js?v=36` を同値で `?v=37` に揃える (= 半 bump 禁止、
 `sw_cache_version.test.js` が CI で内部整合を検出する)。これを忘れると
 cache-first の SW (重い静的資産経路) と相まって修正がブラウザに届かない。
 
@@ -135,10 +135,10 @@ cache-first の SW (重い静的資産経路) と相まって修正がブラウ�
 1. `web/lib/segment_labels.js` に `export function formatSegmentLabel` /
    `export function buildSegmentLabels` を実装 (intervalM=500 / LABEL_MIN_ZOOM=16 の
    根拠コメントを地の文で添える)
-2. `viewer-maplibre.js` が route polygon 生成経路でラベル Marker を 1 回だけ生成、
+2. `viewer-map3d.js` が route polygon 生成経路でラベル Marker を 1 回だけ生成、
    zoom 連動で表示/非表示を toggle (再生成なし)
 3. `.seg-label` CSS で勾配色帯の上でも可読
-4. `sw.js` `CACHE_NAME` v8→v9、`index.html` と `sw.js` の `viewer-maplibre.js?v=` を
+4. `sw.js` `CACHE_NAME` v8→v9、`index.html` と `sw.js` の `viewer-map3d.js?v=` を
    揃えて 36→37 に bump
 5. `segment_labels.test.js` + `segment_labels_viewer.test.js` 追加、`npm test` 全緑、
    既存テスト無破壊 (`sw_cache_version.test.js` 含む)

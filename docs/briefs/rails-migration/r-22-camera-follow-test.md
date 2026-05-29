@@ -6,7 +6,7 @@ depends-on: r-03, r-04, r-05, r-20
 
 2026-05-15、 user 訂正で「HUD / button / cable / power slider の上モノ を作る前に、 モデル空間 (= Terrain + Rider + camera 追随) が破綻なく動く自動 test 基盤を先に作れ」 と方針が引かれた。 r-20 で Rider PORO と Terrain PORO は landed、 `bin/rails test` で 28 件 green の最低限の足場ができたが、 **camera 追随** (= rider 位置に Three.js camera を寄せ、 進行方向に bearing を向け、 user 入力で zoom / pitch / 横ドラッグ offset を反映する) は test ゼロのまま viewer_3d_controller.js の `connect()` 内に Three.js / OrbitControls 直触りで居座っている。
 
-JS 旧版で何を分離したか参照する。 旧 web 側は `web/lib/camera_controller.js` (= 本 brief 内では camera params 計算層と呼ぶ、 旧 file の物理名は camera_controller.js だが内容は params 計算の純関数 + zoom/pitch clamper) を独立 file に切り出し、 `computeCameraParams(course, {curIdx}, {userZoom, userPitch, lookAhead})` で MapLibre 用 `{center, zoom, pitch, bearing}` を返す pure function にした。 viewer-maplibre.js の tick はその戻り値を `map.jumpTo` に流すだけ、 計算は呼ばない。 `web/tests/camera_controller.test.js` で 12 件 (= 北向き / 東向き / clamp / default 等) を vitest で green。 Rails 側も同じ「pure 層を切り出して数値 test する」 形にする。
+JS 旧版で何を分離したか参照する。 旧 web 側は `web/lib/camera_controller.js` (= 本 brief 内では camera params 計算層と呼ぶ、 旧 file の物理名は camera_controller.js だが内容は params 計算の純関数 + zoom/pitch clamper) を独立 file に切り出し、 `computeCameraParams(course, {curIdx}, {userZoom, userPitch, lookAhead})` で MapLibre 用 `{center, zoom, pitch, bearing}` を返す pure function にした。 viewer-map3d.js の tick はその戻り値を `map.jumpTo` に流すだけ、 計算は呼ばない。 `web/tests/camera_controller.test.js` で 12 件 (= 北向き / 東向き / clamp / default 等) を vitest で green。 Rails 側も同じ「pure 層を切り出して数値 test する」 形にする。
 
 「camera 追随を自動 test できる」 とは Three.js / DOM / OrbitControls / WebGL canvas を一切触らず、 入力 (= rider 位置 + terrain + user 入力) と出力 (= camera position / target / bearing / pitch / zoom の Hash) の数値だけで verify できる pure layer に切り出すことを意味する。 viewer Stimulus 側は「server から受け取った camera Hash を OrbitControls / camera.position に setter で当てるだけ」 に痩せ、 計算ゼロにする。 これで camera 計算の SoT は server (= Ruby) 側 1 経路、 二重 SoT 事故 (= r-20-save-bug-audit T1) を camera 層でも未然に断つ。
 
@@ -77,7 +77,7 @@ viewer Stimulus 側の rewire 方針は本 brief では「方向だけ encode、
 
 ## なぜ — 設計の load-bearing 根拠
 
-第一に、 数値 test できる pure layer に出すと「破綻」 が回帰 test で物理 deny できる。 JS 旧版は brief 19 で camera_controller.js を切り出すまで viewer-maplibre.js の tick 内 inline で curIdx の bearing を計算しており、 人が画面を見て「カクついた」 「視線が真後ろになった」 を目視確認するしか方法がなかった。 切り出し後は `web/tests/camera_controller.test.js` の 12 件で「北向き course → bearing≒0」 「東向き → 90」 「curIdx 末尾超過で clamp + heading 破綻なし」 を数値 pin できるようになり、 viewer rewire のたびに gate として効いた。 Rails 側で同じ pure 層を作らないと、 viewer Stimulus 内 inline で書いて「動いた」 「動かない」 を目視するしかなくなる ── 旧 viewer-maplibre.js の 2200 行肥大 (= NG-R1-7 / NG-R5-10) を Rails 側で再演する道だ。
+第一に、 数値 test できる pure layer に出すと「破綻」 が回帰 test で物理 deny できる。 JS 旧版は brief 19 で camera_controller.js を切り出すまで viewer-map3d.js の tick 内 inline で curIdx の bearing を計算しており、 人が画面を見て「カクついた」 「視線が真後ろになった」 を目視確認するしか方法がなかった。 切り出し後は `web/tests/camera_controller.test.js` の 12 件で「北向き course → bearing≒0」 「東向き → 90」 「curIdx 末尾超過で clamp + heading 破綻なし」 を数値 pin できるようになり、 viewer rewire のたびに gate として効いた。 Rails 側で同じ pure 層を作らないと、 viewer Stimulus 内 inline で書いて「動いた」 「動かない」 を目視するしかなくなる ── 旧 viewer-map3d.js の 2200 行肥大 (= NG-R1-7 / NG-R5-10) を Rails 側で再演する道だ。
 
 第二に、 Three.js / OrbitControls / DOM は test 不可、 pure 切り出しが test 化の必要条件。 viewer_3d_controller.js の `connect()` は WebGLRenderer 構築 + Scene + Camera + Lighting + GLB load + rider_marker 配置 + OrbitControls + RAF tick + ActionCable subscription を 1 関数で抱える肥大 controller で、 ここに camera 計算を足すと 11 責務同居 (= NG-R5-10 の brief 版再演) になる。 数値計算を `app/services/camera_params.rb` に切り出すと、 controller は「snapshot.camera を OrbitControls に当てる」 setter だけが残り、 controller 自体の test は「snapshot を mock で流して setter が呼ばれた」 だけで足りる (= controller test の範囲を最小化する効果も合わせて取れる)。
 
@@ -101,7 +101,7 @@ defaults を `DEFAULTS` で凍結する: zoom=14.0、 pitch_deg=60.0、 bearing_
 
 戻り値 Hash schema は `{position: {lat:, lon:, elevation_m:}, target: {lat:, lon:, elevation_m:}, bearing_deg:, pitch_deg:, zoom:}`。 position と target を分離してあるが v0 では同値、 OrbitControls 側で offset を吸収する。 後段 brief で「rider の後上方に camera position」 と分離する余地を schema に残す。
 
-look-ahead heading 計算は `terrain.position_at(rider.distance_traveled + look_ahead_m)` で先読み点を取り、 そこと rider 現在位置の 2 点間で atan2 を取る。 これは旧 viewer-maplibre.js の curIdx + curIdx+1 frac 補間より単純な式だが、 純関数化の利点を取って単純式から始める (= 旧 viewer の frac 補間は MapLibre の jumpTo が discrete idx 遷移で「カクつく」 問題への mitigation、 Three.js + OrbitControls なら毎 frame 補間で滑らかさは別経路で取れる)。 user_input[:bearing_offset_deg] を base bearing に加算して最終 bearing を作る (= 旧 viewer の userBearingOffset と同型)。
+look-ahead heading 計算は `terrain.position_at(rider.distance_traveled + look_ahead_m)` で先読み点を取り、 そこと rider 現在位置の 2 点間で atan2 を取る。 これは旧 viewer-map3d.js の curIdx + curIdx+1 frac 補間より単純な式だが、 純関数化の利点を取って単純式から始める (= 旧 viewer の frac 補間は MapLibre の jumpTo が discrete idx 遷移で「カクつく」 問題への mitigation、 Three.js + OrbitControls なら毎 frame 補間で滑らかさは別経路で取れる)。 user_input[:bearing_offset_deg] を base bearing に加算して最終 bearing を作る (= 旧 viewer の userBearingOffset と同型)。
 
 ### viewer Stimulus 側の rewire 方針 (= 本 brief 範囲外、 別 brief で impl)
 
@@ -215,7 +215,7 @@ shim を作らない。 旧 JS 版の `userBearingOffset` 等の名前を Ruby �
 - r-20-save-bug-audit (= 二重 SoT 防御、 T1 物理 gate): `r-20-save-bug-audit.md`
 - 旧 JS camera params 計算 (= 物理名 camera_controller.js、 役割は params): `web/lib/camera_controller.js`
 - 旧 JS test (= vitest 12 件、 北向き / 東向き / clamp / default): `web/tests/camera_controller.test.js`
-- viewer-maplibre.js camera 呼出 line refs: `web/viewer-maplibre.js` line 1604 (= 起動初期 cam0) / line 1930-1936 (= tick 内 cam + camNext 補間 + userBearingOffset)
+- viewer-map3d.js camera 呼出 line refs: `web/viewer-map3d.js` line 1604 (= 起動初期 cam0) / line 1930-1936 (= tick 内 cam + camNext 補間 + userBearingOffset)
 - 現状 Rails viewer (= Three.js 直触り、 痩せ化対象): `app/javascript/controllers/viewer_3d_controller.js`
 - 現状 camera_positioner.js (= anchor 固定 offset、 追随なし): `app/javascript/lib/camera_positioner.js`
 - 現状 RideLoop (= broadcast 経路): `app/services/ride_loop.rb`

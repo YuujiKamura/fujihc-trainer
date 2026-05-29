@@ -324,7 +324,7 @@ JS 版で起きた 0km lat 固定事故 (= 2026-05-15、 commit de57ce1 で fix)
 
 ### 何が起きたか
 
-1. brief 19 で `viewer-maplibre.js` から `curIdx / curDist / paused / active` を吸い出して `createRideState({course})` に pure state machine 化 (= 旧 ride_state.js)
+1. brief 19 で `viewer-map3d.js` から `curIdx / curDist / paused / active` を吸い出して `createRideState({course})` に pure state machine 化 (= 旧 ride_state.js)
 2. brief 33 で trkpts 機能も ride_state.js に移送
 3. brief 35 で「Terrain ⊃ Rider」 上位モデル分離、 `ride_state.js` は **後方互換 shim** に格下げ (= 既存 caller / test を破壊しないため `createRideState` を Terrain + Rider 生成の wrapper として残置)
 4. shim の `_legacyAppendTrkpt` は内部の `_idx` field を見て `course[_idx]` の raw lat/lon を使っていた

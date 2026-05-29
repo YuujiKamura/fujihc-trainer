@@ -1,5 +1,5 @@
 // brief 33 atom F: postride-overlay の 4 button bind を 1 関数に閉じ込める (= NG-R1-7 同型予防).
-// viewer-maplibre.js から呼ばれ、 ride 終了時に download / upload / 保存 / 一覧の 4 action を提供。
+// viewer-map3d.js から呼ばれ、 ride 終了時に download / upload / 保存 / 一覧の 4 action を提供。
 // pure に近い形 (= 依存は callback 経由で inject) で test 化可能。
 
 import { buildGpxXml } from './gpx_builder.js';

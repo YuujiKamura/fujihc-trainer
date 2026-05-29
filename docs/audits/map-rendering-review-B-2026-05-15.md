@@ -4,7 +4,7 @@ reviewer A (= CSP / security) と並列、 reviewer B 重点は Range serving / 
 
 ## 1. register (= 責務境界) — **LOAD-BEARING**
 
-map source 構築は viewer-maplibre.js:184-202 (= static mode で `url: pmtiles://${BASE}/map.pmtiles`)、 Range fetch 実装は web/lib/vendor/pmtiles.js:1138-1199 (= `getBytes` で `headers.range='bytes=X-Y'` を fetch)、 server 側 Range 対応は 3 系統に分散 (= GitHub Pages / aiohttp `add_static` / `python -m http.server`)。 後者だけが Range 非対応で症状を引く、 責務は 1 箇所に集まっていない。 fix: README に dev server 推奨を明記 + 起動 helper 1 本に集約。
+map source 構築は viewer-map3d.js:184-202 (= static mode で `url: pmtiles://${BASE}/map.pmtiles`)、 Range fetch 実装は web/lib/vendor/pmtiles.js:1138-1199 (= `getBytes` で `headers.range='bytes=X-Y'` を fetch)、 server 側 Range 対応は 3 系統に分散 (= GitHub Pages / aiohttp `add_static` / `python -m http.server`)。 後者だけが Range 非対応で症状を引く、 責務は 1 箇所に集まっていない。 fix: README に dev server 推奨を明記 + 起動 helper 1 本に集約。
 
 ## 2. 語彙 — **MINOR**
 

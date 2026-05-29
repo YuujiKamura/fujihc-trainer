@@ -33,7 +33,7 @@ HTTP_BIND = '127.0.0.1'  # LAN からの ODbL 再配布事故防止
 WS_BIND = '127.0.0.1'
 ```
 
-### 2. viewer-maplibre.js (近 `web/viewer.js` rename 後) の改変
+### 2. viewer-map3d.js (近 `web/viewer.js` rename 後) の改変
 
 #### 2a. `TILE_BASE_URL` const 追加
 
@@ -74,7 +74,7 @@ brief 13 で comment out 済の呼出に加え、 関数定義 (`prefetchTilesAl
 
 ### 3. namespace 分離の明示
 
-brief 14 の DB `source` 列 (`gsi_dem`) と MapLibre style の source key (`gsi-terrain`) が別 namespace である件 (= Round 2 語彙軸の指摘) を `viewer-maplibre.js` 冒頭コメントで pin:
+brief 14 の DB `source` 列 (`gsi_dem`) と MapLibre style の source key (`gsi-terrain`) が別 namespace である件 (= Round 2 語彙軸の指摘) を `viewer-map3d.js` 冒頭コメントで pin:
 
 ```js
 // 命名規約:
@@ -93,7 +93,7 @@ brief 14 の DB `source` 列 (`gsi_dem`) と MapLibre style の source key (`gsi
 ## 完了条件
 
 1. `bridge.py` の bind が `127.0.0.1` 明示
-2. `web/viewer-maplibre.js` (= brief 12 完了後の `web/viewer.js`) の tile source が `TILE_BASE_URL` 経由
+2. `web/viewer-map3d.js` (= brief 12 完了後の `web/viewer.js`) の tile source が `TILE_BASE_URL` 経由
 3. style.json 動的取得 + 503 fallback DOM 表示が実装
 4. prefetch 関連の関数定義 / 変数 / status / addProtocol 旧 GSI 変換 が完全削除、 brief 18 の `terrarium.js` import に置換
 5. 実走: `python -m fujihc.bridge` → browser で開く → DevTools Network panel で **外部ドメインへの request 0 件** (= localhost のみ)

@@ -115,7 +115,7 @@ describe('integration: postride-overlay GPX download は Strava 連携 OFF で�
         getSummary: () => ({ date: '2026-05-15T07:30:00Z' }),
         getCourseName: () => 'fujihill',
         addRide: async () => {},
-        // strava consent OFF の挙動を再現 (= viewer-maplibre.js の getClientId と同等)
+        // strava consent OFF の挙動を再現 (= viewer-map3d.js の getClientId と同等)
         getClientId: () => {
           if (!getRideConsent('strava', { storage })) return null;
           return 'fake-id';
@@ -285,23 +285,23 @@ describe('integration: GPX 生成経路は network fetch を呼ばない (= loca
   });
 });
 
-describe('regression: viewer-maplibre.js が history_row.js helper を使う (= inline DOM 直書き禁止)', () => {
-  it('viewer-maplibre.js 内に appendHistoryRow の import + 呼出しがある', async () => {
+describe('regression: viewer-map3d.js が history_row.js helper を使う (= inline DOM 直書き禁止)', () => {
+  it('viewer-map3d.js 内に appendHistoryRow の import + 呼出しがある', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, resolve } = await import('node:path');
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const viewer = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf-8');
+    const viewer = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf-8');
     expect(viewer).toMatch(/import\s*\{\s*appendHistoryRow\s*\}\s*from\s*['"]\.\/lib\/history_row\.js['"]/);
     expect(viewer).toMatch(/appendHistoryRow\(\s*\{/);
   });
 
-  it('viewer-maplibre.js の history-overlay 描画で inline <li> + 削除 button 直書きが残っていない', async () => {
+  it('viewer-map3d.js の history-overlay 描画で inline <li> + 削除 button 直書きが残っていない', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, resolve } = await import('node:path');
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const viewer = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf-8');
+    const viewer = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf-8');
     // 旧 inline 構造の特徴シグネチャ (= className = 'ride-actions' を viewer 内に書いていた)
     // history_row.js へ extract 済なので viewer には残らない.
     expect(viewer).not.toMatch(/className\s*=\s*['"]ride-actions['"]/);

@@ -46,7 +46,7 @@
 
 ## 6. マイグレ可逆 (= 既存実装からの移行)
 
-**LOAD-BEARING A-10**: `bootCheckSetupStatus` (viewer-maplibre.js:713-737) を welcome 経路に書き換える時の互換性。 現状の env.mode === 'static' 分岐 (= 717-723 行) は **無条件 initMapMode → ride 自動 start**、 ここに welcome を挟むと既存 `static_mode.test.js:88` の「initMapMode を呼ぶ」assertion は残せるが、 「呼んだ瞬間 ride が始まる」前提の test (= `viewer_url_audit.test.js:260` 「initMapMode は rideState.start を呼ぶ」) が welcome consent 後にずれる。 fix: initMapMode 内の `rideState.start()` 呼出を `if (introConsented)` で guard、 既存 test (= 260 行) の matcher を「rideState.start が定義されている」ではなく「rideState.start が `introConsented` block 内にある」に書き換え。 `?map=1` 直接到達経路 (= viewer-maplibre.js:748) は開発者本人 demo 専用として **`introConsented=true` を query で渡せる skip mechanism** を持たせろ (= `?map=1&intro=skip`、 hardcode 不可、 必ず query 経由で「明示 skip」と読める形)。
+**LOAD-BEARING A-10**: `bootCheckSetupStatus` (viewer-map3d.js:713-737) を welcome 経路に書き換える時の互換性。 現状の env.mode === 'static' 分岐 (= 717-723 行) は **無条件 initMapMode → ride 自動 start**、 ここに welcome を挟むと既存 `static_mode.test.js:88` の「initMapMode を呼ぶ」assertion は残せるが、 「呼んだ瞬間 ride が始まる」前提の test (= `viewer_url_audit.test.js:260` 「initMapMode は rideState.start を呼ぶ」) が welcome consent 後にずれる。 fix: initMapMode 内の `rideState.start()` 呼出を `if (introConsented)` で guard、 既存 test (= 260 行) の matcher を「rideState.start が定義されている」ではなく「rideState.start が `introConsented` block 内にある」に書き換え。 `?map=1` 直接到達経路 (= viewer-map3d.js:748) は開発者本人 demo 専用として **`introConsented=true` を query で渡せる skip mechanism** を持たせろ (= `?map=1&intro=skip`、 hardcode 不可、 必ず query 経由で「明示 skip」と読める形)。
 
 **MINOR A-11**: 旧 `?test=1` (TEST_MODE) は本人開発専用、 公開時は影響ゼロ ── と書きたいが、 `web/index.html` から ?test 経路を物理削除しない限り訪問者が URL を叩けば到達できる。 fix: `?test=1` は production build (= GitHub Pages 配信版) では物理的に initTestMode を呼ばない gate (= build script で `if (location.host === 'yuujikamura.github.io') TEST_MODE = false` を export_static.py が injection、 もしくは `?test=1` も welcome を強制通過させる)。
 
@@ -70,7 +70,7 @@
 - **難易度低-中**: 原則 4「作ったものは自分で使え」── self-check 1 行で機械化可能。
 - **難易度低**: 原則 2「サーバに迷惑をかけるな」── 1 req/sec / bbox 制限 / 直叩き禁止が既に物理層で landed、 維持コスト低。
 
-「Phase C 先、 zoom 後」順序判断の前提抜け: zoom 問題が「welcome 表示自体を妨害する」case (= MapLibre 初期化失敗で全 overlay が描画されない) は実在する。 viewer-maplibre.js:797 の `map.once('idle')` で待っている、 6 秒 fallback はあるが、 **fallback 中も welcome overlay は表示できる** (= overlay は MapLibre の上に z-index 1500 で被さる、 map 描画と独立)。 fix: 「welcome は MapLibre 起動失敗時でも単独表示できる」を C-1 の必須要件に追加、 これで順序判断は揺るがない。
+「Phase C 先、 zoom 後」順序判断の前提抜け: zoom 問題が「welcome 表示自体を妨害する」case (= MapLibre 初期化失敗で全 overlay が描画されない) は実在する。 viewer-map3d.js:797 の `map.once('idle')` で待っている、 6 秒 fallback はあるが、 **fallback 中も welcome overlay は表示できる** (= overlay は MapLibre の上に z-index 1500 で被さる、 map 描画と独立)。 fix: 「welcome は MapLibre 起動失敗時でも単独表示できる」を C-1 の必須要件に追加、 これで順序判断は揺るがない。
 
 ---
 

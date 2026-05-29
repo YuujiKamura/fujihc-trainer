@@ -1,4 +1,4 @@
-// b51: viewer-maplibre.js の minimap (course polyline + OSM 1-shot + 標高プロファイル)
+// b51: viewer-map3d.js の minimap (course polyline + OSM 1-shot + 標高プロファイル)
 // を切り出した framework 非依存モジュール。
 //
 // createMinimap() factory が minimap の状態 (上下 base 画像 / 共有幾何 stats /

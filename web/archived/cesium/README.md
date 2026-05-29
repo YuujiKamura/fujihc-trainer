@@ -6,7 +6,7 @@
 
 - Cesium は OSS にできない (= user 判断、 2026-05-14)
 - viewer.js は OSM / GSI を runtime 直叩きで第三者 ToS 違反 (= Rule 11 C1)、 brief 13/17b で停止していない
-- 本流は `../viewer-maplibre.js` (= ローカル DB + `${location.origin}/tiles/...` 経由)、 `web/index.html` がそれを load する
+- 本流は `../viewer-map3d.js` (= ローカル DB + `${location.origin}/tiles/...` 経由)、 `web/index.html` がそれを load する
 
 ## 復活させたい場合
 

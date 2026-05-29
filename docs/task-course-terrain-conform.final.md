@@ -26,7 +26,7 @@
   `terrain_mesh.js` のみ)。配布元配慮の対象は GSI へ fetch する `tile_loader3d.js`
   (`GSI_FETCH_LIMIT` / `MAX_TILES` / `openTileCache` を持つ)。terrain3d.js の無改造理由は
   「テスト済 SoT」であって配布元配慮ではない。
-- **初版**:「作業ツリーには別 worker の未 commit 変更がある (`web/viewer-maplibre.js`,
+- **初版**:「作業ツリーには別 worker の未 commit 変更がある (`web/viewer-map3d.js`,
   `web/tests/intro_consent_guard.test.js`, `e2e/user_journey.spec.js`)」 → **実態**:
   `git status` 時点で未 commit は `e2e/user_journey.spec.js` のみ (他2ファイルは commit 済)。
   本修正はそのいずれにも触らないので干渉しない。
@@ -125,7 +125,7 @@ MapLibre が無償で持っていた「面は 1 つ」性質を復元する。
    不変、`createCourseRibbon` の signature も不変)。`course_ribbon3d.js` は `terrain_surface.js`
    のみ追加 import (3-free を維持、injected THREE のまま、vitest node 環境でテスト可)。
 
-terrain3d.js / index.js / viewer-maplibre.js / e2e/* は無改造。
+terrain3d.js / index.js / viewer-map3d.js / e2e/* は無改造。
 
 ### マーカー (起点/終点) の扱い
 

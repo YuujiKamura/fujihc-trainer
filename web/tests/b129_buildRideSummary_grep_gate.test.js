@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
-describe('b129: viewer-maplibre.js の buildRideSummary が calcElevationGainM の戻り値を流す', () => {
+describe('b129: viewer-map3d.js の buildRideSummary が calcElevationGainM の戻り値を流す', () => {
   it('elevation_gain_m: 0 のハードコード literal が残っていない', () => {
     expect(src).not.toMatch(/elevation_gain_m:\s*0\b/);
   });

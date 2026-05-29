@@ -10,7 +10,7 @@
    - `web/lib/terrain.js`: 距離スケールを course の lat/lon の haversine 累積長に一本化。`course.json` の `distance_m` フィールドを読む経路を terrain から削除。位置 `(segmentIdx, fracInSegment)` ⇄ 距離 ⇄ lat/lon を相互変換する `getPositionAt` / `distanceAt` / `locate` / `segmentLength` / `segmentCount` を追加。`haversineMeters` を export。
    - `web/lib/rider.js`: 一次 state を位置 `(segIdx, segFrac)` に。`tick` はセンターラインを実メートルぶん歩く（距離からの逆算なし）。`distanceTraveled` は位置から導出する getter。
    - `web/lib/ride_state.js`: 後方互換 shim。legacy `_idx` 機構を廃し `rider.position` に委譲。
-   - `web/viewer-maplibre.js`: `totalDist` を `terrain.totalDistance` に切替。minimap 標高プロファイルの x 軸を `terrain.distanceAtIdx` に揃え同一距離スケールに統一。
+   - `web/viewer-map3d.js`: `totalDist` を `terrain.totalDistance` に切替。minimap 標高プロファイルの x 軸を `terrain.distanceAtIdx` に揃え同一距離スケールに統一。
 2. **3D 自機の配置ずれ修正** ── `web/lib/map3d/index.js` の `updateRider` が、再サンプリング後のリボン頂点配列を非再サンプリング course の index で引いていた食い違い（commit `056259c` 起因）を修正。`savedCourse`（リボンと同じ再サンプリング列）で引くよう変更。
 3. **未コミット変更の取り込み** ── `web/lib/ws_client.js`（fake trainer の trainer/HR メッセージ交互送信）・`web/tests/ws_client.test.js`・`e2e/user_journey.spec.js`（受け入れジャーニーテスト）を本コミットに含めた。
 4. **テスト修正** ── 既存 fixture が新 haversine モデルで壊れたため、`web/tests/_helpers/course_fixture.js` を新設し 11 テストファイルを新モデルの正しい期待値に直した。
@@ -34,7 +34,7 @@
 
 ## 既知の罠
 
-1. **autosave 互換境界（最重要の申し送り）**: IndexedDB 保存済の autosave `distanceM` / ride 履歴 `summary.distance_m` は旧（壊れた）距離目盛り由来の値。新 `placeAtDistance` は haversine メートルとして解釈するため、旧 record を読み戻すと位置がずれる。現状は autosave 復元が `SKIP_RESTORE = true`（viewer-maplibre.js）で停止中、ride 履歴は read-only 表示のみのため実害なし。**復元機能を再有効化するときは旧 autosave record の migration / 破棄が必要**。
+1. **autosave 互換境界（最重要の申し送り）**: IndexedDB 保存済の autosave `distanceM` / ride 履歴 `summary.distance_m` は旧（壊れた）距離目盛り由来の値。新 `placeAtDistance` は haversine メートルとして解釈するため、旧 record を読み戻すと位置がずれる。現状は autosave 復元が `SKIP_RESTORE = true`（viewer-map3d.js）で停止中、ride 履歴は read-only 表示のみのため実害なし。**復元機能を再有効化するときは旧 autosave record の migration / 破棄が必要**。
 2. **テスト fixture の距離は haversine 自己整合にする**: 新 terrain は `distance_m` フィールドを無視し lat/lon の haversine 実長を距離にする。テスト course を組むときは `web/tests/_helpers/course_fixture.js` の `withCumulativeDistance`（distance_m を haversine 累積で埋める）/ `DEG_LAT_PER_M`（1m スケール fixture 用の緯度刻み）を使う。`distance_m: i*111` のような幾何と無関係な値を書くと fixture が嘘をつく。
 3. **距離の exact assertion は `toBeCloseTo`**: haversine 距離は非整数。整数（segmentIdx / 件数 / フラグ）は `toBe`、距離は `toBeCloseTo`。1m スケール course のセグメント境界（整数 m）で idx を assert すると float 誤差で揺れる ── 区間内部の値で assert する。
 4. **trkpt の観測は `rideState.getTrkpts()`**: shim（ride_state.js）は Rider 内部とは別の独自 trkpts buffer を持つ。viewer の tick は `rideState.appendTrkpt` 経由。`rider.getTrkpts()` を読むと実走しても 0 のまま。

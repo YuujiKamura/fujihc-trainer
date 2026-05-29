@@ -15,7 +15,7 @@
 // THREE は引数で受け取る (= 'three' を import しない)。 markers3d.js / course_ribbon3d.js
 // と同じ理由 ── vitest (environment: node) で純関数を素直にテストするため。
 //
-// MapLibre 版 (viewer-maplibre.js) は canvas 画像 + symbol レイヤーの icon-image 方式。
+// MapLibre 版 (viewer-map3d.js) は canvas 画像 + symbol レイヤーの icon-image 方式。
 // Three.js では canvas → CanvasTexture → SpriteMaterial → Sprite で「常にカメラを
 // 向く立て看板」を作る ── viewer から見た「距離ラベルを出す」意味は同じ。
 //

@@ -13,7 +13,7 @@ B 追加 BLOCK:
 B 追加 LOAD-BEARING (= 第三者 harm vector、 最優先):
 - security: **static mode (= GitHub Pages) で minimap OSM が `${TILE_BASE_URL}/osm_raster/...` = `<user>.github.io/tiles/osm_raster/...` を叩く → 404 → onerror で `tile.openstreetmap.org` 直叩き fallback → GitHub Pages 訪問者全員が OSM ToS heavy use 違反 / attribution 責務が viewer 公開元に移る**。 Rule 11 class C1 隣接 harm。
 
-## 修正の 3 commit 構成 (= 直列、 viewer-maplibre.js が全 commit で触られるため並列不可)
+## 修正の 3 commit 構成 (= 直列、 viewer-map3d.js が全 commit で触られるため並列不可)
 
 ### commit α: 第三者 harm の即時 close + alias 撤去
 1. `TILE_BASE_URL = BRIDGE_TILE_BASE_URL` alias を完全撤去 (= line 52 削除)

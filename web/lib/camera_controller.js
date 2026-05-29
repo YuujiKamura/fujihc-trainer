@@ -1,5 +1,5 @@
 // brief 19: MapLibre camera パラメータ計算 (pure functions).
-// viewer-maplibre.js の tick 内 `map.jumpTo({...})` の入力計算をここに集約する。
+// viewer-map3d.js の tick 内 `map.jumpTo({...})` の入力計算をここに集約する。
 // MapLibre オブジェクト依存ゼロ、 viewer 側で `map.jumpTo(this returns)` する。
 
 import { computeTravelHeading, clampIndex } from './heading.js';

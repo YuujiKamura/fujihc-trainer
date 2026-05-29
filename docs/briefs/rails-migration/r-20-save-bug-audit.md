@@ -22,7 +22,7 @@ Ruby 側でどう起きうるか: Rider PORO が `position` を持ち、 Ride Ac
 
 ### T2: 完走時の終端処理抜け
 
-JS で起きたこと: rider.atGoal が true になっても、 viewer-maplibre.js の tick 末尾で sendRideEnd / rideState.end を呼ぶ logic が無かった。 ride が永遠に active のまま totalDist でクランプされ続け、 ride 終了 event が発火しないので Strava upload / sync が trigger されない。 commit 00fa2d7 で `if (rider.atGoal && !_autoEnded)` 分岐 + `_autoEnded` gate を追加して fix。
+JS で起きたこと: rider.atGoal が true になっても、 viewer-map3d.js の tick 末尾で sendRideEnd / rideState.end を呼ぶ logic が無かった。 ride が永遠に active のまま totalDist でクランプされ続け、 ride 終了 event が発火しないので Strava upload / sync が trigger されない。 commit 00fa2d7 で `if (rider.atGoal && !_autoEnded)` 分岐 + `_autoEnded` gate を追加して fix。
 
 Ruby 側でどう起きうるか: Rider.at_goal? が true になっても、 channel / controller / job が `Ride.finish!` を呼ばないと AR status が `active` のままで `finished_at` も nil。 さらに finish 経路が `RideController#finish` action と `RideChannel#unsubscribed` callback と `RideFinishJob` の 3 経路ある場合、 atGoal trigger だけ抜けて手動 finish と切断 finish しか動かない。 多重発火対策が無いと `_autoEnded` 相当の gate 無しで `Ride.finish!` が 2 回呼ばれて status transition error または duplicate trkpt 保存。
 
@@ -36,7 +36,7 @@ JS で起きたこと: brief 35 で Terrain + Rider 2 層モデルに refactor �
 
 Ruby 側でどう起きうるか: 「JS との API surface 互換のため」 「旧 IndexedDB schema との互換のため」 「過去 spec を壊さないため」 を口実に、 Rider の旧 API (= `advance(dt, speed)` 等) を Ruby 側に蘇生させる pattern。 例えば `RideState` AR or PORO に `advance` method を生やして内部で `rider.tick + ride.update_distance!` を呼ぶ shim を作ると、 まさに JS の ride_state.js と同型の構造になる。 同じく「viewer.js が data-distance を読むため Ride#last_distance_m を生やす」 系の retrofit も同型。
 
-防御策: shim を一切作らない。 旧 JS API surface は JS 側 (= viewer-maplibre.js の cutover commit) で deprecate、 Ruby 側は新 API surface (= Rider PORO + Terrain PORO + Ride AR の 3 役) のみ公開。 「Ruby 側で advance method を生やす」 「Ride に last_distance_m を持たせる」 「RideState という中間 layer を作る」 ── 3 つとも禁止。 r-23-indexeddb-backfill.md の export → import 経路で旧データを new schema に流し込む 1 方向経路に集約 (= shim ではなく 1 回切りの ETL)。
+防御策: shim を一切作らない。 旧 JS API surface は JS 側 (= viewer-map3d.js の cutover commit) で deprecate、 Ruby 側は新 API surface (= Rider PORO + Terrain PORO + Ride AR の 3 役) のみ公開。 「Ruby 側で advance method を生やす」 「Ride に last_distance_m を持たせる」 「RideState という中間 layer を作る」 ── 3 つとも禁止。 r-23-indexeddb-backfill.md の export → import 経路で旧データを new schema に流し込む 1 方向経路に集約 (= shim ではなく 1 回切りの ETL)。
 
 必須 test: なし。 shim を作らない物理 gate (= grep "class RideState" $RAILS_ROOT/app/** の 0 件確認、 r-05 baseline で実装規約として gate) で運用。 spec で防ぐのではなく実装規約で防ぐ ── shim は「test 維持のため」 という社会的圧力で生まれるので、 「shim 禁止」 を r-04 (= layered architecture) の規範に明記して PR レビューで止めるのが正攻法。
 

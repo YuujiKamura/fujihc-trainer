@@ -144,7 +144,7 @@ line 31 で import、`ribbonVertexColors()` line 58 で `gradeColorContinuous(co
   内で完結)。
 - `course_ribbon3d.js` は `.js` = `sw.js` の `isAppShell` で network-first 配信。配色変更は
   online ユーザに即反映され、`CACHE_NAME` bump は不要。
-- 作業ツリーには別 worker の未 commit 変更がある (`viewer-maplibre.js` 等)。自分が触らない
+- 作業ツリーには別 worker の未 commit 変更がある (`viewer-map3d.js` 等)。自分が触らない
   ファイルには触れるな。commit は自分が触ったファイルだけを `git commit -- <明示パス>` の
   一発でやれ (`git add` と `git commit` を分けるな、`git add -A` 禁止)。
 - ローカル commit まで。`git push` 禁止。

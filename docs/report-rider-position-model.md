@@ -67,7 +67,7 @@ test モードで走行させ、HUD `#dist` を 1 秒おきにサンプル:
 - **`web/lib/terrain.js`**: 構築時に course の lat/lon から haversine でセグメント長 `_segLen[]` と累積長 `_cumLen[]` を 1 度計算。`totalDistance` / `distanceAtIdx` / `idxAtDistance` / `getPositionAtDistance` をすべて累積長ベースに。位置 `(segmentIdx, fracInSegment)` ⇄ 距離 ⇄ lat/lon を相互変換する `getPositionAt` / `distanceAt` / `locate` / `segmentLength` を追加。`haversineMeters` を export。`distance_m` フィールドを読む経路を terrain から削除。
 - **`web/lib/rider.js`**: 一次 state を位置 `(segIdx, segFrac)` に。`tick(dt)` はセンターラインを「速度×speedMult×dt の実メートル」ぶん歩く（セグメント長を消費しながらポリラインを walk、距離からの逆算ゼロ）。`distanceTraveled` は `terrain.distanceAt(segIdx, segFrac)` の getter（保持しない）。`placeAtDistance` / `placeAtIdx` / `seekToward` はジャンプ系として距離→位置の一発変換を許容。
 - **`web/lib/ride_state.js`**: 後方互換 shim。legacy `_idx`（`distance_m` 比較で更新していた）機構を廃し、`snapshot().idx` / `getCurrentSlope` / `getHeading` を `rider.position`（rider の実 segmentIdx → terrain query）に委譲。
-- **`web/viewer-maplibre.js`**: `totalDist` を `course[last].distance_m` から `terrain.totalDistance` に切替（`__goalTest.seekToNearGoal` が正しいゴール手前を取れる）。minimap の標高プロファイル x 軸を `distance_m` から `terrain.distanceAtIdx(i)` / `terrain.totalDistance` に揃え、自機 dot と同一の haversine 距離スケールに統一。
+- **`web/viewer-map3d.js`**: `totalDist` を `course[last].distance_m` から `terrain.totalDistance` に切替（`__goalTest.seekToNearGoal` が正しいゴール手前を取れる）。minimap の標高プロファイル x 軸を `distance_m` から `terrain.distanceAtIdx(i)` / `terrain.totalDistance` に揃え、自機 dot と同一の haversine 距離スケールに統一。
 - **`web/lib/map3d/index.js`**: 上記の自機 index 食い違い修正。
 
 ## ハマった所

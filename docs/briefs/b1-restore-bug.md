@@ -2,7 +2,7 @@
 
 ## はじめに
 
-fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-maplibre.js`) の
+fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-map3d.js`) の
 「中断したライドを復元する」ダイアログが出るが、「復元」を押しても**何も復元されない**
 (user 報告)。root-cause して直す。実装ではなく、まず再現と原因特定が要る作業。
 
@@ -10,7 +10,7 @@ fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-maplibre.js`) �
 
 - autosave: ride 中 30 秒毎に IndexedDB へ進行状態を保存 (`web/lib/ride_autosave.js` の
   `saveAutosave`)。ride 終了で `clearAutosave`。
-- 起動時 `checkRestoreThenDispatch()` (viewer-maplibre.js ~1572) が `hasPendingAutosave()`
+- 起動時 `checkRestoreThenDispatch()` (viewer-map3d.js ~1572) が `hasPendingAutosave()`
   → あれば `showRestoreDialog(rec)` (~1614)。
 - 「復元」ボタン → `_pendingRestore = rec` をセットし `defaultDispatch()`。
 - `applyPendingRestore()` (~1646) は `loadCourse()` 末尾 (~1805) で呼ばれる。中身:

@@ -4,7 +4,7 @@
 ## これは何をしたいのか
 
 今の fujihc-trainer は富士ヒルクライム専用。コースの座標、地形タイルの範囲、
-中心座標、表示名が viewer-maplibre.js のあちこちにハードコードされている。
+中心座標、表示名が viewer-map3d.js のあちこちにハードコードされている。
 
 やりたいのは「富士ヒル以外のヒルクライムコースも走れるようにする」。
 そのために コース・地形 を差し替え可能にし、HUD / minimap / BLE /
@@ -21,14 +21,14 @@
   アプリ側から地形メッシュ・カメラ・ライダーの 3D 配置を自由に制御できない。
 - 「地点標高を取る API があるから MapLibre で足りる」と初版は判断したが、
   標高が取れるかではなく **3D 描画の自由度** が問題の本質だった。
-- 正しい設計: 描画エンジンは **Three.js**。viewer-maplibre.js を base に保ち、
+- 正しい設計: 描画エンジンは **Three.js**。viewer-map3d.js を base に保ち、
   その中の「地図を描く部分」だけを Three.js 実装に差し替える。
 
 ---
 
 ## 調査で分かったこと（実コードを 2 体の調査エージェントで精読、初版から引き継ぎ）
 
-### viewer-maplibre.js (3129 行) の現状
+### viewer-map3d.js (3129 行) の現状
 - 3000 行超のうち、**地図ライブラリ (MapLibre) に直接触る行は約 100 行**:
   1. `gsidem://` カスタムプロトコル (L104-167) — GSI PNG → Terrarium 変換の登録
   2. `loadCourse` (L1910-2111) 内の addSource / addLayer 群
@@ -50,11 +50,11 @@
 
 ## 設計判断（この brief で決め切る、判断理由を明示）
 
-### 判断 1: 描画エンジンは Three.js。viewer-maplibre.js を base に「地図を描く部分」だけ差し替える
+### 判断 1: 描画エンジンは Three.js。viewer-map3d.js を base に「地図を描く部分」だけ差し替える
 
 - MapLibre は 3D 描画の自由度が足りない (地形メッシュ・カメラ・3D 配置を
   描画エンジン任せにする)。富士ヒルの 3D 体験には Three.js の自由な描画が要る。
-- viewer-maplibre.js の UX 資産 (約 3000 行、大半が地図ライブラリ非依存) は
+- viewer-map3d.js の UX 資産 (約 3000 行、大半が地図ライブラリ非依存) は
   base としてそのまま残す。捨てるのは地図描画の約 100 行だけ。
 - terrain3d.html は「捨てる」のではなく **Phase 3 の下敷き**。その Three.js
   描画コードを、二重実装をやめてモジュールに整え直す。
@@ -78,14 +78,14 @@
 
 ### Phase 1: 固有値の集約（実装中）
 - `web/courses/fujihill.js` に富士ヒル固有値を集約
-- viewer-maplibre.js / terrain_loader.js の `FUJIHILL_*` 参照を定義経由に置換
-- `courseName: 'fujihill'` のべた書き 3 件 (viewer-maplibre.js L970 / L2621 /
+- viewer-map3d.js / terrain_loader.js の `FUJIHILL_*` 参照を定義経由に置換
+- `courseName: 'fujihill'` のべた書き 3 件 (viewer-map3d.js L970 / L2621 /
   L2973、autosave・ride DB 等で使用) も `fujihill.id` 参照に置換する
 - **Three.js ベースでも必要な作業**なので、ワーカー34528 が実装中の成果は活きる
 - 動作不変。テスト同時改修が必須 (下記「テスト破壊」参照)
 
 #### Phase 1 のテスト破壊と同時改修（必読）
-- `web/tests/zoom_bounds.test.js` は viewer-maplibre.js のソーステキストを
+- `web/tests/zoom_bounds.test.js` は viewer-map3d.js のソーステキストを
   `readFileSync` で読み、正規表現で `export const FUJIHILL_DB_BOUNDS` の存在を
   pin している。定数を courses/fujihill.js に移すと describe 5 グループが即死。
   → Phase 1 で同時改修。assertion を「courses/fujihill.js に dbBounds/dbCenter が
@@ -99,7 +99,7 @@
 
 #### Phase 2 で集約する MapLibre 依存（レビュー指摘で範囲を拡大）
 初版は「addSource/addLayer/setData/jumpTo/project の 5 種類・約100行」と
-見積もったが甘かった。viewer-maplibre.js の MapLibre 直接呼び出しは下記の
+見積もったが甘かった。viewer-map3d.js の MapLibre 直接呼び出しは下記の
 箇所に分布しており、そのすべてが地図描画モジュールに集約する対象:
 - `loadCourse` (L1910-2111) の addSource / addLayer 群
 - `tick` (L2427-2638) の setData / jumpTo / project
@@ -123,7 +123,7 @@
 #### 手順
 - 上記を「地図描画モジュール」1 つに集約。viewer 本体は描画モジュールに
   頼む形にする (= 差し替え口)
-- **着手の最初のステップ**: viewer-maplibre.js を `readFileSync` で読む
+- **着手の最初のステップ**: viewer-map3d.js を `readFileSync` で読む
   テストはレビューで約 36 ファイルと判明。Phase 2 着手時にこの全件を洗い出し、
   MapLibre 固有記述 (buildMapStyle / COMMON_LAYERS / map.on 等) を pin して
   いるものを特定し、Phase 2 完了条件のテストリストに組み込む
@@ -168,7 +168,7 @@ Phase 2 で作った map_renderer.js の差し替え口は MapLibre API 寄り�
 - **Phase 3 着手前の確認 (レビュー Axis 4)**: terrain3d.html の
   `fetchLayerCanvas` は地理院タイルを外部 (cyberjapandata.gsi.go.jp) から
   直接取るフォールバック経路を持つ。Three.js 描画モジュールにこの外部
-  フォールバックを持ち込まない。viewer-maplibre.js と同じ「bridge 経由の
+  フォールバックを持ち込まない。viewer-map3d.js と同じ「bridge 経由の
   ローカル DB 一本」経路に統一する (CLAUDE.md の GSI 配慮・外部 fetch ゼロ原則)。
 
 ### Phase 4: 差し替えて富士ヒルで動作確認

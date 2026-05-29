@@ -1,4 +1,4 @@
-// 2026-05-17: viewer-maplibre.js の wsHandlers.state を「物理駆動」に切り替えた件の gate。
+// 2026-05-17: viewer-map3d.js の wsHandlers.state を「物理駆動」に切り替えた件の gate。
 //
 // 旧経路: trainer の speed_mps をそのまま rider に渡し、 EMA (inertiaFactor) でなめらかにするだけ。
 //   → 下りで足を止めても trainer 由来 speed が即落ちる「減速がデカすぎる」 user 不満が残った。
@@ -18,7 +18,7 @@
 //     - viewer ソースが integratePhysics を import し wsHandlers.state で呼ぶこと (= 静的走査)
 //   pin しない:
 //     - wsHandlers.state ハンドラ自体の実走 (dt クランプ / performance.now / opts 組立 /
-//       setSpeed ガード)。 viewer-maplibre.js は maplibre-gl / DOM 依存で単体 import 不可のため、
+//       setSpeed ガード)。 viewer-map3d.js は maplibre-gl / DOM 依存で単体 import 不可のため、
 //       handler 全体の実走 integration test は本ファイルの範囲外 (別 brief 案件)。
 
 import { describe, it, expect } from 'vitest';
@@ -30,7 +30,7 @@ import { createTerrain } from '../lib/terrain.js';
 import { createRider } from '../lib/rider.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const PHYSICS_STATE_PATH = resolve(__dirname, '..', 'lib', 'physics_state.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
@@ -111,7 +111,7 @@ describe('viewer 物理駆動: 慣性 slider は kg、 localStorage キーは新
 
   it('rngInertia slider は 0..3000 kg、 step 50 (= CONTROL_DEFS で定義)', () => {
     // b13-1: slider は control_panel.js が動的生成するため静的 HTML には無い。
-    // viewer-maplibre.js の CONTROL_DEFS に inertiaKg の定義があることを pin する。
+    // viewer-map3d.js の CONTROL_DEFS に inertiaKg の定義があることを pin する。
     expect(viewer).toMatch(/key\s*:\s*['"]inertiaKg['"]/);
     expect(viewer).toMatch(/min\s*:\s*0.*max\s*:\s*3000|max\s*:\s*3000.*min\s*:\s*0/);
     expect(viewer).toMatch(/step\s*:\s*50/);

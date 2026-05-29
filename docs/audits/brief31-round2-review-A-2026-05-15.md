@@ -2,7 +2,7 @@
 
 ## 1. register (責務境界) — **BLOCK**
 
-zoom 範囲の真実源が分裂している。 `tile_constants.py` は fetch / extract 側の SoT を主張 (`GSI_DEM_ZOOMS=[14]`, `OSM_VECTOR_ZOOMS=[13,14,15]`), `viewer-maplibre.js` は描画側で `gsi-terrain.minzoom:8 / maxzoom:14`, `map.minZoom:13` を**独立 hardcode**, `export_static.py` は DB 内容を**そのまま流すだけ** (zoom 範囲を聞く責務なし)。 viewer が「z=8 まで要求していい」と宣言する一方、 fetch / export には z=8-13 が一切無い。 fix: zoom contract を `tile_constants.py` に集約 (例: `GSI_DEM_VIEWER_MIN_ZOOM=14`)、 viewer は build 時 (= index.html や `<script type=module>` 経由 JSON 注入) で同一値を取り、 `gsi-terrain.minzoom = max(GSI_DEM_VIEWER_MIN_ZOOM, ...)` に bind。
+zoom 範囲の真実源が分裂している。 `tile_constants.py` は fetch / extract 側の SoT を主張 (`GSI_DEM_ZOOMS=[14]`, `OSM_VECTOR_ZOOMS=[13,14,15]`), `viewer-map3d.js` は描画側で `gsi-terrain.minzoom:8 / maxzoom:14`, `map.minZoom:13` を**独立 hardcode**, `export_static.py` は DB 内容を**そのまま流すだけ** (zoom 範囲を聞く責務なし)。 viewer が「z=8 まで要求していい」と宣言する一方、 fetch / export には z=8-13 が一切無い。 fix: zoom contract を `tile_constants.py` に集約 (例: `GSI_DEM_VIEWER_MIN_ZOOM=14`)、 viewer は build 時 (= index.html や `<script type=module>` 経由 JSON 注入) で同一値を取り、 `gsi-terrain.minzoom = max(GSI_DEM_VIEWER_MIN_ZOOM, ...)` に bind。
 
 ## 2. 語彙 — **LOAD-BEARING**
 
@@ -14,11 +14,11 @@ zoom 範囲が 5 箇所散在: (a) `tile_constants.GSI_DEM_ZOOMS`, (b) `viewer.g
 
 ## 4. test (grep / runtime gate) — **BLOCK**
 
-`tests/test_export_static.py` は **bytes 不変 + URL grep のみ**、 「viewer が要求する zoom 全部が DB / export に存在する」 contract test がゼロ。 z=8-13 抜けは現行 test を 100% pass で素通り。 pages.yml の件数 guard (`dem_count >= 100`) も「viewer が要求する zoom 範囲を満たしてるか」を聞いておらず、 z=14 だけ 100 タイル並んでれば緑になる。 fix: (1) `tests/test_zoom_contract.py` で `viewer-maplibre.js` を静的 parse して `gsi-terrain.minzoom..maxzoom` を抽出 → `GSI_DEM_ZOOMS` の min/max と一致 assert。 (2) export 後の `_site/static/tiles/gsi_dem/<z>/` dir 存在を viewer 要求 zoom 全部で確認する CI step を pages.yml に追加。 これは「実装したけど結合 test なし」の典型 anti-pattern (= AI 大量生成 test の slip)。
+`tests/test_export_static.py` は **bytes 不変 + URL grep のみ**、 「viewer が要求する zoom 全部が DB / export に存在する」 contract test がゼロ。 z=8-13 抜けは現行 test を 100% pass で素通り。 pages.yml の件数 guard (`dem_count >= 100`) も「viewer が要求する zoom 範囲を満たしてるか」を聞いておらず、 z=14 だけ 100 タイル並んでれば緑になる。 fix: (1) `tests/test_zoom_contract.py` で `viewer-map3d.js` を静的 parse して `gsi-terrain.minzoom..maxzoom` を抽出 → `GSI_DEM_ZOOMS` の min/max と一致 assert。 (2) export 後の `_site/static/tiles/gsi_dem/<z>/` dir 存在を viewer 要求 zoom 全部で確認する CI step を pages.yml に追加。 これは「実装したけど結合 test なし」の典型 anti-pattern (= AI 大量生成 test の slip)。
 
 ## 5. 設計境界 (6 秒 fallback) — **LOAD-BEARING**
 
-`viewer-maplibre.js:800` の `setTimeout(() => { ... mapIdle = true; tryStart(); }, 6000)` は `initMapMode` 内 + `rideState` 準備済が条件。 画面で消えないのは fallback が走ってないのではなく、 **`loader.style.display='none'` が `tryStart` 内でのみ実行**で、 `rideReady` が false のまま (= `wsHandlers` / `rideState` 初期化が 404 連発で詰まる) なら `tryStart` 内の early return で loader が永遠に消えない。 fix: fallback timer を「loader hide」と「ride start」で分離、 6 秒経過したら **rideReady 無関係に loader だけは hide** + 警告 banner 表示。
+`viewer-map3d.js:800` の `setTimeout(() => { ... mapIdle = true; tryStart(); }, 6000)` は `initMapMode` 内 + `rideState` 準備済が条件。 画面で消えないのは fallback が走ってないのではなく、 **`loader.style.display='none'` が `tryStart` 内でのみ実行**で、 `rideReady` が false のまま (= `wsHandlers` / `rideState` 初期化が 404 連発で詰まる) なら `tryStart` 内の early return で loader が永遠に消えない。 fix: fallback timer を「loader hide」と「ride start」で分離、 6 秒経過したら **rideReady 無関係に loader だけは hide** + 警告 banner 表示。
 
 ## 6. マイグレ可逆 — **MINOR**
 

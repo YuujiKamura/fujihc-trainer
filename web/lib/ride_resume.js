@@ -1,7 +1,7 @@
 // model: 過去 ride 1 件を選んで「続きから」 走るための復元処理。 純粋関数寄り、
 // DOM / window / performance.now を直接参照せず、 deps と nowMs を引数で受ける.
 // history-overlay の各行に置かれる「続きから」 button click から (= Controller =
-// viewer-maplibre.js) 呼ばれ、 rider 位置と物理速度を旧 ride の末尾に合わせて、
+// viewer-map3d.js) 呼ばれ、 rider 位置と物理速度を旧 ride の末尾に合わせて、
 // 新規 ride として開始する.
 //
 // 旧 ride 自体は履歴に残る (= 削除しない)、 続きから走った分は新 ride として別行に保存される.

@@ -1,4 +1,4 @@
-// brief 32: viewer-maplibre.js の 5-way 起動分岐 (= MAP / TEST / BLE / default).
+// brief 32: viewer-map3d.js の 5-way 起動分岐 (= MAP / TEST / BLE / default).
 // maplibre import なしで読めるよう source-grep で検証 (= dbinit_overlay.test.js と同 pattern).
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -6,7 +6,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 
 describe('brief 32: viewer 起動分岐 5-way 化', () => {

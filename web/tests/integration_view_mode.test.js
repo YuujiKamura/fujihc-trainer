@@ -25,7 +25,7 @@ import { createRideState } from '../lib/ride_state.js';
 import { withCumulativeDistance } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const html = readFileSync(INDEX_PATH, 'utf8');
@@ -174,7 +174,7 @@ describe('b46 integration: HTML DOM 構造', () => {
   });
 });
 
-describe('b46 integration: viewer-maplibre.js の source 構造', () => {
+describe('b46 integration: viewer-map3d.js の source 構造', () => {
   it('viewer は course_sections.js を import している (= splitCourseIntoSections / formatSectionLabel)', () => {
     expect(viewer).toMatch(/from\s+['"]\.\/lib\/course_sections\.js['"]/);
     expect(viewer).toMatch(/splitCourseIntoSections/);

@@ -50,7 +50,7 @@ zoomLevels は iterable を受けるため `Array.from` で list 化 (Python 版
 ## peer との衝突
 
 - 触った file: `web/lib/tile_coverage.js`, `web/tests/tile_coverage.test.js` のみ
-- peer A (viewer-maplibre.js) / peer C (init_tile_db.py) と file 衝突なし
+- peer A (viewer-map3d.js) / peer C (init_tile_db.py) と file 衝突なし
 
 ## 完了条件チェック
 

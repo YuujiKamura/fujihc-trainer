@@ -42,7 +42,7 @@ Fix方向性: brief 31 と同じ「behavioral test + grep gate」の 2 層、 we
 
 ## 軸 5: 設計境界 (querystring 直叩きの優先順位) — **BLOCK**
 
-`viewer-maplibre.js:748-751` の現状分岐は `MAP_MODE → TEST_MODE → BLE_MODE → default`。phase-design は「`?map=1` は開発者本人 demo 用、 普通の訪問者は welcome 経由」と書くが、 **「URL 直叩きの扱い」が決まってない**。3 つの選択肢:
+`viewer-map3d.js:748-751` の現状分岐は `MAP_MODE → TEST_MODE → BLE_MODE → default`。phase-design は「`?map=1` は開発者本人 demo 用、 普通の訪問者は welcome 経由」と書くが、 **「URL 直叩きの扱い」が決まってない**。3 つの選択肢:
 
 - (a) `?map=1` は welcome を skip (= 開発者 escape hatch、 README に明記)
 - (b) `?map=1` でも welcome を必ず通す (= harm 軽減最大、 開発者は毎回 click)
@@ -56,7 +56,7 @@ Fix方向性: **(c) `?welcome=skip` 明示 opt-out + (a) は `?map=1` も welcom
 
 ## 軸 6: マイグレ可逆 (commit α/β/γ との両立) — **LOAD-BEARING**
 
-`viewer-maplibre.js:716-737` の `bootCheckSetupStatus` は brief 31 commit β で `bootEnv() → env.mode === 'static' → bootMap(env) + initMapMode()` の structural 経路。welcome 挿入時は **env.mode === 'static' 分岐の中で `initMapMode()` 直前に `showWelcome()` を入れる** のが最小 diff、 commit β の race door close (= immutable ENV) は崩さない。
+`viewer-map3d.js:716-737` の `bootCheckSetupStatus` は brief 31 commit β で `bootEnv() → env.mode === 'static' → bootMap(env) + initMapMode()` の structural 経路。welcome 挿入時は **env.mode === 'static' 分岐の中で `initMapMode()` 直前に `showWelcome()` を入れる** のが最小 diff、 commit β の race door close (= immutable ENV) は崩さない。
 
 ただし `static_mode.test.js:93-104` の grep gate 「`if (env.mode === 'static')` branch 内で `showDbinit` を呼ばない + `bootMap(env)` + `initMapMode()` を呼ぶ」が welcome 挿入で fail する。test を `welcome → user click → initMapMode` の経路に更新する diff が α/β/γ と同じ class の修正。
 
@@ -82,7 +82,7 @@ XSS 観点で welcome 経由が増えること自体のリスクは低い (= 新
 - **C-4 IndexedDB 書込タイミング**: `ride_db.js:62 addRide` を `postride_buttons.js:117-134` の `btnSaveHistory` click で発火、 opt-in flag は `localStorage('fujihc.history.optin')` で持つのが最小衝突
 - **C-5 帰属表記**: `index.html:42` で MapLibre attribution 自動描画 (= 「国土地理院 標高タイル | © OpenStreetMap contributors | MapLibre」相当)、 ただし **「公式 fujihc とは無関係」「Strava ToS 注意書き」は未表示** — Phase C の要件「帰属」は満たすが「免責」は不足、 welcome 内に追記必須
 - **工数見積もり**: 「中 (半日)」は楽観的、 既存 402 件 test の 3-5 件更新 + welcome 5 件追加 + grep gate 2 箇所更新で **実 1.5 日**が現実、 6 commit 分割なら spread 可
-- **公開不可判断**: 妥当。`?map=1` が default ではないが `bootCheckSetupStatus` の static mode 経路が `initMapMode()` を自動呼出 (= `viewer-maplibre.js:721-722`)、 訪問者は白紙どころか「勝手に走り出す ride」を見る。harm 軽減ではなく harm 増幅、 push 認可禁止は正しい
+- **公開不可判断**: 妥当。`?map=1` が default ではないが `bootCheckSetupStatus` の static mode 経路が `initMapMode()` を自動呼出 (= `viewer-map3d.js:721-722`)、 訪問者は白紙どころか「勝手に走り出す ride」を見る。harm 軽減ではなく harm 増幅、 push 認可禁止は正しい
 
 ---
 

@@ -1,4 +1,4 @@
-// b125a: 物理積分 state 4 module-global が viewer-maplibre.js から撤去されたことを
+// b125a: 物理積分 state 4 module-global が viewer-map3d.js から撤去されたことを
 // source-grep negative gate で pin する。 旧 4 識別子 (physicsSpeedMps / lastPhysicsStateT /
 // displaySpeedMps / prevPhysicsSpeedMps) と 20km/h reset の生代入が viewer に 1 件も残らず、
 // 物理積分 state は physics_state.js の closure 経由でのみ触られることを物理保証する。
@@ -10,21 +10,21 @@ import { describe, it, expect } from 'vitest';
 // ESM (package.json type:module) では __dirname が無いため明示定義 (= 既存 grep-gate test と同型)。
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-describe('b125a: 物理積分 state 4 module-global が viewer-maplibre.js から撤去されている', () => {
-  const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+describe('b125a: 物理積分 state 4 module-global が viewer-map3d.js から撤去されている', () => {
+  const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
   it.each([
     'physicsSpeedMps',
     'lastPhysicsStateT',
     'displaySpeedMps',
     'prevPhysicsSpeedMps',
-  ])('module-global %s が viewer-maplibre.js に存在しない', (name) => {
+  ])('module-global %s が viewer-map3d.js に存在しない', (name) => {
     // \b 境界で false-positive 防止 (= 例: physicsSpeedMpsX 等の別 identifier はヒットさせない)
     const pattern = new RegExp(`\\b${name}\\b`);
     expect(src).not.toMatch(pattern);
   });
 
-  it('viewer-maplibre.js が physics_state.js を import している', () => {
+  it('viewer-map3d.js が physics_state.js を import している', () => {
     expect(src).toMatch(/from\s+['"]\.\/lib\/physics_state\.js['"]/);
     expect(src).toMatch(/createPhysicsState/);
   });

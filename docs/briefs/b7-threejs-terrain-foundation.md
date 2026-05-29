@@ -47,7 +47,7 @@ fujihc-trainer の viewer は現在 MapLibre GL JS で動いている。MapLibre
 ## やらないこと (この基礎ブリーフの対象外 ── 後続の石)
 
 rider、自転車モデル、物理、ride 駆動、HUD、ミニマップ、コースの道路ライン、
-本番 viewer (index.html / viewer-maplibre.js) への置き換え。基礎 (地形) が立って
+本番 viewer (index.html / viewer-map3d.js) への置き換え。基礎 (地形) が立って
 実画面で確認できてから、次の石を別ブリーフで積む。一度に全部やろうとするな。
 
 ## なぜスタンドアロンか
@@ -66,7 +66,7 @@ rider、自転車モデル、物理、ride 駆動、HUD、ミニマップ、コ�
 
 ## 制約
 
-- MapLibre / viewer-maplibre.js / index.html には触らない。既存 viewer を壊すな。
+- MapLibre / viewer-map3d.js / index.html には触らない。既存 viewer を壊すな。
 - push 禁止 (commit は OK)。silent execution。
 - 調査メモは repo 外 (`~/.agents/scratch/fujihc-trainer-project/`) へ。
 

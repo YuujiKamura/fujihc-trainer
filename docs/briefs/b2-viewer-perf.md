@@ -2,7 +2,7 @@
 
 ## はじめに
 
-fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-maplibre.js` ほか) の
+fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-map3d.js` ほか) の
 描画が低 VRAM GPU (AMD Radeon RX 6400) で重い。`chrome://gpu` で WebGL は
 "Hardware accelerated" 確認済 ── ドライバ問題ではなく**コードの per-frame コスト**が
 原因。性能監査 (3 agent 並列) の確定結果を直す。
@@ -14,7 +14,7 @@ fujihc-trainer viewer (`C:\Users\yuuji\fujihc-trainer\web\viewer-maplibre.js` �
 ## 直す対象 (= 性能監査の確定結果、 severity 順)
 
 ### Critical-1: rider GeoJSON を毎フレーム再構築 + GPU 再アップロード
-`viewer-maplibre.js` の `tick()` (rAF ループ、60fps) が毎フレーム
+`viewer-map3d.js` の `tick()` (rAF ループ、60fps) が毎フレーム
 `buildRiderFeatures(...)` で新規 FeatureCollection を生成し `ridSrc.setData()` で
 MapLibre に再アップロード。`setData` は source 全体を再パース・再 tessellate・再 buffer
 する。低 VRAM GPU で持続的 stall。
@@ -29,7 +29,7 @@ MapLibre に再アップロード。`setData` は source 全体を再パース�
 保存できる設計、 DEM 経路が使っていないだけ。
 
 ### High-3: 帯ポリゴン (1968 点) を zoom 変化のたびに全再生成
-`viewer-maplibre.js` の `_rebuildRoute` が `map.on('zoom')` で
+`viewer-map3d.js` の `_rebuildRoute` が `map.on('zoom')` で
 `buildGradeColoredRoadPolygons(course, …)` を再実行 (1968 セグメント全展開 + 全頂点
 再アップロード)。0.25 step throttle はあるが zoom 操作中は連発、1 回 31〜63ms。
 → 直す: meter 幅の zoom 連動をやめ起動時 1 回固定幅で生成、太さ可変が要るなら

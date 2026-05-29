@@ -23,7 +23,7 @@ Round 2 で 3 点追加指摘:
 
 ## 切り出す pure function (4 lib)
 
-`web/viewer-maplibre.js` から下記を `web/lib/` 配下に分離 + export。 viewer 本体の挙動は不変:
+`web/viewer-map3d.js` から下記を `web/lib/` 配下に分離 + export。 viewer 本体の挙動は不変:
 
 ### 1. `web/lib/tile_math.js`
 - `lonToTileX(lon, zoom) -> number`
@@ -47,7 +47,7 @@ Round 2 で 3 点追加指摘:
 - `computeTravelHeading(course, idx, lookAhead=5) -> number` ── degrees, 0=北 90=東
 - `clampIndex(idx, length) -> number` ── 境界外を clamp
 
-各ファイルは `export function ...` で外に出し、 viewer-maplibre.js は `import {...} from './lib/...'` で読む。
+各ファイルは `export function ...` で外に出し、 viewer-map3d.js は `import {...} from './lib/...'` で読む。
 
 ## test 件数の根拠 (4 module × 境界 = 26 件)
 
@@ -144,7 +144,7 @@ JS 側 `tile_coverage.test.js` がこの fixture を読んで同値 assertion。
 
 1. `package.json` + `vitest.config.js` + `.gitignore` に `node_modules/` 追加
 2. `web/lib/tile_math.js` / `terrarium.js` / `tile_coverage.js` / `heading.js` の 4 ファイル landed、 export 済
-3. `web/viewer-maplibre.js` が import 経由で 4 ファイルを使う、 既存挙動を変えない
+3. `web/viewer-map3d.js` が import 経由で 4 ファイルを使う、 既存挙動を変えない
 4. `<script type="module">` 対応のため `web/index.html` 修正 (= brief 12 で rename 後の index.html)
 5. `web/tests/` に 4 test ファイル、 計 26 件、 全 pass
 6. `web/tests/fixtures/py_coverage_z14.json` が Python test (brief 14 の 1 件として組み込み) で生成、 JS 側がこれを読んで同値 assertion
@@ -156,11 +156,11 @@ JS 側 `tile_coverage.test.js` がこの fixture を読んで同値 assertion。
 
 ## ハマる罠
 
-- viewer-maplibre.js を `<script>` 直読みから ES modules import に切り替える時、 `type="module"` が必須、 同時に `index.html` 修正
+- viewer-map3d.js を `<script>` 直読みから ES modules import に切り替える時、 `type="module"` が必須、 同時に `index.html` 修正
 - vitest は Node 環境で走るが、 GSI dem PNG decode に Canvas 系が要る場合は別途、 本 brief は Uint8ClampedArray API で回避
 - Python と JS の浮動小数点演算で微小差が出る、 cross-language test は **タイル座標 set (整数)** で比較するので問題なし、 ただし `computeBounds` の float 値は誤差許容 (`abs(diff) < 1e-9`)
 - vitest の `import.meta.url` や `dirname` 系は Node 専用、 JS lib コードは Node 互換に保つ
-- viewer-maplibre.js から関数を **削除して import で置換** する時に typo すると挙動が変わる、 必ず実走で確認
+- viewer-map3d.js から関数を **削除して import で置換** する時に typo すると挙動が変わる、 必ず実走で確認
 
 ## まとめ
 

@@ -11,7 +11,7 @@ viewer の画面から国土地理院 (GSI) の地形データ出典クレジッ
 ## 現状（調査の手がかり）
 
 - viewer には出典表記用の `#attrib` 要素があり、`© 国土地理院タイル` のテキストと `https://maps.gsi.go.jp/development/ichiran.html`（地理院タイル一覧）へのリンクを表示する仕様だった。
-- それが今、画面に出ていない。最近の改修（OSM の vector 化、terrain3d 統合、viewer-maplibre.js 改修）のどこかで、CSS で隠れた / DOM から要素が消えた / 他要素に z-index で覆われた / 生成経路が壊れた、のいずれか。
+- それが今、画面に出ていない。最近の改修（OSM の vector 化、terrain3d 統合、viewer-map3d.js 改修）のどこかで、CSS で隠れた / DOM から要素が消えた / 他要素に z-index で覆われた / 生成経路が壊れた、のいずれか。
 - viewer は GSI タイルと OSM の両方を使う。GSI（© 国土地理院）と OSM（© OpenStreetMap contributors）の両方の出典が要る。OSM 側の表記の有無も併せて確認しろ。
 
 ## やること
@@ -21,7 +21,7 @@ viewer の画面から国土地理院 (GSI) の地形データ出典クレジッ
 3. 出典表記が DOM に存在し可視であることを固定するテストを足す（既存のテスト機構を使え）。`display:none` にされた / 要素が消えた / 他要素に覆われた、を捕まえられること。
 4. 真正性確認（必須）: 出典要素を 1 箇所わざと壊す（隠す）と、足したテストが落ちることを手元で 1 回試せ（確認したら戻す）。落ちないなら真正でない、書き直し。
 
-既存の関連テスト・コード（`web/viewer-maplibre.js` の attribution 生成箇所、index 系 HTML、attribution 関連の既存テストがあれば）をまず読め。「既にある物を直す/強める」が優先、新規ファイルは必要なときだけ。
+既存の関連テスト・コード（`web/viewer-map3d.js` の attribution 生成箇所、index 系 HTML、attribution 関連の既存テストがあれば）をまず読め。「既にある物を直す/強める」が優先、新規ファイルは必要なときだけ。
 
 ## 検証
 

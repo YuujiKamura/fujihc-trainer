@@ -1,7 +1,7 @@
 // save_summary: ride 終了時に「実際に保存される値」を trkpts + course から導出する pure module.
 // 2 時間走った ride が壊れて保存される事故 (= 2026-05-15 起点固定 bug) の事後検出層。
 // postride-overlay の冒頭で summary を表示、 異常時は abort confirm。
-// b129: 獲得標高 calcElevationGainM を追加 (= viewer-maplibre.js の buildRideSummary が呼ぶ).
+// b129: 獲得標高 calcElevationGainM を追加 (= viewer-map3d.js の buildRideSummary が呼ぶ).
 
 /**
  * trkpts から獲得標高 (m) を計算する。 下りは 0 として扱う、 平地も 0。

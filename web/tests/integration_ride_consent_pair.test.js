@@ -2,7 +2,7 @@
 // **pair 完了前は btnRideStart.disabled === true、 pair 完了後 false** (= 過去訂正
 // 2026-05-14T12:19、 「ハンドシェイクが繋がる前でも走り出せる仕様になってるのが間違い」反映).
 //
-// viewer-maplibre.js の wsHandlers.connect_status と btnRideStart の click handler を
+// viewer-map3d.js の wsHandlers.connect_status と btnRideStart の click handler を
 // shim で再現、 「consent + pair の両方が揃わないと ride が始まらない」を end-to-end pin。
 
 import { describe, it, expect } from 'vitest';
@@ -14,7 +14,7 @@ import {
 } from '../lib/consent.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const html = readFileSync(INDEX_PATH, 'utf8');
@@ -28,7 +28,7 @@ function memStorage() {
   };
 }
 
-// viewer-maplibre.js の wsHandlers.connect_status と btnRideStart click handler を再現する shim.
+// viewer-map3d.js の wsHandlers.connect_status と btnRideStart click handler を再現する shim.
 // btnRideStart.disabled は HTML 初期で true (= <button id="btnRideStart" disabled>)、
 // connect_status: 'connected' (= ハンドシェイク完了) で false に遷移。
 // click handler: consent 未取得なら showConsentOverlay、 disabled なら何もしない。

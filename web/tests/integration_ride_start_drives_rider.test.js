@@ -8,14 +8,14 @@
 //   fake trainer (createFakeStateGenerator) は ride が active の時だけ power を出す設計なので、
 //   rider が永久に inactive → power 0 → 速度 0 → 距離が進まない、 という症状になっていた。
 //
-// fix: viewer-maplibre.js に _pendingRideStart 保留フラグを導入。 rideState 未生成時の
+// fix: viewer-map3d.js に _pendingRideStart 保留フラグを導入。 rideState 未生成時の
 //   開始要求をフラグに保留し、 loadCourse が rideState を生成した直後に消費して start する。
 //
 // このファイルが pin するもの:
 //   - createFakeStateGenerator: active かつ非 paused の時だけ power 150 を出す
 //   - createRideState.start() が rider を active/非 paused にする
 //   - 「ride 開始 → active → fake power → integratePhysics → rider.tick」 で距離が増える全鎖
-//   - _pendingRideStart 機構が viewer-maplibre.js の実 source に landing 済 (= source 走査)
+//   - _pendingRideStart 機構が viewer-map3d.js の実 source に landing 済 (= source 走査)
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -129,16 +129,16 @@ describe('_pendingRideStart 機構 — ride 開始が rideState 生成前に要�
     expect(createFakeStateGenerator(() => rideState.snapshot())().power_w).toBe(150);
   });
 
-  // viewer-maplibre.js は maplibre-gl / DOM 依存で単体 import 不可のため、
+  // viewer-map3d.js は maplibre-gl / DOM 依存で単体 import 不可のため、
   // fix が実 source に landing 済かを source 走査 gate で物理確認する。
   const viewer = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'viewer-maplibre.js'), 'utf8');
+    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'viewer-map3d.js'), 'utf8');
 
-  it('viewer-maplibre.js: rideState 未生成時の開始要求が _pendingRideStart を立てる', () => {
+  it('viewer-map3d.js: rideState 未生成時の開始要求が _pendingRideStart を立てる', () => {
     expect(viewer).toMatch(/else\s+_pendingRideStart\s*=\s*true/);
   });
 
-  it('viewer-maplibre.js: loadCourse が applyPendingRestore の後で _pendingRideStart を消費する', () => {
+  it('viewer-map3d.js: loadCourse が applyPendingRestore の後で _pendingRideStart を消費する', () => {
     const idxRestore = viewer.indexOf('applyPendingRestore();');
     const idxConsume = viewer.indexOf('if (_pendingRideStart)');
     expect(idxRestore).toBeGreaterThan(-1);

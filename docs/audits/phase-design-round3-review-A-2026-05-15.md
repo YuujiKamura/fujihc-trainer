@@ -44,7 +44,7 @@ Strava 文言 hardcode (L74-81) は round 2 A-7 を反映、 商標混同対策�
 ## 軸 6: マイグレ可逆 — **LOAD-BEARING L3**
 
 6 commit 順序 (ε-1 DOM → ε-2 guard → ε-3 consent → ε-4 Strava → ε-5 削除 → ε-6 帰属) の中途停止時の public 公開可否を v2 が明示していない。 想定 case:
-- ε-1 のみ landed: intro-overlay DOM が HTML にあるが viewer-maplibre.js の起動分岐が未改修、 訪問者は **intro なしで ride 自動 start** に到達 (= 現状と同等の harm)、 **公開不可**
+- ε-1 のみ landed: intro-overlay DOM が HTML にあるが viewer-map3d.js の起動分岐が未改修、 訪問者は **intro なしで ride 自動 start** に到達 (= 現状と同等の harm)、 **公開不可**
 - ε-2 まで landed: introConsented guard で intro 通過必須、 ride 自動 start は止まる、 **公開 OK の最低線**
 - ε-3 まで landed: consent も取れる、 IndexedDB / Strava opt-in 機能、 **公開 OK**
 - ε-4 まで landed: Strava 文言 hardcode、 **公開 OK + 商標混同低減**
@@ -60,7 +60,7 @@ v2 L181-185 で「ε-1〜ε-4 で最低線」は書いてあるが、 **「ε-1 
 
 (c) **階層 4b (悪意訪問者) への対策が ε-1〜ε-6 のどこに分散されているか不明 + ε-5 が攻撃面を新規開設**: 訪問者 X が同 browser を訪問者 Y も使う共用 PC (= ネカフェ / 図書館) で、 X が ε-5 (clearAllLocalData) ボタンを押すと Y の同意記録 + IndexedDB ride 履歴も削除される (= 同一 origin の localStorage / IndexedDB は user 単位ではなく browser 単位)。 これは「悪意訪問者」というより「**訪問者間 data 削除攻撃**」、 ただし harm 主体が「同 browser を共有する別 user」のため階層 4b 範囲外、 設計上の harm として階層を増やすほどではない。 fix: ε-5 で「削除は確認 dialog 必須 (= confirm-overlay 流用 OK)、 ボタン 1 click で flush しない」を明示、 既存 `#confirm-overlay` (z=1700) を再利用すれば衝突無し。 **LOAD-BEARING**、 brief 化で吸収可。
 
-(d) **XSS 経由で intro skip される経路**: CSP `script-src 'self'` (`index.html:7`) で外部 script 注入は物理 block、 inline event handler も `unsafe-inline` 無しで block (= brief 33 §11.5 grep gate で pin 済)、 ただし viewer-maplibre.js 内に XSS 経由で `localStorage.setItem('fujihc.consent.v1', {hash: CORRECT, accepted: ts})` を inject できれば intro skip 可能。 これは XSS が成立した時点で他の harm (= Strava token 漏洩) と同等、 intro skip は副次的、 設計図で明示する harm vector ではない。 CONVERGED 寄り。
+(d) **XSS 経由で intro skip される経路**: CSP `script-src 'self'` (`index.html:7`) で外部 script 注入は物理 block、 inline event handler も `unsafe-inline` 無しで block (= brief 33 §11.5 grep gate で pin 済)、 ただし viewer-map3d.js 内に XSS 経由で `localStorage.setItem('fujihc.consent.v1', {hash: CORRECT, accepted: ts})` を inject できれば intro skip 可能。 これは XSS が成立した時点で他の harm (= Strava token 漏洩) と同等、 intro skip は副次的、 設計図で明示する harm vector ではない。 CONVERGED 寄り。
 
 ---
 
@@ -70,7 +70,7 @@ v2 L181-185 で「ε-1〜ε-4 で最低線」は書いてあるが、 **「ε-1 
 
 - HTML: `#consent-overlay` div + 2 checkbox + ボタン 2 個 + status 行 ≈ **20 行**、 既存 `#setup-overlay` パターン踏襲 (`index.html:290-348` の構造) で書ける、 **15 分**
 - CSS: z=1460 + visible class + panel 内 layout ≈ **30 行**、 既存 setup-panel スタイルを class 共有で再利用、 **20 分**
-- JS: `web/lib/consent.js` 新規 (getIntroConsent / setIntroConsent / getRideConsent / setRideConsent + hash 比較) ≈ **80 行**、 viewer-maplibre.js から `bindPostRideButtons` / `rideState.start` 前の guard 呼出 ≈ **15 行追加**、 **60 分**
+- JS: `web/lib/consent.js` 新規 (getIntroConsent / setIntroConsent / getRideConsent / setRideConsent + hash 比較) ≈ **80 行**、 viewer-map3d.js から `bindPostRideButtons` / `rideState.start` 前の guard 呼出 ≈ **15 行追加**、 **60 分**
 - test: `consent.test.js` 新規 (= hash 一致/不一致、 default OFF、 opt-in 後 IndexedDB 書込可) ≈ **100 行**、 既存 `strava_oauth.test.js` のような localStorage mock パターン、 **60 分**
 - 既存 test 更新: `viewer_url_audit.test.js:260` 周辺の grep gate を introConsented block 内 pin に書換 ≈ **30 行**、 **30 分**
 

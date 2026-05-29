@@ -2,7 +2,7 @@
 // **後方互換 shim**.
 //
 // 経緯:
-// - brief 19 で viewer-maplibre.js から curIdx/curDist/paused/active を吸い出して
+// - brief 19 で viewer-map3d.js から curIdx/curDist/paused/active を吸い出して
 //   pure state machine 化 (= createRideState({course})) した. brief 33 で trkpts も移送.
 // - brief 35 で「Terrain (= 客観地形/経路) ⊃ Rider (= 主体)」 という上位モデル分離。
 // - rider-position-model で rider の位置を (segIdx, segFrac) 保持・距離を haversine
@@ -11,7 +11,7 @@
 //   slope / heading は rider.position (= rider の実 segmentIdx から terrain query) に
 //   委譲する形へ作り直した.
 //
-// 旧 caller (= viewer-maplibre.js, ride_state*.test.js) を破壊しないため、 旧
+// 旧 caller (= viewer-map3d.js, ride_state*.test.js) を破壊しないため、 旧
 // createRideState の API surface (advance / snapshot / getTrkpts 等) は維持する.
 //
 // 新規 caller は本 module ではなく Terrain + Rider を直接使え:

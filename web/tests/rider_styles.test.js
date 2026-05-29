@@ -7,7 +7,7 @@
 //   - 三角形の先端が heading 方向を向く
 //   - 全 feature が地面から少し浮く (base > 0)
 //   - ring 閉合 / 座標有限
-//   - viewer-maplibre.js が rider_styles.js を import し、 旧インライン実装が残らないこと
+//   - viewer-map3d.js が rider_styles.js を import し、 旧インライン実装が残らないこと
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -87,7 +87,7 @@ describe('buildRiderFeatures — 三角形の先端が heading 方向を向く',
 
 describe('地図描画モジュールへの landing (= source 走査、 二重実装防止)', () => {
   const __d = dirname(fileURLToPath(import.meta.url));
-  const viewer = readFileSync(resolve(__d, '..', 'viewer-maplibre.js'), 'utf8');
+  const viewer = readFileSync(resolve(__d, '..', 'viewer-map3d.js'), 'utf8');
   // b12 Phase 2.5: ライダー geometry の生成 (buildRiderFeatures) は地図描画モジュール
   // (map_renderer.js) の updateRider が持つ。 viewer 本体は描画 geometry を組まない。
   const renderer = readFileSync(resolve(__d, '..', 'lib', 'map_renderer.js'), 'utf8');

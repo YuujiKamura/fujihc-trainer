@@ -1,6 +1,6 @@
-// b62: viewer-maplibre.js の CONTROL_DEFS に足した大気散乱スライダー 5 本の定義を pin する。
+// b62: viewer-map3d.js の CONTROL_DEFS に足した大気散乱スライダー 5 本の定義を pin する。
 //
-// viewer-maplibre.js は maplibre-gl / DOM 依存で node から import 不可なので、
+// viewer-map3d.js は maplibre-gl / DOM 依存で node から import 不可なので、
 // viewer_physics_drive.test.js / segment_labels_viewer.test.js と同型に **ソースを
 // 文字列 grep** して各 def の数値フィールドを取り出す。control_panel.js の
 // isValidControlDef が課す不変条件 (min<max / step>0 / apply 関数あり) と、
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 import { ATMO_BETA_MIE } from '../lib/map3d/atmosphere3d.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const viewer = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const viewer = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 
 // CONTROL_DEFS 内の 1 行 def を key で取り出す。def は 1 行 object literal。
 function defLine(key) {

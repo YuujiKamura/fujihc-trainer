@@ -1,9 +1,9 @@
 // rider マーカーの GeoJSON 生成。
 //
-// viewer-maplibre.js の rider source (= fill-extrusion レイヤー rider-body) に流す GeoJSON を
+// viewer-map3d.js の rider source (= fill-extrusion レイヤー rider-body) に流す GeoJSON を
 // 作る。 旧来は viewer 内のローカル関数が「自転車シルエット」(暗色車体 + cyan rider の押し出し
 // 立体) を返していたが、 fill-extrusion では自転車らしさを表現できず、 上から見たリング +
-// 進行方向の三角に置き換えた。 純粋関数なので単体テスト可能 (viewer-maplibre.js は
+// 進行方向の三角に置き換えた。 純粋関数なので単体テスト可能 (viewer-map3d.js は
 // maplibre-gl / DOM 依存で単体 import 不可)。
 //
 // 形: 上から見た平面マーカー ── 外円 + 内円の穴を持つ annulus polygon で細いリング、

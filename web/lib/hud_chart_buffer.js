@@ -115,7 +115,7 @@ export function maxInRange(samples, field, tStart, tEnd) {
   return max;
 }
 
-// viewer-maplibre.js の maybePushAndRenderChart() の push 判定を pure 化。
+// viewer-map3d.js の maybePushAndRenderChart() の push 判定を pure 化。
 // 入力: { paused, elapsedSec, lastPushSec, snapshot: {speed, power, hr, cadence} }
 // 戻り: { push: boolean, sample: {t,speed,power,hr,cadence}|null, nextLastPushSec: number }
 //

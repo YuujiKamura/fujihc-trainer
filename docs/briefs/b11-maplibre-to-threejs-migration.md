@@ -22,12 +22,12 @@ fujihc-trainer の本番 viewer を、現行の MapLibre GL JS から Three.js �
 
 ## 現状アーキテクチャ (b10 結合度調査の確定版)
 
-viewer-maplibre.js (2946 行) は配線役 ── lib/ の約 40 モジュールを import して
+viewer-map3d.js (2946 行) は配線役 ── lib/ の約 40 モジュールを import して
 MapLibre につないでいる。b10 で全モジュールを grep 調査した結果、**lib/ には
 MapLibre API の実呼び出しが 1 つも無い** (ヒットはコメントのみ)。ロジックの本体は
 既にクリーンに分離済みで、これは移行に大きく有利。
 
-MapLibre への結合は viewer-maplibre.js 本体の 4 箇所に局所化している:
+MapLibre への結合は viewer-map3d.js 本体の 4 箇所に局所化している:
 地図初期化と style/source/protocol、route と rider の addLayer/addSource/setData、
 カメラ適用の map.jumpTo、hillshade の setPaintProperty。
 
@@ -49,7 +49,7 @@ MapLibre への結合は viewer-maplibre.js 本体の 4 箇所に局所化して
   road_polygon (道路描画 ── b10 でリボン mesh として buildCourseRibbon を実装済、
   着手済)、rider_styles (rider 描画 ── 3D 自転車 mesh に置換)、pmtiles_loader と
   frame_diff (どちらも MapLibre 専用、Three.js 版では不要)。
-- **抽出** ── viewer-maplibre.js 本体に inline で、独立モジュールが存在しない。
+- **抽出** ── viewer-map3d.js 本体に inline で、独立モジュールが存在しない。
   Three.js 版で使うには先にモジュールへ括り出す。HUD ── 時間/距離/標高/勾配/速度/
   パワー/ケイデンス/心拍 の表示更新が viewer 本体のフレーム処理内に setText で
   80 箇所以上べた書き、専用モジュール無し。BLE ペアリングの overlay 表示更新も
@@ -78,7 +78,7 @@ MapLibre への結合は viewer-maplibre.js 本体の 4 箇所に局所化して
 新しい配線役 (viewer-three.html / viewer-three.js) を作り、再利用群を import、
 置換群を Three.js 実装に差し替える。石を 1 つずつ、各石を実画面で確認してから次へ。
 
-- **Phase 0 ── 下ごしらえ (HUD 抽出)**: viewer-maplibre.js 本体に inline な HUD を
+- **Phase 0 ── 下ごしらえ (HUD 抽出)**: viewer-map3d.js 本体に inline な HUD を
   hud.js モジュールへ括り出す。MapLibre 非依存なので抽出リスクは無い。既存の
   MapLibre viewer をその hud.js を使う形に変え、テスト緑を確認。これで Three.js
   版も同じ hud.js を import できる。初版の「Phase 0 = 結合度調査」は b10 で完了
@@ -173,7 +173,7 @@ MapLibre 版は Three.js 版が Phase 8 まで機能完成するまで残す。�
 - Three.js PerspectiveCamera: https://threejs.org/docs/#api/en/cameras/PerspectiveCamera
 - TypeScript Handbook: https://www.typescriptlang.org/docs/handbook/intro.html
 - GSI 標高タイル仕様: https://maps.gsi.go.jp/development/demtile.html
-- 既存資産: web/lib/terrain3d.js (b7/b8)、web/viewer-maplibre.js、b10 結合度調査
+- 既存資産: web/lib/terrain3d.js (b7/b8)、web/viewer-map3d.js、b10 結合度調査
 
 ## まとめ
 

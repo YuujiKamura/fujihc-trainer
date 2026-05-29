@@ -1,7 +1,7 @@
 // Service Worker cache 版数の内部整合 pin。
 //
-// index.html / viewer-maplibre.js を変更した時、 sw.js の CACHE_NAME を bump し、
-// index.html の `?v=N` と sw.js PRECACHE_URLS 内の `viewer-maplibre.js?v=N` を同値に
+// index.html / viewer-map3d.js を変更した時、 sw.js の CACHE_NAME を bump し、
+// index.html の `?v=N` と sw.js PRECACHE_URLS 内の `viewer-map3d.js?v=N` を同値に
 // 揃えないと、 cache-first の SW が旧版を返し続けて修正がユーザに届かない。
 // 「片方だけ bump して版数が割れる」事故 (= precache が旧 URL を取得) を CI で検出する。
 //
@@ -18,9 +18,9 @@ const html = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 const sw = readFileSync(resolve(__dirname, '..', 'sw.js'), 'utf8');
 
 describe('Service Worker cache 版数の内部整合', () => {
-  it('index.html の viewer-maplibre.js?v=N と sw.js PRECACHE_URLS の ?v=N が一致する', () => {
-    const htmlM = html.match(/viewer-maplibre\.js\?v=(\d+)/);
-    const swM = sw.match(/viewer-maplibre\.js\?v=(\d+)/);
+  it('index.html の viewer-map3d.js?v=N と sw.js PRECACHE_URLS の ?v=N が一致する', () => {
+    const htmlM = html.match(/viewer-map3d\.js\?v=(\d+)/);
+    const swM = sw.match(/viewer-map3d\.js\?v=(\d+)/);
     expect(htmlM).not.toBeNull();
     expect(swM).not.toBeNull();
     // 半 bump (= 片方だけ更新) なら不一致で fail。

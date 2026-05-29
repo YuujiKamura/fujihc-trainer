@@ -1,11 +1,11 @@
-// b128: viewer-maplibre.js が halfMode を slope と elevation_gain と record に反映する pin.
+// b128: viewer-map3d.js が halfMode を slope と elevation_gain と record に反映する pin.
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 const html = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
 
 describe('b128: viewer (Controller) が halfMode を物理 + 記録 + UI に反映', () => {

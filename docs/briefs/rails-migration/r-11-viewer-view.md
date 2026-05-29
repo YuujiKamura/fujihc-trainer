@@ -32,7 +32,7 @@ r-10 で焼いた `public/models/fuji_course.glb` を Rails view で load し、
 - importmap + Stimulus の正しい使い方の見本を 1 個確立、 後続 brief で reuse
 - vendor 取得で外部 CDN 依存なし (= 2026-05-14 訂正「ローカル DB に整備」 と整合、 OSM 公式直叩き fallback 撤去と同じ原則)
 - `/v2` 並走で旧 viewer を retire せず、 段階移行の戻し方を確保 (= r-00 § 並走 URL 戦略 / revert 容易 と整合)
-- Stimulus `connect()` の責務肥大は viewer-maplibre.js (= 2200 行) の失敗 vector を brief 段階で再演しないため
+- Stimulus `connect()` の責務肥大は viewer-map3d.js (= 2200 行) の失敗 vector を brief 段階で再演しないため
 
 ## 仕様
 

@@ -22,7 +22,7 @@ test('oauth-callback.html は 404 (= class C1 物理除外、 visitor から到�
   expect(response.status()).toBe(404);
 });
 
-// 2026-05-20 fix: viewer-maplibre.js が strava_oauth.js を import するので source 配信維持、
+// 2026-05-20 fix: viewer-map3d.js が strava_oauth.js を import するので source 配信維持、
 // Strava endpoint への通信は CSP で block する 2 段構え (= 既存 test「strava CDN URL が
 // 消えている」 + CSP の connect-src から *.strava.com 削除で物理化済)。
 test('lib/strava_oauth.js は 200 配信 (= viewer import 経路維持)', async ({ page }) => {

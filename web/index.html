@@ -549,7 +549,7 @@
   }
   /* brief b-segment-labels: 道路セグメントの距離+勾配ラベルは MapLibre の symbol
      レイヤー (icon-image / canvas 画像) で地面平面に描く。 DOM 要素ではないため
-     ここに CSS は無い (= viewer-maplibre.js の makeSegLabelImage が canvas に描画)。 */
+     ここに CSS は無い (= viewer-map3d.js の makeSegLabelImage が canvas に描画)。 */
 
   /* Palette refresh: existing selectors stay in place; these rules normalize the visual system. */
   #hud, #controls, #rider-hud, #section-list-panel, #debug-hud,
@@ -1198,7 +1198,7 @@
 <!-- task-g: 地図タイルの出典クレジット (= 国土地理院 利用規約 / OSM ODbL の出典明示義務).
      地形 (3D メッシュ) = 国土地理院 (DEM + seamlessphoto 航空写真)、 minimap 上半分 = OpenStreetMap。
      b12 Phase 4 の Three.js 化で MapLibre 標準 AttributionControl が消えたため静的 HTML で新設。
-     消失監視は viewer-maplibre.js の verifyAttributionVisible() が #attrib を見る。
+     消失監視は viewer-map3d.js の verifyAttributionVisible() が #attrib を見る。
      静的 HTML のみ (= インライン script / イベントハンドラ無し)、 CSP script-src 'self' を壊さない。 -->
 <div id="attrib">地形: © <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院タイル</a>　｜　地図: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
 
@@ -1210,6 +1210,6 @@
             background:rgba(0,0,0,0.55); color:#dde; font:var(--hud-row1-font);
             border-radius:3px; pointer-events:none; display:none;"></div>
 
-<script type="module" src="viewer-maplibre.js?v=46"></script>
+<script type="module" src="viewer-map3d.js?v=46"></script>
 </body>
 </html>

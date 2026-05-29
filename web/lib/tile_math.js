@@ -1,5 +1,5 @@
 // Web Mercator XYZ tile math (pure functions).
-// 既存 viewer-maplibre.js から切り出し、 同 logic で test 可能に。
+// 既存 viewer-map3d.js から切り出し、 同 logic で test 可能に。
 
 export function lonToTileX(lon, zoom) {
   return (lon + 180) / 360 * Math.pow(2, zoom);

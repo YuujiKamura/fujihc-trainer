@@ -11,7 +11,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const viewer = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const viewer = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 const renderer = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');
 const html = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 

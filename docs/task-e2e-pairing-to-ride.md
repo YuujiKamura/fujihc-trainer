@@ -11,11 +11,11 @@
 
 ## なぜ・現状のギャップ（調査済み）
 
-このフローのバグが過去に何度も出ている（ハンドシェイク後にライド開始を押しても画面遷移しない 等）。バグの本体は `viewer-maplibre.js` のグルー（setAppState の状態遷移、consent overlay の z-index 等）にあった。
+このフローのバグが過去に何度も出ている（ハンドシェイク後にライド開始を押しても画面遷移しない 等）。バグの本体は `viewer-map3d.js` のグルー（setAppState の状態遷移、consent overlay の z-index 等）にあった。
 
-今あるフロー系テスト（`web/tests/integration_ble_ride_start.test.js`, `integration_ride_consent_pair.test.js` 等）は、**`viewer-maplibre.js` を import せず、viewer の DOM 操作ロジックを test 内に shim として再実装**し、その shim の挙動を pin している（+ 実 source への regex grep）。
+今あるフロー系テスト（`web/tests/integration_ble_ride_start.test.js`, `integration_ride_consent_pair.test.js` 等）は、**`viewer-map3d.js` を import せず、viewer の DOM 操作ロジックを test 内に shim として再実装**し、その shim の挙動を pin している（+ 実 source への regex grep）。
 
-弱点: shim は viewer-maplibre.js の「写し」であって本体ではない。本体が shim と食い違う形で壊れても shim ベースのテストは通り続ける（＝偽の安心）。過去のバグは本体グルーにあったので、本体を動かさないテストでは原理的に捕まらない。「一気通貫」で本物の viewer を通すテストが無い。
+弱点: shim は viewer-map3d.js の「写し」であって本体ではない。本体が shim と食い違う形で壊れても shim ベースのテストは通り続ける（＝偽の安心）。過去のバグは本体グルーにあったので、本体を動かさないテストでは原理的に捕まらない。「一気通貫」で本物の viewer を通すテストが無い。
 
 ## やること ── 実ブラウザ E2E
 

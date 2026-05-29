@@ -136,7 +136,7 @@ bridge.py 側の変更は **5-10 行のみ**: `from fujihc.tile_server import re
 
 ## やらないこと
 
-- viewer-maplibre.js の tile source URL 書き換え (= brief 17b)
+- viewer-map3d.js の tile source URL 書き換え (= brief 17b)
 - prefetch dead code の削除 (= brief 17b)
 - MapLibre style.json の完全 layer 定義 (= brief 17b で viewer 側 override、 17a は最小の skeleton のみ)
 - 走行中の DB write (= read-only、 write は scripts 経由のみ)

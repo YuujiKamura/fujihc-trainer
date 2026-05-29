@@ -1,6 +1,6 @@
 // 機器設定パネルの調整スライダーを「定義 1 個」から組み立てる共通機構.
 //
-// b12 までの viewer-maplibre.js では、 スライダーの配線が 5 系統に割れていた:
+// b12 までの viewer-map3d.js では、 スライダーの配線が 5 系統に割れていた:
 //   - bindSlider        ── 負荷 / 速度倍率 (値を pct/100 で localStorage 保存)
 //   - bindBikeSlider    ── 質量 / 転がり抵抗 / 空気抵抗 (生値↔物理値の変換つき)
 //   - 慣性の個別 addEventListener (kg 保存、 bindSlider が使えないため)

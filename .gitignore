@@ -55,3 +55,7 @@ experiments/cumulus-physical/lcm/output/field_moist_3d_*.png
 experiments/cumulus-physical/viewer/cumulus_widened_*.bin
 experiments/cumulus-physical/viewer/stratocumulus_widened_*.bin
 experiments/cumulus-physical/output/phase1_arabas_*_widened_storage/
+
+# LFM sandbox (= 本番 module を borrow する sandbox HTML + LFM cloud bin、 commit 対象外)
+web/lfm-sandbox.html
+web/lfm-cloud-data/

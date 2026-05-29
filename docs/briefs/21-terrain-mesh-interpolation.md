@@ -17,7 +17,7 @@ GSI 地理院標高タイル (= `dem_png` zoom 14) は富士山周辺で 1 タ�
 
 ## 何が今足りないか (= 現状)
 
-`web/viewer-maplibre.js` の `addProtocol('gsidem', ...)` は GSI PNG を読んで 1 ピクセル単位で:
+`web/viewer-map3d.js` の `addProtocol('gsidem', ...)` は GSI PNG を読んで 1 ピクセル単位で:
 1. (R, G, B) → 標高 m に decode
 2. 標高 m → terrarium (R, G, B) に re-encode
 3. 同サイズの PNG を MapLibre に返す
@@ -74,13 +74,13 @@ export function gsiToTerrariumUpsampled(gsiRgba, w, h, factor) {
 }
 ```
 
-### viewer-maplibre.js 側
+### viewer-map3d.js 側
 
 `addProtocol('gsidem', ...)` の callback 内で、 現状 inline で書いている decode + re-encode loop を `gsiToTerrariumUpsampled(src.data, W, H, 4)` の呼出に置き換え。 canvas サイズも 256 → 1024 に拡大して `toBlob` で出力。
 
 ES modules 化 は brief 17b 時点で「やらないこと」と決めた、 本 brief でも同じ判断 → `web/lib/terrain_mesh.js` を `<script>` で先に読む形にする (= 既存 `terrarium.js` も同様の扱い、 viewer 側で `window.terrainMesh = { bilinearUpsample, gsiToTerrariumUpsampled }` の global expose pattern が無難)。
 
-または: viewer-maplibre.js 内で関数を **inline 実装** (= module 化しない、 ただし test は別 module で同 logic を pure に export)。 ride 視点の挙動が viewer 内に閉じる、 ES modules 化と独立。
+または: viewer-map3d.js 内で関数を **inline 実装** (= module 化しない、 ただし test は別 module で同 logic を pure に export)。 ride 視点の挙動が viewer 内に閉じる、 ES modules 化と独立。
 
 → **inline 実装 + pure module で test** を採用 (= viewer は 1 関数追加で済む、 module の本実装は `web/lib/terrain_mesh.js` で test 駆動)。
 
@@ -113,7 +113,7 @@ ES modules 化 は brief 17b 時点で「やらないこと」と決めた、 �
    - `gsiToTerrariumUpsampled` happy: 標高 0m → terrarium (128, 0, 0) 相当、 富士山頂 3776m → 正しい terrarium
    - `gsiToTerrariumUpsampled` 無効 GSI ピクセル (= 128, 0, 0) → 0m として補間に参加
    - `gsiToTerrariumUpsampled` 1024×1024 出力サイズ
-3. `web/viewer-maplibre.js` の `addProtocol('gsidem', ...)` 内で 4x upsample を有効化:
+3. `web/viewer-map3d.js` の `addProtocol('gsidem', ...)` 内で 4x upsample を有効化:
    - canvas を 256 → 1024 に
    - inline loop を `gsiToTerrariumUpsampled` 同等 logic に置換 (= inline 実装 + lib 側 export で test)
 4. `npm test` 全 green (= 36 + 6-8 = 42-44 件)

@@ -4,7 +4,7 @@
 
 ## このタスクは何だったか
 
-富士ヒル viewer (`web/viewer-maplibre.js` + `web/lib/map3d/`) の実機 QA で挙がった
+富士ヒル viewer (`web/viewer-map3d.js` + `web/lib/map3d/`) の実機 QA で挙がった
 3 件の表示バグ候補 + 倍率50倍 (未コミット) を 1 バッチで処理するタスク。
 元ブリーフ `brief-viewer-qa-fixes.md`、確定版 `brief-viewer-qa-fixes.final.md`、
 完了報告 `report-viewer-qa-fixes.md` (いずれも本ディレクトリ)。
@@ -16,7 +16,7 @@
     光源距離を自機倍率に比例 (`shadowCameraConfig` 新設、`sun_model.js`)、
     地形メッシュも `receiveShadow`。
   - item 2 (倍率スライダー上限 80→500) を取り込み。
-  - 変更: `sun_model.js` / `scene.js` / `index.js` / `viewer-maplibre.js` /
+  - 変更: `sun_model.js` / `scene.js` / `index.js` / `viewer-map3d.js` /
     `scene_sun.test.js` の 5 ファイル。
 - item 1 (ミニマップ三角マーカー追随) と item 4 (コースリボンの勾配追従) は
   実行時計測・コード照合・目視で「正しく動作 = バグでない」と判明。コード変更なし。

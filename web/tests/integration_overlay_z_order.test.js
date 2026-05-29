@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HTML = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
-const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 // b12 Phase 2: 地図インスタンス生成 / load・error 結線 / buildMapStyle は
 // web/lib/map_renderer.js に移設済。 地図ライフサイクル系の pin はそちらを grep する。
 const RENDERER = readFileSync(resolve(__dirname, '..', 'lib', 'map_renderer.js'), 'utf8');

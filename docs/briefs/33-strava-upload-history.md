@@ -254,7 +254,7 @@ scope 細部 (= 既存 viewer 呼び出し L? との衝突回避) は impl team 
 - `#btnSaveHistory` → `addRide(db, {id, date, summary, trkpts})` → snackbar 通知
 - `#btnViewHistory` → `setAppState('history')`
 
-button イベント結線は viewer-maplibre.js の `bindPostRideButtons()` 関数 1 個に閉じ込め、 NG-R1-7 (= 1 関数 multi-層) 同型予防。
+button イベント結線は viewer-map3d.js の `bindPostRideButtons()` 関数 1 個に閉じ込め、 NG-R1-7 (= 1 関数 multi-層) 同型予防。
 
 ### G. `web/oauth-callback.html` 新規 (= 単独ページ)
 
@@ -381,7 +381,7 @@ backend (pytest): 本 brief は browser 完結なので pytest 追加ゼロ。 �
 - **private rides の visibility**: Strava 側 default で activity は `visibility=everyone`、 user が private にしたければ Strava UI 側で切り替え。 本 brief では visibility パラメータを送らない (= Strava 側 default 尊重、 過剰制御回避)
 - **HTTPS 必須**: Strava OAuth + Web Crypto (= sha256 for code_challenge) は HTTPS context 必須。 GitHub Pages は HTTPS 自動、 localhost 開発時は `127.0.0.1` で secure context 扱い (= Chrome / Firefox 共通)、 LAN IP 直接は要 self-signed cert
 - **NG-R1-3 再演予防**: 「ride 履歴」「ride DB」「rides store」「history」「rideDb」 が混在しやすい。 用語統一: **データ単位 = "ride"**、 **保存先 = `rideDb` (= IndexedDB wrapper)**、 **UI 名 = "履歴"**、 **state 名 = `history`**、 **store 名 = `rides`** で固定、 他 qualifier 禁止
-- **NG-R1-7 再演予防**: GPX 生成 / IDB CRUD / OAuth / upload を 1 file に詰め込まない、 4 module 分離 (= A/B/C/D) を厳守、 viewer-maplibre.js に inline で書かない
+- **NG-R1-7 再演予防**: GPX 生成 / IDB CRUD / OAuth / upload を 1 file に詰め込まない、 4 module 分離 (= A/B/C/D) を厳守、 viewer-map3d.js に inline で書かない
 - **NG-R1-8 再演予防**: 「実走で確認」「OAuth は手動で叩いた」は test 規律違反、 fetch mock + fake-indexeddb で全部 unit test 化
 - **NG-R1-12 再演予防**: Strava API endpoint 文字列が複数 file に散在しないこと、 `STRAVA_*_URL` const を 1 file (= strava_oauth.js / strava_upload.js) でのみ宣言、 viewer / postride bind 側からは import のみ
 - **NG-R3-3 再演予防**: `RIDE_DB_VERSION` / `RIDE_STORE` / `STRAVA_SCOPE` / poll interval などの load-bearing 数字 / 文字列をローカル再定義禁止、 module top 1 箇所のみ宣言
@@ -399,12 +399,12 @@ backend (pytest): 本 brief は browser 完結なので pytest 追加ゼロ。 �
 5. `web/lib/ride_state.js` 拡張 (+30 行)、 trkpts 蓄積 + `getTrkpts` 追加、 既存 26 件 test 全 green 維持
 6. `web/oauth-callback.html` 新規 (+15 行、 CSP meta + 外部 module 参照のみ、 inline script ゼロ) + `web/lib/oauth_callback_main.js` 新規 (+20 行、 token 交換 logic) の 2 file 構成 (= CSP `script-src 'self'` 維持)
 7. `web/index.html` に `<div id="history-overlay">` 追加 (+40 行)、 postride-overlay に 4 button 追加 (+15 行)
-8. `web/viewer-maplibre.js` に `bindPostRideButtons` + `setAppState('history')` 拡張 (+60 行)、 既存 `setAppState` API は不変
+8. `web/viewer-map3d.js` に `bindPostRideButtons` + `setAppState('history')` 拡張 (+60 行)、 既存 `setAppState` API は不変
 9. vitest 約 27-36 件 全 green (= 既存 192 件 + 新規 約 30 件)
 10. `pytest` regression なし (= 既存 149 件維持、 本 brief は backend 触らず)
 11. 物理 grep gate:
     - `STRAVA_*_URL` const が `web/lib/strava_*.js` の 2 file でのみ宣言 (= 散在ゼロ)
-    - `web/viewer-maplibre.js` に `strava.com` 直リテラル ゼロ
+    - `web/viewer-map3d.js` に `strava.com` 直リテラル ゼロ
     - `RIDE_DB_VERSION` ローカル再定義ゼロ (= NG-R3-3 同型予防)
     - `web/lib/gpx_builder.js` と `src/fujihc/gpx_export.py` の出力 byte 一致 fixture 1 件
     - `web/index.html` + `web/oauth-callback.html` 両方に `<meta http-equiv="Content-Security-Policy"` が存在 (= XSS 経由 token exfiltration 物理 gate)

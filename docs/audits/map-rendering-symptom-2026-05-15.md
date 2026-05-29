@@ -38,7 +38,7 @@ DevTools console:
 - `~/fujihc-trainer/web/index.html` (= CSP meta tag、 line 7 付近)
 - `~/fujihc-trainer/web/lib/vendor/pmtiles.js` (= v3.0.6 vendored)
 - `~/fujihc-trainer/web/lib/pmtiles_loader.js` (= addProtocol 登録)
-- `~/fujihc-trainer/web/viewer-maplibre.js` の `buildMapStyle` 周辺 (= map source の pmtiles:// URL)
+- `~/fujihc-trainer/web/viewer-map3d.js` の `buildMapStyle` 周辺 (= map source の pmtiles:// URL)
 - `~/.agents/scratch/fujihc-trainer-project/phase-design-2026-05-15.md` (= v3 設計図、 既存ガードレール参照)
 
 report は `~/.agents/scratch/fujihc-trainer-project/audits/map-rendering-review-A-2026-05-15.md` (or B) に Write、 main へは「BLOCK 件数 / LOAD-BEARING 件数 / 推奨 fix 案」を 3 行で返せ。

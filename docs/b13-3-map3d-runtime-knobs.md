@@ -22,7 +22,7 @@
 - ラベル高さ: labels3d.js `LABEL_BASE_HEIGHT_M = 4` (固定)
 - `ribbonPositions` = `ribbon3d.mesh.geometry.getAttribute('position').array` (L390)。ライダーは `rider3d.updatePose(ribbonPositions, ...)` でこの配列を直読みして位置を決める (L413, L434)。
 - pending (L132): `{ camZoom, camPitch, sunDir, sunStrength, labelScale }` ── boot/renderCourse 前に呼ばれた set 値を保留し部品生成時に流し込む。
-- viewer-maplibre.js は `map3d/index.js` の `createMapRenderer` のみ import (L7)。**map_renderer.js は現行 viewer から import されておらず未使用。**
+- viewer-map3d.js は `map3d/index.js` の `createMapRenderer` のみ import (L7)。**map_renderer.js は現行 viewer から import されておらず未使用。**
 
 ## 変更 — map3d/index.js に差し替え口を追加
 
@@ -54,7 +54,7 @@ pending (L132) に `riderScale, courseWidth, roadHeight, labelHeight` を追加�
 ## 注意 (= 決め切った仕様)
 
 - terrain3d.js は無改造。
-- **map_renderer.js は対象外** ── 現行 viewer (viewer-maplibre.js L7) が import するのは map3d/index.js のみで、map_renderer.js は未使用。no-op スタブ追加は不要。
+- **map_renderer.js は対象外** ── 現行 viewer (viewer-map3d.js L7) が import するのは map3d/index.js のみで、map_renderer.js は未使用。no-op スタブ追加は不要。
 - setRoadHeight の初期オフセットは ROAD_OFFSET_M (b13-2、terrain_surface.js から import)。
 
 ## 検証

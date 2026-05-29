@@ -51,7 +51,7 @@ A 収集: GSI 1 req/sec + UA 引数化 + DB 同梱。 B 本人練習: bridge 127
 
 ### C-2: 自動 ride 開始の停止 + introConsented guard (= 2 箇所同時、 B round 3 BLOCK 発見 1 反映)
 
-`bootCheckSetupStatus` の static 分岐 (= viewer-maplibre.js:717-723 周辺) **と** module top-level dispatch (= viewer-maplibre.js:748 周辺、 `if (MAP_MODE) initMapMode(); else if (TEST_MODE) initTestMode(); ...`) の **両方を guard**:
+`bootCheckSetupStatus` の static 分岐 (= viewer-map3d.js:717-723 周辺) **と** module top-level dispatch (= viewer-map3d.js:748 周辺、 `if (MAP_MODE) initMapMode(); else if (TEST_MODE) initTestMode(); ...`) の **両方を guard**:
 
 - intro-overlay 通過 + `setIntroConsent()` (= localStorage に `{hash, accepted_at}` 保存) が前提
 - guard 未通過なら `initMapMode` / `initTestMode` / `initBleMode` / `bootCheckSetupStatus` 呼ばない、 intro を表示して待つ
@@ -61,7 +61,7 @@ A 収集: GSI 1 req/sec + UA 引数化 + DB 同梱。 B 本人練習: bridge 127
 
 ### C-3: consent-overlay (= ride 開始前の opt-in、 btnRideStart guard、 B round 3 BLOCK 発見 2 反映)
 
-新規 `#consent-overlay` (= z-index 1460)。 既存 `btnRideStart` click handler (= viewer-maplibre.js:1331-1336、 現状 `client.isOpen()` のみ check) に consent guard を挿入:
+新規 `#consent-overlay` (= z-index 1460)。 既存 `btnRideStart` click handler (= viewer-map3d.js:1331-1336、 現状 `client.isOpen()` のみ check) に consent guard を挿入:
 
 ```js
 btnRideStart.addEventListener('click', () => {
@@ -80,7 +80,7 @@ btnRideStart.addEventListener('click', () => {
 - 「Strava にアップロードする機能を使いますか」 (= 機能解放のみ、 client_id 設定誘導は別、 default OFF)
 - 結果は localStorage に hash 付きで保存
 
-**bypass 経路**: `btnConfirmDemo` (= viewer-maplibre.js:1353-1359、 デモ走行ボタン) は consent 不要 (= IndexedDB / Strava 両方 OFF declaration 済として扱う)、 v3 で明示。
+**bypass 経路**: `btnConfirmDemo` (= viewer-map3d.js:1353-1359、 デモ走行ボタン) は consent 不要 (= IndexedDB / Strava 両方 OFF declaration 済として扱う)、 v3 で明示。
 
 ### C-4: Strava upload 文言 hardcode (= 商標混同対策、 B 発見 3 で layer 修正)
 
@@ -147,7 +147,7 @@ v1/v2 と同じ、 CONTRIBUTING.md / PR template 未整備。
 ### 環境
 
 - vitest + happy-dom (or jsdom) で `index.html` を読み込み、 DOM 状態を query
-- viewer-maplibre.js は maplibre-gl global を持たないと落ちるため、 **module 関数を 1 つずつ抽出 import** (= 既存 lib/check_setup_status.js / lib/consent.js pattern を踏襲) するか、 maplibre-gl を最小 mock で渡す
+- viewer-map3d.js は maplibre-gl global を持たないと落ちるため、 **module 関数を 1 つずつ抽出 import** (= 既存 lib/check_setup_status.js / lib/consent.js pattern を踏襲) するか、 maplibre-gl を最小 mock で渡す
 - Web Bluetooth は `navigator.bluetooth` を mock、 既存 brief 32 の `ble_client.test.js` の mock 構造を流用
 
 ### 不変条件 (= integration test で物理 pin、 違反したら CI fail)
@@ -202,7 +202,7 @@ v1/v2 と同じ、 CONTRIBUTING.md / PR template 未整備。
 ### commit ε-2: introConsented guard で起動分岐 2 箇所を制御 + behavioral test
 
 - `bootCheckSetupStatus` の static 分岐に guard 挿入
-- **module top-level dispatch (viewer-maplibre.js:748) も同時 guard** (= round 3 B 発見 1)
+- **module top-level dispatch (viewer-map3d.js:748) も同時 guard** (= round 3 B 発見 1)
 - `?map=1&consent=dev` bypass 実装
 - `?test=1` / `?ble=1` も同じ guard 経路
 - test 更新:
@@ -219,7 +219,7 @@ v1/v2 と同じ、 CONTRIBUTING.md / PR template 未整備。
 
 - 新規 `<div id="consent-overlay">` (= z-index 1460)
 - `web/lib/consent.js` 拡張: `getRideConsent` / `setRideConsent` / `RIDE_CONSENT_HASH`
-- **btnRideStart click handler (viewer-maplibre.js:1331-1336) に guard 挿入** (= round 3 B 発見 2)
+- **btnRideStart click handler (viewer-map3d.js:1331-1336) に guard 挿入** (= round 3 B 発見 2)
 - btnConfirmDemo (line 1353-1359) は consent 不要 (= demo declaration)
 - `ride_db.js` の addRide を IndexedDB consent flag で guard
 - `postride_buttons.js` の Strava upload button を Strava consent flag で表示制御

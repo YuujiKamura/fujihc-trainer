@@ -4,7 +4,7 @@
 //   INTRO_CONSENT_HASH / INTRO_CONSENT_LS_KEY) を撤去。 起動シーンを地形データローダー
 //   画面の一本道に作り変えたため (= 走る/観る/閉じる の 3 択を廃止)、 「説明を見た」 を
 //   localStorage に版管理する仕組み自体が不要になった。 観るモードの判定は
-//   body.classList.contains('mode-view') へ移行済 (= viewer-maplibre.js §3)。
+//   body.classList.contains('mode-view') へ移行済 (= viewer-map3d.js §3)。
 //   旧ユーザの localStorage に残る 'fujihill.consent.intro.v1' は
 //   clear_local_data.js の purge list が掃除し続ける (= 新コードは read しない)。
 //

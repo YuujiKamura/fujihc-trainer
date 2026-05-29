@@ -7,12 +7,12 @@
 (1) `## 参照` 欠落、(2)「本番モード」の指す経路が未定義、(3) reload 方式採用の論拠が実コードと食い違う、
 (4) 既存テスト未名指し + CI で BLE 経路をどう観測するか無指示、(5) URL 引数の保持・consent 短絡の穴が未記述、
 (6) 走行中切替の進捗消失リスク + 真正性確認の戻し漏れガード欠落、(7) タイル配布元配慮・consent gate・プライバシー境界が無評価。
-本確定版はこれを実コードの裏取り（`viewer-maplibre.js` / `consent.js` / `sw.js` / 既存テスト群を Read 済）で全て埋めた。
+本確定版はこれを実コードの裏取り（`viewer-map3d.js` / `consent.js` / `sw.js` / 既存テスト群を Read 済）で全て埋めた。
 実装者はこの確定版どおりに実装すること。
 
 ## 用語定義（初版の語彙曖昧さ = LOAD-BEARING を解消）
 
-- **テストモード**: URL に `?test` がある起動。`viewer-maplibre.js` の起動時定数 `TEST_MODE` が true。
+- **テストモード**: URL に `?test` がある起動。`viewer-map3d.js` の起動時定数 `TEST_MODE` が true。
   `dispatchAfterIntro()` が `initTestMode()` に分岐 → fake state を 1Hz で流す demo、トレーナー / bridge / DB 不要。
 - **本番モード**: このタスクでは **`initBleMode()`（Web Bluetooth による実機トレーナー直接接続、`dispatchAfterIntro` の default 分岐）** を指す。
   以後この 1 経路を「本番モード」と呼ぶ。`?bridge=1` の python bridge 経路（`bootCheckSetupStatus()`）は yuuji 自宅実環境専用の別経路で、**本タスクのスコープ外**（切替ボタンは `?bridge` を変更しない、保持するだけ）。
@@ -28,7 +28,7 @@ viewer を `?test=1` で開くとテストモードに入り、画面から本�
 ## 確認済みの実機構（コードで裏取り済 — 推測ではない）
 
 初版は「TEST_MODE が本番ハンドシェイクを阻んでいる」と断定したが、正確には「阻む」のではなく「画面内に経路切替の入口が無い」。
-以下は `web/viewer-maplibre.js` を Read して確認した事実（行番号は確認時点、実装者も現物で再確認すること）:
+以下は `web/viewer-map3d.js` を Read して確認した事実（行番号は確認時点、実装者も現物で再確認すること）:
 
 - `TEST_MODE`（431 行）: `new URLSearchParams(location.search).has('test')` で起動時に確定する定数。`TEST_MODE` の実コード参照は 431 行の宣言と 1162 行の dispatch 分岐の実質 2 箇所のみ（他は comment）。
 - `initTestMode()`（785 行）: fake state client を立て、500ms 後に `startRideConfirmed()` を呼んで自動で `state-riding` に遷移する。
@@ -43,7 +43,7 @@ viewer を `?test=1` で開くとテストモードに入り、画面から本�
   else initBleMode();                                          // ★ 本番モード
   ```
 - `consent.js`: `getIntroConsent()` は `{hash, accepted_at, mode}` か `null`。`mode` は `'ride'` か `'view'`。`setIntroConsent({mode})` は `'view'` 以外を全て `'ride'` に倒す。`clearIntroConsent()` で削除。intro の mode に `'test'` は存在しない。
-- `sw.js`: `isAppShell()` が `.html|.js|.css` を **network-first** で配信。`viewer-maplibre.js` / `index.html` / 新規 `.js` lib は network-first → コード変更は online なら常に最新が届く。**NG-R2-1（stale cache door）は非該当、`CACHE_NAME` bump 不要**。
+- `sw.js`: `isAppShell()` が `.html|.js|.css` を **network-first** で配信。`viewer-map3d.js` / `index.html` / 新規 `.js` lib は network-first → コード変更は online なら常に最新が届く。**NG-R2-1（stale cache door）は非該当、`CACHE_NAME` bump 不要**。
 
 ## 採る切替方式（確定 — 初版の flat な断定を実コードで補正）
 
@@ -74,7 +74,7 @@ localStorage に `mode:'view'` が残っていると本番モード（`initBleMo
 
 ### 2. URL 変換の純関数（`web/lib/mode_toggle.js`、新規）
 
-`viewer-maplibre.js` は maplibre/three を要求する巨大 module で unit import 不可。URL 引数の保持（軸5 の LOAD-BEARING）は
+`viewer-map3d.js` は maplibre/three を要求する巨大 module で unit import 不可。URL 引数の保持（軸5 の LOAD-BEARING）は
 **grep テストでは検証できない**ため、純関数を独立 lib に切り出して実テストで pin する。新規ファイルを作るのはこの理由（テスト可能な SoT が他に無い）。
 
 ```js
@@ -94,17 +94,17 @@ export function buildToggledSearch(currentSearch, enableTest) {
 }
 ```
 
-`viewer-maplibre.js` はこの 1 関数 + 4 定数を import して使う。`test` 以外の引数を素朴な文字列置換で落とすと
+`viewer-map3d.js` はこの 1 関数 + 4 定数を import して使う。`test` 以外の引数を素朴な文字列置換で落とすと
 `consent=dev`（開発者 bypass 消失）/ `bridge`（python bridge 経路喪失）/ `debug` を壊す ── それを `URLSearchParams` 複製で防ぐ。
 
-### 3. 切替ボタンの配線（`web/viewer-maplibre.js`）
+### 3. 切替ボタンの配線（`web/viewer-map3d.js`）
 
 - 起動時に `#mode-toggle-label` / `#mode-toggle-btn` の `textContent` を `TEST_MODE` に応じて設定（テストモードなら label=「テストモード」/ btn=「本番モードに切替」、本番なら逆）。
 - `#mode-toggle-btn` の click handler:
   1. **走行中ガード（軸6）**: `!TEST_MODE && document.body.classList.contains('state-riding')` のとき（= 本番モードで実走中、未保存 trkpt がありうる）、`confirm('走行中です。モードを切り替えると現在の走行内容は失われます。続けますか？')` を出し、false なら何もせず return。テストモードの「走行」は fake で失う実データが無いため confirm しない（非対称ガード）。
   2. **view consent 短絡を塞ぐ（軸5）**: `getIntroConsent()` の結果の `mode` が `'view'` のときだけ `setIntroConsent({ mode: 'ride' })` を呼ぶ。これで reload 後 `dispatchAfterIntro` の `if (ic && ic.mode === 'view')` 短絡を回避し、本番モード・テストモードのどちらにも確実に到達する。consent が null（`?consent=dev` 等）や既に `'ride'` のときは何もしない（= intro gate ロジックは変更しない、後述プライバシー境界参照）。
   3. `buildToggledSearch(location.search, !TEST_MODE)` で新 search を作り、`location.search = '?' + newSearch`（newSearch が空なら `location.search = ''`）で reload。
-- 配線は `viewer-maplibre.js` 末尾の既存「`if (typeof document !== 'undefined') { ... }`」ブロック内（`btnIntroStart` 等を bind している箇所）に足す。新規ファイルは `mode_toggle.js` の 1 つだけ。
+- 配線は `viewer-map3d.js` 末尾の既存「`if (typeof document !== 'undefined') { ... }`」ブロック内（`btnIntroStart` 等を bind している箇所）に足す。新規ファイルは `mode_toggle.js` の 1 つだけ。
 
 ### 4. 本番モード到達の確認
 
@@ -121,13 +121,13 @@ export function buildToggledSearch(currentSearch, enableTest) {
 
 - reload 方式は state を URL に持つため可逆。ランタイム切替は採らないため init 二重走の副作用は発生しない。
 - 走行中の reload は in-memory `rideState` と IndexedDB 未書込 trkpt を失う ── 「やること 3-1」の confirm ガードで本番実走時のみ防ぐ。
-- `sw.js` の `CACHE_NAME` bump 不要（`viewer-maplibre.js` / `index.html` / 新規 `.js` は network-first 配信、NG-R2-1 非該当 — 確認済）。
+- `sw.js` の `CACHE_NAME` bump 不要（`viewer-map3d.js` / `index.html` / 新規 `.js` は network-first 配信、NG-R2-1 非該当 — 確認済）。
 
 ## テスト
 
 ### 既存ファイルの強化（重複新規ファイルを作らない）
 
-- `web/tests/viewer_ble_branch.test.js`（grep 系、起動分岐を pin 済）に grep テストを追加: `viewer-maplibre.js` が `./lib/mode_toggle.js` から `buildToggledSearch` を import している / `#mode-toggle-btn` の click 配線が存在する / `index.html` に静的 `#mode-toggle` 要素が存在する。
+- `web/tests/viewer_ble_branch.test.js`（grep 系、起動分岐を pin 済）に grep テストを追加: `viewer-map3d.js` が `./lib/mode_toggle.js` から `buildToggledSearch` を import している / `#mode-toggle-btn` の click 配線が存在する / `index.html` に静的 `#mode-toggle` 要素が存在する。
 - `web/tests/mode_toggle.test.js`（**新規**、`mode_toggle.js` の純関数 unit test）:
   - happy: `buildToggledSearch('test=1', false)` → `test` を含まない / `buildToggledSearch('', true)` → `test=1` を含む。
   - **引数保持（軸5 LOAD-BEARING の核心 assert）**: `buildToggledSearch('test=1&consent=dev&debug=1', false)` → `consent=dev` と `debug=1` を保持し `test` を含まない。
@@ -150,7 +150,7 @@ export function buildToggledSearch(currentSearch, enableTest) {
 切替経路を 1 箇所わざと壊し、どのテストが落ちるかを 1:1 で確認する:
 
 - `buildToggledSearch` の `params.delete('test')` を no-op に壊す → `mode_toggle.test.js` の「`test` OFF 要求で `test` が消える」テストが赤になることを確認。
-- `viewer-maplibre.js` の `#mode-toggle-btn` click handler の `location.search` 代入行を消す → E2E の「click 後 URL から `test` が外れる」が赤になることを確認。
+- `viewer-map3d.js` の `#mode-toggle-btn` click handler の `location.search` 代入行を消す → E2E の「click 後 URL から `test` が外れる」が赤になることを確認。
 
 確認後、**`git diff` で壊した改変が残っていないこと（残存改変ゼロ）を確認してから commit する**。「確認したら戻す」で済ませず、`git diff` を実際に見ること。
 

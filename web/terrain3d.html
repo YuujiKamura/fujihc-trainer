@@ -5,7 +5,7 @@
 
   MapLibre は使わない。 DEM (= 国土地理院 GSI dem_png 標高タイル) から標高グリッドを組み、
   BufferGeometry の頂点格子へ直接変位させる。 inertia-sim.html と同じ独立ページで、
-  本番 viewer (index.html / viewer-maplibre.js) には一切触れない。
+  本番 viewer (index.html / viewer-map3d.js) には一切触れない。
 
   データ経路の純関数は web/lib/terrain3d.js (= node test で pin 済)。 本ファイルは
   fetch + Canvas decode + Three.js mesh 化という I/O / 描画層だけを担う。
@@ -566,7 +566,7 @@ async function main() {
 
   // b39: 富士ヒル公式 7 landmark を 3D 走路に立てる。 terrain3d.html は createMapRenderer
   // 経由しない直結 form (= line 511 で scene を直接生成、 既存 ribbon / bike / sun と
-  // 並ぶ scene.add pattern)、 viewer-maplibre.js とは別契約で scene 直接 touch を
+  // 並ぶ scene.add pattern)、 viewer-map3d.js とは別契約で scene 直接 touch を
   // 明示許可された scope。
   const snappedLandmarks = snapLandmarksToCourse(FUJIHC_LANDMARKS, course);
   const landmarks = createLandmarks3d(THREE, {

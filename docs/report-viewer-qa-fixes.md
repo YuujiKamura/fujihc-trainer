@@ -47,7 +47,7 @@ audit を反映した確定版ブリーフを `brief-viewer-qa-fixes.final.md` �
 
 ### item 2 — ライダー倍率上限を 50 倍に
 
-`viewer-maplibre.js` の倍率スライダー上限を 80→500 (表示 1.0×〜50.0×、既定 3.6× 据え置き) に拡張。main が実装済・未コミットだったものを今回のコミットに取り込んだ。
+`viewer-map3d.js` の倍率スライダー上限を 80→500 (表示 1.0×〜50.0×、既定 3.6× 据え置き) に拡張。main が実装済・未コミットだったものを今回のコミットに取り込んだ。
 
 ### item 3 — 巨大ライダーで影が四角く切れる → 実バグ、修正した
 
@@ -85,7 +85,7 @@ desk_capture は全方式で真っ白で使えず、ヘッドレス Playwright c
 - `web/lib/map3d/scene.js` — `focusShadowOn` が倍率対応
 - `web/lib/map3d/index.js` — 地形 receiveShadow、render が倍率を渡す
 - `web/tests/scene_sun.test.js` — `shadowCameraConfig` の単体テスト 10 件追加
-- `web/viewer-maplibre.js` — 倍率スライダー上限 80→500
+- `web/viewer-map3d.js` — 倍率スライダー上限 80→500
 
 含めなかった (本件と無関係な作業ツリーの dirty file): `rails-app/*`、`web/inertia-sim.html`、`web/terrain3d.html`、`scripts/fix_gpx_lat.mjs`、`test-results/`。
 

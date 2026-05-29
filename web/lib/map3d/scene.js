@@ -411,7 +411,7 @@ export function createScene({ container, capture = false }) {
       }
     },
 
-    // b75: NOAA 注入経路 ── 方位と仰角を独立に受ける。 viewer-maplibre.js が boot 後に
+    // b75: NOAA 注入経路 ── 方位と仰角を独立に受ける。 viewer-map3d.js が boot 後に
     // computeSolarPosition の戻りをそのまま流す。 null / undefined / 非 object は安全
     // no-op (= map3d_index.test.js が pin)、 azimuth / elevation のどちらか非数の場合も
     // 既存値を保つ (= NaN 防御)。

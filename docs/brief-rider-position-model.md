@@ -49,7 +49,7 @@
 
 **root-cause は確認済（実コードと実測で特定）**:
 - ディスク上の `web/course.json` は綺麗。`distance_m` が緯度経度の haversine と完全一致（全 1968 点、全長 23988m）。
-- `loadCourse()`（viewer-maplibre.js:1676）が `course = smoothCourse(course)` を呼ぶ。`smoothCourse`（gpx_smooth.js）は lat/lon を window=5 の移動平均で平滑化するが、**`distance_m` を再計算しない**（関数 doc に「distance_m は不変」と明記）。
+- `loadCourse()`（viewer-map3d.js:1676）が `course = smoothCourse(course)` を呼ぶ。`smoothCourse`（gpx_smooth.js）は lat/lon を window=5 の移動平均で平滑化するが、**`distance_m` を再計算しない**（関数 doc に「distance_m は不変」と明記）。
 - 結果、メモリ内の course は「平滑化された lat/lon」と「平滑化前由来の `distance_m`」が同居する。実測: 全長は 23988m→23839m（0.6%減）で済むが、**先頭 62m が 18.63m に収縮（3.34倍、症状の「3.3倍」と一致）**。境界では移動平均窓が非対称に縮み、端点が内側へ強く引かれるため、コース先頭が激しく潰れる。
 - `terrain.js` の `getPositionAtDistance` / `idxAtDistance` は綺麗（壊れた `distance_m` を距離目盛りとして忠実に使っているだけ）。`terrain_loader.js` はコースを変換しない（存在確認の fetch のみ）。
 - → **緯度経度自体はメモリ内でも綺麗**（平滑化された有効なポリライン、NaN なし、単調）。汚れているのは「lat/lon と `distance_m` の対応」だけ。新モデルは `distance_m` を読まず lat/lon から haversine で距離を作り直すので、この食い違いは構造的に消える。
@@ -97,13 +97,13 @@ trkpt（ride 中の `{t, lat, lon, ele, power, cad, hr}` 時系列）は緯度�
 3. **terrain.js** を haversine 実長でパラメータ化する。構築時に `セグメント長[]` / `累積セグメント長[]` を計算。`totalDistance` = `累積セグメント長[N-1]`。`(segmentIdx, fracInSegment)` → 位置を返す query を追加。`getPositionAtDistance` / `idxAtDistance` / `distanceAtIdx` を累積長ベースに再実装。
 4. **rider.js** を `(segmentIdx, fracInSegment)` 保持モデルに作り直す。`tick` はポリラインを歩く（仕様 2）。`distanceTraveled` は getter（仕様 4）。`position` / `snapshot` / `placeAtDistance` / `placeAtIdx` / `seekToward` / `start` / `reset` / `atGoal` を新表現に合わせる。snapshot の field 構成（`distance` / `position` 等）は既存と同形に保ち、viewer の描画経路を壊さない。
 5. **ride_state.js**（後方互換 shim）を新モデルに合わせる。shim の legacy `_idx` は `course[i].distance_m` 比較で更新していたが、新モデルでは haversine と不整合になる。`_idx` 機構は廃し、`snapshot().idx` / `getCurrentSlope` / `getHeading` は `rider.position`（= rider の実 `segmentIdx` から terrain query）に委譲する。`advance` / `seekToward` / `appendTrkpt` / `getTrkpts` の表面 API は維持。
-6. **viewer-maplibre.js** を新モデルに合わせる:
+6. **viewer-map3d.js** を新モデルに合わせる:
    - `tick` の rider 呼び出し・`snap.distance`（`curDist`）はそのままで動くはず（snapshot 同形を保てば）。確認する。
    - **`totalDist` グローバル**（行 1694）を `course[course.length-1].distance_m` から `terrain.totalDistance` に切り替える。`distance_m` は smoothCourse 後も 23988m のまま、terrain の haversine 総長（約 23839m）と食い違う。`__goalTest.seekToNearGoal()`（行 2225）が `rider.placeAtDistance(totalDist - 15)` を使うので、`totalDist` が terrain 総長より大きいと placeAtDistance のクランプで rider がゴール手前 15m でなくゴール直上に置かれ、e2e ゴールテストの「最後の区間を実走させて到達」意図が崩れる。
    - **minimap**（`buildMinimapBottomBase` / `updateMinimap` 等、行 1900-2028 周辺）が `course[i].distance_m` を x 軸目盛りに、rider dot を `curDist / totalD` で配置している。x 軸を haversine 累積長（`terrain.distanceAtIdx(i)` / `terrain.totalDistance`）に揃え、`curDist`（haversine）と同じスケールにする。0.6% のズレだが「距離=位置の道のり」を minimap でも破らない。
 7. このセッションの未コミット変更（下記）を取り込んだ上で、全テスト緑にしてローカルコミット。
 
-**autosave / 既存保存データの互換境界**（report に明記、本タスクの実装対象外）: IndexedDB に保存済の autosave `distanceM` / ride 履歴 `summary.distance_m` は旧（壊れた）目盛り由来の値。新 `placeAtDistance` は haversine メートルとして解釈するため、旧 record を読み戻すと位置がずれる。ただし autosave 復元は `SKIP_RESTORE = true` で現状停止中（viewer-maplibre.js:1439、ユーザー指示「復元機能は未完成」）、ride 履歴は read-only 表示のみで `placeAtDistance` を通らない。よって本タスクで実害は出ない。復元機能を再有効化する将来セッションが、旧 autosave record の migration / 破棄を要する ── この互換境界を report の handoff に書け。本タスクで autosave/履歴のスキーマや保存経路は変更しない。
+**autosave / 既存保存データの互換境界**（report に明記、本タスクの実装対象外）: IndexedDB に保存済の autosave `distanceM` / ride 履歴 `summary.distance_m` は旧（壊れた）目盛り由来の値。新 `placeAtDistance` は haversine メートルとして解釈するため、旧 record を読み戻すと位置がずれる。ただし autosave 復元は `SKIP_RESTORE = true` で現状停止中（viewer-map3d.js:1439、ユーザー指示「復元機能は未完成」）、ride 履歴は read-only 表示のみで `placeAtDistance` を通らない。よって本タスクで実害は出ない。復元機能を再有効化する将来セッションが、旧 autosave record の migration / 破棄を要する ── この互換境界を report の handoff に書け。本タスクで autosave/履歴のスキーマや保存経路は変更しない。
 
 ## このセッションの未コミット変更（取り込め、捨てるな）
 
@@ -112,11 +112,11 @@ trkpt（ride 中の `{t, lat, lon, ele, power, cad, hr}` 時系列）は緯度�
 - `web/tests/ws_client.test.js`: 上記の交互送信を固定するテスト追加。
 - `e2e/user_journey.spec.js`: ジャーニーテスト「一定の力で漕ぐと記録速度はなめらか」追加。**現在は赤** ── 「位置の道のり ≒ 距離」を assert していて、これが本件の受け入れ判定そのもの。新モデルが正しく入れば緑になる。ジャーニーテストの閾値（`SPIKE_STEP_MPS` 等）は 0W 修正後の実測（巡航の秒間ステップ最大 0.11 m/s）で妥当。必要なら再較正してよいが **`pathLen ≒ distM` の判定は弱めるな**。
 
-（注: 元ブリーフは「viewer-maplibre.js の sticky `currentPower` 修正」も未コミットと書いていたが、実際は既にコミット済 ── viewer-maplibre.js は git status で dirty ではない。report にそう書く。作業ツリーには本件と無関係な dirty file（`rails-app/*`・`web/inertia-sim.html`・`web/terrain3d.html`・`scripts/fix_gpx_lat.mjs`）もあるが、これらは本ブリーフのコミットに含めない ── 触るな。）
+（注: 元ブリーフは「viewer-map3d.js の sticky `currentPower` 修正」も未コミットと書いていたが、実際は既にコミット済 ── viewer-map3d.js は git status で dirty ではない。report にそう書く。作業ツリーには本件と無関係な dirty file（`rails-app/*`・`web/inertia-sim.html`・`web/terrain3d.html`・`scripts/fix_gpx_lat.mjs`）もあるが、これらは本ブリーフのコミットに含めない ── 触るな。）
 
 ## 影響範囲 + 既存テストの壊れ方
 
-変更ファイル: `web/lib/rider.js` / `web/lib/terrain.js` / `web/lib/ride_state.js` / `web/viewer-maplibre.js`。
+変更ファイル: `web/lib/rider.js` / `web/lib/terrain.js` / `web/lib/ride_state.js` / `web/viewer-map3d.js`。
 
 **既存テスト fixture は新モデルで壊れる**。`buildNorthCourse` 等の fixture は `distance_m: i*111` のように geometry と無関係な値を書いているが、新モデルは `distance_m` を無視し lat/lon の haversine 実長を距離にする。lat ステップ 0.001° の haversine 実長は 111.19m（111 ではない）。よって `distance_m` ベースの exact assertion が軒並み壊れる。**壊れる既存テスト（名指し）**:
 - `web/tests/terrain.test.js` ── `totalDistance === 9*111 === 999` の `toBe`、`distanceAtIdx` の exact 値、`idxAtDistance` の境界、経度 fixture の `i*91`。
@@ -127,7 +127,7 @@ trkpt（ride 中の `{t, lat, lon, ele, power, cad, hr}` 時系列）は緯度�
 
 **修正方針**: fixture を self-consistent にする（= `distance_m` を lat/lon の haversine 累積から計算するヘルパを 1 つ書き、全 fixture をそれで組む）か、exact assertion を haversine 由来の期待値 / `toBeCloseTo` に移す。どちらでもよいが **「距離 = 位置の道のり」の不変条件を弱める直し方は禁止**（assertion を消す・`toBeGreaterThan(0)` だけにする等は不可）。「正しく直してよい」で済ませず、壊れた assertion を 1 件ずつ新モデルの正しい期待値に置き換える。
 
-**misleading test の罠（避けよ）**: trkpt の観測は `rideState.getTrkpts()` を読め、`rider.getTrkpts()` ではない。shim（ride_state.js:41）は Rider 内部とは別の独自 trkpts buffer を持ち、viewer の tick は `rideState.appendTrkpt` 経由でそちらに貯める。観測フックや test が `rider.getTrkpts()` を読むと実走しても 0 のまま緑になる。`viewer-maplibre.js` の module-scoped 関数（`loadCourse` / `tick` / `curDist`）は unit test 不能 ── 振る舞いは e2e/user_journey.spec.js（既存ジャーニーテスト）で behavioral に pin される、新たな e2e は受け入れジャーニーテストが緑になれば足りる。
+**misleading test の罠（避けよ）**: trkpt の観測は `rideState.getTrkpts()` を読め、`rider.getTrkpts()` ではない。shim（ride_state.js:41）は Rider 内部とは別の独自 trkpts buffer を持ち、viewer の tick は `rideState.appendTrkpt` 経由でそちらに貯める。観測フックや test が `rider.getTrkpts()` を読むと実走しても 0 のまま緑になる。`viewer-map3d.js` の module-scoped 関数（`loadCourse` / `tick` / `curDist`）は unit test 不能 ── 振る舞いは e2e/user_journey.spec.js（既存ジャーニーテスト）で behavioral に pin される、新たな e2e は受け入れジャーニーテストが緑になれば足りる。
 
 ## 検証（受け入れ条件 ── Rule 1）
 
@@ -154,5 +154,5 @@ trkpt（ride 中の `{t, lat, lon, ele, power, cad, hr}` 時系列）は緯度�
 
 完了 = ジャーニーテスト「一定の力で漕ぐと記録速度はなめらか」が緑 + vitest / e2e / pytest 全緑 + ai-code-review 通過 + 目視で等速。守る一線は1つ ── **移動量は速度×時間の実メートル、位置はそれを積分した実点、距離は位置から読み取る、コースは向きだけを供給**。距離と位置が二度と食い違わない構造にする。terrain・rider・shim・viewer・minimap が同じ haversine 距離スケールを共有する。
 
-- ship する: 上記の未コミット変更（ws_client.js / ws_client.test.js / user_journey.spec.js）+ 新モデル（rider.js / terrain.js / ride_state.js / viewer-maplibre.js + テスト）を、論理的なまとまりでローカルコミット。
+- ship する: 上記の未コミット変更（ws_client.js / ws_client.test.js / user_journey.spec.js）+ 新モデル（rider.js / terrain.js / ride_state.js / viewer-map3d.js + テスト）を、論理的なまとまりでローカルコミット。
 - ship しない: push / PR / 外部操作（一切禁止、user の明示指示が無い限り）。本件と無関係な dirty file（rails-app 等）もコミットに含めない。

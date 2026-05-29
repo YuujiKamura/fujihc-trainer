@@ -1922,7 +1922,7 @@ async function loadCourse() {
   await mapRenderer.renderCourse(course);
   // b39: 富士ヒル公式 7 landmark を course.json に snap して 3D 走路に立てる。
   // course.json と FUJIHC_LANDMARKS の data 都合は course_landmarks.js が SoT。
-  // scene 直接 touch は viewer-maplibre.js では禁止 (= mapRenderer.setLandmarks 経由必須)。
+  // scene 直接 touch は viewer-map3d.js では禁止 (= mapRenderer.setLandmarks 経由必須)。
   const snappedLandmarks = snapLandmarksToCourse(FUJIHC_LANDMARKS, course);
   mapRenderer.setLandmarks(snappedLandmarks);
   // ride 中は start/goal マーカーをメイン map から hide する (= 現 body state に追随)。
@@ -2180,7 +2180,7 @@ document.getElementById('btnPause').addEventListener('click', () => { if (rideSt
 // (= getRideConsent('asked') が false) なら consent-overlay を表示して return、
 // rideState.start を呼ばない。 consent ダイアログで「同意して ride 開始」を押すと
 // asked=true + history/strava flag を保存 + 再度 btnRideStart の click を発火させる。
-// btnConfirmDemo (= デモ走行 button、 viewer-maplibre.js:1353-1359) は consent 不要
+// btnConfirmDemo (= デモ走行 button、 viewer-map3d.js:1353-1359) は consent 不要
 // = 履歴も Strava も使わない declaration として扱う (= v3 設計通り)。
 function startRideConfirmed() {
   if (!client || !client.isOpen()) return;
@@ -2962,9 +2962,9 @@ window.addEventListener('message', (ev) => {
 // Svelte Interop
 window.fujihillInterop = { startTerrainPhase, onTerrainLoaderDone };
 
-// Phase 3: Svelte 版 Map3D を使用する場合、既存の viewer-maplibre の初期化をバイパスする
+// Phase 3: Svelte 版 Map3D を使用する場合、既存の viewer-map3d の初期化をバイパスする
 if (new URLSearchParams(location.search).has('svelte_map')) {
-  console.log('[viewer-maplibre] svelte_map mode detected. Bypassing Vanilla JS boot.');
+  console.log('[viewer-map3d] svelte_map mode detected. Bypassing Vanilla JS boot.');
   // return; -> Cannot return from top-level outside a module without wrapping, but we are in module.
   // Actually, we can just avoid calling `initApp()`. Let's wrap initApp or just abort.
 }

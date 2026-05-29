@@ -1,5 +1,5 @@
 // brief 31: GitHub Pages 静的サイト mode (= bridge.py 不在で視覚デモ完結) の物理 grep gate。
-// viewer-maplibre.js を直接 import すると maplibre-gl global が無いと落ちるため、
+// viewer-map3d.js を直接 import すると maplibre-gl global が無いと落ちるため、
 // source-grep + 抽出可能な unit (= BASE_PATH 計算) を分離 test。
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -7,7 +7,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
 describe('brief 31: BASE_PATH / BRIDGE_TILE_BASE_URL / STATIC_TILE_BASE_URL の宣言', () => {

@@ -1,10 +1,10 @@
 // 2026-05-15 user 指摘「ふつう完走時の終端処理とかテストケース書くだろ」 への補填。
 // 完走 (= rider.atGoal = true) で起きるべき経路を pin:
 //   1. shim 経路で totalDist を超える advance すると rider.atGoal が true
-//   2. viewer-maplibre.js source に「atGoal → 自動 ride 終了 (= sendRideEnd / rideState.end)
+//   2. viewer-map3d.js source に「atGoal → 自動 ride 終了 (= sendRideEnd / rideState.end)
 //      + _autoEnded gate」 logic が存在し、 再発火しないこと
 //
-// viewer-maplibre.js は maplibre-gl global 依存で直 import 不可、 ride 進行 / atGoal は
+// viewer-map3d.js は maplibre-gl global 依存で直 import 不可、 ride 進行 / atGoal は
 // rider 単独 unit、 完走経路は source-grep で物理 gate する 2 軸 test。
 
 import { describe, it, expect } from 'vitest';
@@ -15,7 +15,7 @@ import { createRideState } from '../lib/ride_state.js';
 import { withCumulativeDistance, DEG_LAT_PER_M } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 
 function makeShortCourse() {
   // ≒100m course、 2 点 (lat を haversine 100m ぶん北へ動かす). totalDist ≒ 100。
@@ -48,14 +48,14 @@ describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', ()
     expect(rs._rider.atGoal).toBe(true);
   });
 
-  it('viewer-maplibre.js: tick の atGoal 分岐で sendRideEnd + rideState.end を呼ぶ', () => {
+  it('viewer-map3d.js: tick の atGoal 分岐で sendRideEnd + rideState.end を呼ぶ', () => {
     const viewer = readFileSync(VIEWER_PATH, 'utf8');
     // tick 末尾の atGoal 分岐で sendRideEnd と rideState.end が呼ばれる
     expect(viewer).toMatch(/rider\.atGoal[\s\S]{0,400}sendRideEnd/);
     expect(viewer).toMatch(/rider\.atGoal[\s\S]{0,400}rideState\.end/);
   });
 
-  it('viewer-maplibre.js: _autoEnded flag で完走自動終了の再発火を防止', () => {
+  it('viewer-map3d.js: _autoEnded flag で完走自動終了の再発火を防止', () => {
     const viewer = readFileSync(VIEWER_PATH, 'utf8');
     // _autoEnded で gate して 1 回限り発火、 ride 開始時に reset
     expect(viewer).toMatch(/_autoEnded\s*=\s*true/);  // 完走時 set
@@ -65,7 +65,7 @@ describe('ride 完走時の終端処理 (= 2026-05-15 user 指摘の補填)', ()
     expect(viewer).toMatch(/if\s*\([^)]*!_autoEnded[^)]*\)/);
   });
 
-  it('viewer-maplibre.js: startRideConfirmed で _autoEnded をリセット (= 2 回目 ride も自動完走)', () => {
+  it('viewer-map3d.js: startRideConfirmed で _autoEnded をリセット (= 2 回目 ride も自動完走)', () => {
     const viewer = readFileSync(VIEWER_PATH, 'utf8');
     const m = viewer.match(/function\s+startRideConfirmed\s*\([\s\S]*?\n\}/);
     expect(m).toBeTruthy();

@@ -2,11 +2,11 @@
 
 ## 総評
 
-brief 17b は Round 3 で LOAD-BEARING flag された NG-R1-15 / NG-R1-16 (= viewer-maplibre.js から OSM / GSI への runtime 直叩き) を**物理層で**解消した。 外部 URL の文字列が source から消え、 さらに `web/tests/viewer_url_audit.test.js` (4 件) が source-grep gate として復活防止に CI で常時稼働する。 prefetchTilesAlongCourse 本体 + minimap の `loadOsmTile` (= dead code) も同 commit で削除、 viewer-maplibre.js は -46 行で責務が縮小した。 SCHEMA_VERSION の重複定義は `from fujihc.tile_constants import SCHEMA_VERSION` に置換され、 NG-R1-14 系の silent drift リスクが SoT 化で解消。 `estimateTileCount` を JS / Python 両側に追加 + cross-language fixture test も pass、 brief 14 数値表との整合性が機械化された。
+brief 17b は Round 3 で LOAD-BEARING flag された NG-R1-15 / NG-R1-16 (= viewer-map3d.js から OSM / GSI への runtime 直叩き) を**物理層で**解消した。 外部 URL の文字列が source から消え、 さらに `web/tests/viewer_url_audit.test.js` (4 件) が source-grep gate として復活防止に CI で常時稼働する。 prefetchTilesAlongCourse 本体 + minimap の `loadOsmTile` (= dead code) も同 commit で削除、 viewer-map3d.js は -46 行で責務が縮小した。 SCHEMA_VERSION の重複定義は `from fujihc.tile_constants import SCHEMA_VERSION` に置換され、 NG-R1-14 系の silent drift リスクが SoT 化で解消。 `estimateTileCount` を JS / Python 両側に追加 + cross-language fixture test も pass、 brief 14 数値表との整合性が機械化された。
 
-test 結果は python 111 passed / 4 skipped、 JS 36 passed (= 5 file: tile_math 6 + heading 5 + terrarium 9 + viewer_url_audit 4 + tile_coverage 12)。 brief 17b で予告された +9 件 (= JS 27 → 36) も完全一致。 viewer-maplibre.js の `TILE_BASE_URL = ${location.origin}/tiles` は bridge.py の `/tiles/{source}/...` proxy (brief 17a) を物理的に経由するため、 復活には HTML / source / test の 3 箇所同時改竄が必要 (= memory-only rule ではなく Rule 9 物理層 gate に昇格)。
+test 結果は python 111 passed / 4 skipped、 JS 36 passed (= 5 file: tile_math 6 + heading 5 + terrarium 9 + viewer_url_audit 4 + tile_coverage 12)。 brief 17b で予告された +9 件 (= JS 27 → 36) も完全一致。 viewer-map3d.js の `TILE_BASE_URL = ${location.origin}/tiles` は bridge.py の `/tiles/{source}/...` proxy (brief 17a) を物理的に経由するため、 復活には HTML / source / test の 3 箇所同時改竄が必要 (= memory-only rule ではなく Rule 9 物理層 gate に昇格)。
 
-**残留する MINOR (= scope 外、 brief 17b の責務外)**: (a) `web/viewer.js` (= Cesium 版) が依然 `tile.openstreetmap.org` + `cyberjapandata.gsi.go.jp` を直叩き、 かつ `web/index.html` の default load 対象は viewer.js のまま (= NG-R1-2 / NG-R1-15/16 が「Cesium 版だけ」に転移して残存)。 brief 12 の Cesium 凍結方針が source / README に明文化されていない (= drift catalog 共通 pattern 2 「2 版並走の責務未定義」)。 (b) viewer-maplibre.js 689 行は依然 single file (= NG-R1-7 / 設計境界軸の brief 19 未着手案件)。 (c) 503 fallback DOM 未実装。 これらは Round 5 (= brief 19) で処置すべき項目で、 brief 17b の責務外。
+**残留する MINOR (= scope 外、 brief 17b の責務外)**: (a) `web/viewer.js` (= Cesium 版) が依然 `tile.openstreetmap.org` + `cyberjapandata.gsi.go.jp` を直叩き、 かつ `web/index.html` の default load 対象は viewer.js のまま (= NG-R1-2 / NG-R1-15/16 が「Cesium 版だけ」に転移して残存)。 brief 12 の Cesium 凍結方針が source / README に明文化されていない (= drift catalog 共通 pattern 2 「2 版並走の責務未定義」)。 (b) viewer-map3d.js 689 行は依然 single file (= NG-R1-7 / 設計境界軸の brief 19 未着手案件)。 (c) 503 fallback DOM 未実装。 これらは Round 5 (= brief 19) で処置すべき項目で、 brief 17b の責務外。
 
 ## 7 軸 verdict
 
@@ -18,13 +18,13 @@ test 結果は python 111 passed / 4 skipped、 JS 36 passed (= 5 file: tile_mat
 | 4. テスト網羅 | PASS | LOAD-BEARING | RESOLVED | viewer_url_audit (4 件) が source-grep gate として復活防止を物理化、 tile_coverage +5 件 で estimateTileCount を cross-language fixture pin、 36 件全 pass |
 | 5. 設計境界 | PASS | MINOR | PARTIAL | SCHEMA_VERSION 重複定義は import に置換で完全 dedupe (SoT 化)、 ただし viewer 統合層 689 行は brief 19 scope (= 持ち越し) |
 | 6. マイグレ可逆 | PASS | MINOR | PERSISTENT | viewer の addProtocol inline 維持、 503 fallback DOM 未実装は持ち越し。 brief 17b scope では退行ゼロ、 むしろ TILE_BASE_URL 集約で将来差し替え点が単一化 |
-| 7. セキュリティ | PASS | LOAD-BEARING | RESOLVED | NG-R1-15 / NG-R1-16 を viewer-maplibre.js 側で完全解消、 物理 gate (viewer_url_audit test) で復活を CI block。 ただし viewer.js (Cesium 版) に同 class 残存 = MINOR 持ち越し |
+| 7. セキュリティ | PASS | LOAD-BEARING | RESOLVED | NG-R1-15 / NG-R1-16 を viewer-map3d.js 側で完全解消、 物理 gate (viewer_url_audit test) で復活を CI block。 ただし viewer.js (Cesium 版) に同 class 残存 = MINOR 持ち越し |
 
 ## 残課題 (= MINOR / 持ち越し、 Round 5 候補)
 
 1. **viewer.js (Cesium 版) の外部 URL 残存**: `web/viewer.js:14` (tile.openstreetmap.org)、 `web/viewer.js:34` (cyberjapandata.gsi.go.jp)、 `web/viewer.js:514` (OSM 直叩き)。 同 source-grep gate を viewer.js にも掛けるか、 brief 12 の凍結方針を物理化 (= viewer.js を削除 / 別 dir に隔離 / index.html の load を index-maplibre.html に統一) すべき。 brief 19 候補。
-2. **2 版並走の責務未定義**: `web/index.html` (= viewer.js を load) と `web/index-maplibre.html` (= viewer-maplibre.js を load) の関係が README に未明記、 user / 後続 reader がどちらを default に開けばいいか判断できない (= NG-R1-2 再演継続)。
-3. **viewer-maplibre.js 689 行 single file**: brief 19 で `web/lib/` 配下に WebSocket / minimap / camera / hud を pure module 分離する案件 (= NG-R1-7 / NG-R1-12 系)。
+2. **2 版並走の責務未定義**: `web/index.html` (= viewer.js を load) と `web/index-maplibre.html` (= viewer-map3d.js を load) の関係が README に未明記、 user / 後続 reader がどちらを default に開けばいいか判断できない (= NG-R1-2 再演継続)。
+3. **viewer-map3d.js 689 行 single file**: brief 19 で `web/lib/` 配下に WebSocket / minimap / camera / hud を pure module 分離する案件 (= NG-R1-7 / NG-R1-12 系)。
 4. **503 fallback DOM 未実装**: bridge.py /tiles/... が 503 を返した時の user 通知 UI が viewer 側にない、 silent failure リスク。
 
 ## 検証 checkpoint 結果
@@ -32,8 +32,8 @@ test 結果は python 111 passed / 4 skipped、 JS 36 passed (= 5 file: tile_mat
 | # | check | 結果 |
 |---|---|---|
 | 1 | `git diff` で viewer の 外部 URL が消えた | OK (-46 行、 OSM/GSI literal 削除) |
-| 2 | viewer-maplibre.js に外部 host literal | 0 件 |
-| 3 | viewer-maplibre.js に prefetchTilesAlongCourse | 0 件 (コメント言及のみ) |
+| 2 | viewer-map3d.js に外部 host literal | 0 件 |
+| 3 | viewer-map3d.js に prefetchTilesAlongCourse | 0 件 (コメント言及のみ) |
 | 4 | python -m pytest -q | 111 passed / 4 skipped |
 | 5 | npm test | 36 passed |
 | 6 | init_tile_db.py で SCHEMA_VERSION import 化 | OK (line 18 で from fujihc.tile_constants import SCHEMA_VERSION) |

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { createTerrainLoader } from '../lib/terrain_loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 // b42: probe オーケストレーションは terrain_phase.js へ切り離し済。移管先 source も読む。
 const TERRAIN_PHASE_PATH = resolve(__dirname, '..', 'lib', 'terrain_phase.js');

@@ -34,7 +34,7 @@ viewer の 3D コース（富士スバルラインの帯）が、地形メッシ
 
 - `web/lib/terrain3d.js` は配布元配慮で無改造。コース側のコードを直せ。
 - **画面確認は `desk_capture` のみ。`chrome --headless` 直叩きも `headless-shot.ps1` も使うな** ── viewer は never-idle なページ（無限 rAF + Service Worker）で headless Chrome が終わらず worker ごと固まる（前の worker がこれで全滅した）。`desk_capture`（既存の Chrome ウィンドウを撮るだけで Chrome を spawn しない）だけを使え。viewer を映した通常 Chrome ウィンドウが無ければ、自分で 1 回だけ通常タブで `http://127.0.0.1:8000/?test=1&consent=dev` を開いてから `desk_capture` しろ。
-- **作業ツリーには別 worker の未 commit 変更がある（`web/viewer-maplibre.js`, `web/tests/intro_consent_guard.test.js`, `e2e/user_journey.spec.js`）。それらには絶対に触るな。** commit は自分が触ったファイルだけを明示パスで `git add <path>` しろ。`git add -A` / `git commit -am` は禁止（他 worker の未 commit 変更を巻き込む）。万一コース描画コードが `viewer-maplibre.js` 内にあると判明したら、そこで止めて報告しろ（その場合は干渉するので差配側の判断が要る）。
+- **作業ツリーには別 worker の未 commit 変更がある（`web/viewer-map3d.js`, `web/tests/intro_consent_guard.test.js`, `e2e/user_journey.spec.js`）。それらには絶対に触るな。** commit は自分が触ったファイルだけを明示パスで `git add <path>` しろ。`git add -A` / `git commit -am` は禁止（他 worker の未 commit 変更を巻き込む）。万一コース描画コードが `viewer-map3d.js` 内にあると判明したら、そこで止めて報告しろ（その場合は干渉するので差配側の判断が要る）。
 - `bridge.py` は `127.0.0.1` bind 固定。地図タイル配布元配慮ルールを破るな。
 - ローカル commit まで。`git push` 禁止。
 

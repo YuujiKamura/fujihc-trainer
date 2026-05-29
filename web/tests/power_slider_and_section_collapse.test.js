@@ -10,14 +10,14 @@
 //     - createFakeStateGenerator の getPower 引数 (= moving 時 power を返す / 省略時 150 /
 //       非数 fallback / 非 moving は 0)
 //     - getPower 値の違いが integratePhysics の速度に届く behavioral 鎖
-//     - viewer-maplibre.js source: power def が CONTROL_DEFS に default 250 / unit W で
+//     - viewer-map3d.js source: power def が CONTROL_DEFS に default 250 / unit W で
 //       入っていること、 manualPowerW を fujihill.power から読むこと、
 //       createFakeStateGenerator 呼び出し 3 箇所に manualPowerW を渡すこと、
 //       btnSectionCollapse の click handler があること
 //     - index.html source: btnSectionCollapse button + collapsed CSS ルール
 //   pin しない:
 //     - 実 DOM での折りたたみ click → display 反映 (= e2e の範囲、 view_mode_exit.spec.js)。
-//       viewer-maplibre.js は maplibre-gl / DOM 依存で単体 import 不可のため source 走査で代替。
+//       viewer-map3d.js は maplibre-gl / DOM 依存で単体 import 不可のため source 走査で代替。
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -27,7 +27,7 @@ import { createFakeStateGenerator } from '../lib/ws_client.js';
 import { integratePhysics } from '../lib/bike_physics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const indexHtml = readFileSync(INDEX_PATH, 'utf8');
@@ -104,7 +104,7 @@ describe('b53: パワースライダー値が integratePhysics の速度に届�
   });
 });
 
-describe('b53: viewer-maplibre.js source — パワースライダーの配線', () => {
+describe('b53: viewer-map3d.js source — パワースライダーの配線', () => {
   it('CONTROL_DEFS に power def が key=power / value=250 / unit=W で入っている', () => {
     const m = viewer.match(/key\s*:\s*['"]power['"][\s\S]{0,260}/);
     expect(m).not.toBeNull();

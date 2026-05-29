@@ -1,0 +1,316 @@
+/* ============================================================================
+ * fujihill Design System — v2 tokens
+ *
+ * A friendlier, more human-readable rework of the system. Built around three
+ * ideas:
+ *
+ *   1. Mt. Fuji as the visual anchor — sky / snow / mountain-shadow palette.
+ *   2. Bilingual-friendly typography — IBM Plex Sans + Plex Sans JP for prose,
+ *      IBM Plex Mono reserved exclusively for numeric readouts.
+ *   3. Light by default, dark mode opt-in via `<html data-theme="dark">`.
+ *
+ * Use these tokens directly:
+ *   <link rel="stylesheet" href="colors_and_type.css">
+ *   <html lang="ja" data-theme="light">  ← or "dark"
+ * ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* ============================================================================
+ * BRAND PALETTE
+ *
+ * The 5-color brand spine. These names map to a Mt. Fuji scene at sunrise:
+ *
+ *   --fuji-blue    深い富士の影                Mountain-shadow blue. Primary brand.
+ *   --fuji-sky     見上げた空                  Light sky behind the peak.
+ *   --fuji-snow    山頂の雪                    Pure cool white, the "page".
+ *   --fuji-coral   朝焼け / 山の朝日           Sunrise warm accent.
+ *   --fuji-pine    麓の森                      Earthy positive green.
+ *
+ * Use these as ROLE COLORS, not raw values. The semantic mapping below
+ * (--primary, --accent, etc) is what your components should consume.
+ * ============================================================================ */
+:root {
+  --fuji-blue-100:  #eaf0fb;
+  --fuji-blue-200:  #c8d6f0;
+  --fuji-blue-300:  #92acdf;
+  --fuji-blue-400:  #5a82c8;
+  --fuji-blue-500:  #3461b3;   /* primary brand */
+  --fuji-blue-600:  #264a93;
+  --fuji-blue-700:  #1c3674;
+  --fuji-blue-800:  #142654;
+  --fuji-blue-900:  #0d1a3a;
+
+  --fuji-sky-100:   #f0f6fb;
+  --fuji-sky-200:   #dbeaf3;
+  --fuji-sky-300:   #b4d3e6;
+
+  --fuji-snow:      #fbfcfe;   /* near-white, faint cool cast */
+  --fuji-snow-warm: #f6f4ef;   /* paper / warm alt surface */
+
+  --fuji-coral-100: #ffeee5;
+  --fuji-coral-300: #ffb38a;
+  --fuji-coral-500: #ff7a4d;   /* sunrise accent */
+  --fuji-coral-700: #c44a23;
+
+  --fuji-pine-100:  #e6f1ea;
+  --fuji-pine-300:  #8bc1a0;
+  --fuji-pine-500:  #2f9e6e;   /* positive, success */
+  --fuji-pine-700:  #1c6b48;
+
+  --fuji-stone-50:  #f8f9fb;
+  --fuji-stone-100: #eef1f5;
+  --fuji-stone-200: #dfe4ec;
+  --fuji-stone-300: #c4ccd7;
+  --fuji-stone-500: #6f7888;
+  --fuji-stone-700: #3a4250;
+  --fuji-stone-900: #1a1f2a;
+
+  --fuji-red-500:   #d64545;   /* destructive */
+  --fuji-red-100:   #fae9e9;
+}
+
+/* ============================================================================
+ * SEMANTIC TOKENS — light theme (default)
+ * ============================================================================ */
+:root,
+:root[data-theme="light"] {
+  /* surfaces */
+  --bg:             #f6f8fb;   /* page — soft sky-lit paper */
+  --surface:        #ffffff;   /* cards, modals */
+  --surface-soft:   #f1f4f9;   /* nested sections / striped rows */
+  --surface-warm:   var(--fuji-snow-warm);
+
+  /* text */
+  --text:           #1a1f2a;
+  --text-muted:     #5b6577;
+  --text-faint:     #8a93a3;
+  --text-on-fill:   #ffffff;
+
+  /* borders */
+  --border:         #e0e5ed;
+  --border-strong:  #c4ccd7;
+
+  /* semantic roles */
+  --primary:        var(--fuji-blue-500);
+  --primary-hover:  var(--fuji-blue-600);
+  --primary-soft:   var(--fuji-blue-100);
+
+  --accent:         var(--fuji-coral-500);
+  --accent-soft:    var(--fuji-coral-100);
+
+  --positive:       var(--fuji-pine-500);
+  --positive-soft:  var(--fuji-pine-100);
+
+  --danger:         var(--fuji-red-500);
+  --danger-soft:    var(--fuji-red-100);
+
+  --warn:           #d99540;
+  --warn-soft:      #fbeed4;
+
+  --link:           var(--fuji-blue-500);
+
+  /* climb-grade ladder (data palette only — not for UI chrome).
+     Re-curated for the light theme so the ladder reads cleanly on paper. */
+  --grade-flat:      #6cb38b;
+  --grade-gentle:    #9bc54e;
+  --grade-moderate:  #e8b948;
+  --grade-hard:      #de7c2b;
+  --grade-very-hard: #c8443a;
+  --grade-extreme:   #7a3a9c;
+
+  /* surfaces for "live, glassy" panels over a 3D scene */
+  --glass:          rgba(255, 255, 255, 0.78);
+  --glass-strong:   rgba(255, 255, 255, 0.92);
+  --scrim:          rgba(13, 26, 58, 0.45);
+}
+
+/* ============================================================================
+ * SEMANTIC TOKENS — dark theme (opt-in)
+ *   <html data-theme="dark">
+ *
+ * Dark mode is the "night sky over Fuji" — deep indigo, not pure black. The
+ * brand stays recognizable because the accent (coral) and positive (pine) hold.
+ * ============================================================================ */
+:root[data-theme="dark"] {
+  --bg:             #0d1a3a;   /* dark night-sky indigo */
+  --surface:        #18254a;
+  --surface-soft:   #1f2d56;
+  --surface-warm:   #1d2a4e;
+
+  --text:           #f0f4fa;
+  --text-muted:     #a6b3cf;
+  --text-faint:     #6d7aa3;
+  --text-on-fill:   #ffffff;
+
+  --border:         #2a3b6a;
+  --border-strong:  #3d527f;
+
+  --primary:        #6f96e8;
+  --primary-hover:  #8eaef0;
+  --primary-soft:   rgba(111, 150, 232, 0.16);
+
+  --accent:         #ff9670;
+  --accent-soft:    rgba(255, 150, 112, 0.16);
+
+  --positive:       #5fc498;
+  --positive-soft:  rgba(95, 196, 152, 0.16);
+
+  --danger:         #ee7a7a;
+  --danger-soft:    rgba(238, 122, 122, 0.16);
+
+  --warn:           #e8b658;
+  --warn-soft:      rgba(232, 182, 88, 0.16);
+
+  --link:           #8eaef0;
+
+  --grade-flat:      #5fbb88;
+  --grade-gentle:    #a5cd5f;
+  --grade-moderate:  #f1c45b;
+  --grade-hard:      #ec8a3d;
+  --grade-very-hard: #de5246;
+  --grade-extreme:   #a566d6;
+
+  --glass:          rgba(24, 37, 74, 0.78);
+  --glass-strong:   rgba(24, 37, 74, 0.92);
+  --scrim:          rgba(0, 0, 0, 0.55);
+}
+
+/* ============================================================================
+ * TYPOGRAPHY
+ *
+ * Two faces and one rule:
+ *
+ *   --font-sans : IBM Plex Sans + Plex Sans JP — for ALL prose, headings,
+ *                 labels, buttons, body copy. Bilingual Latin/Japanese metrics
+ *                 are aligned in the same family.
+ *   --font-mono : IBM Plex Mono — for NUMERIC METERS ONLY. Speed, power,
+ *                 cadence, time, distance, percentages. Anywhere a digit
+ *                 needs to line-up across changing values.
+ *
+ * Do NOT use mono for body copy, code blocks excepted.
+ * ============================================================================ */
+:root {
+  --font-sans: "IBM Plex Sans", "IBM Plex Sans JP", "Hiragino Kaku Gothic ProN",
+               "Yu Gothic Medium", "Meiryo", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* Type scale — Major-Third (1.25) bottom, smaller steps near body */
+  --fs-display:  56px;   /* hero number on the postride summary */
+  --fs-hero:     40px;   /* big numeric readout (slope, speed) */
+  --fs-h1:       32px;
+  --fs-h2:       24px;
+  --fs-h3:       18px;
+  --fs-body:     16px;
+  --fs-small:    14px;
+  --fs-caption:  12px;
+  --fs-micro:    11px;
+
+  --lh-tight:    1.15;
+  --lh-snug:     1.35;
+  --lh-normal:   1.55;
+  --lh-relaxed:  1.7;
+
+  --tracking-tight:  -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+}
+
+/* ============================================================================
+ * SPACING, RADII, ELEVATION, MOTION
+ * ============================================================================ */
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+
+  --radius-sm:    6px;    /* chips, small badges */
+  --radius-md:    10px;   /* buttons, inputs, list rows */
+  --radius-lg:    14px;   /* cards, panels */
+  --radius-xl:    20px;   /* modal dialogs */
+  --radius-pill:  999px;
+
+  /* Soft elevation. Light mode uses subtle cool-tinted shadows so cards feel
+     like paper, not extruded boxes. */
+  --shadow-1: 0 1px 2px rgba(20, 38, 84, 0.06),
+              0 1px 4px rgba(20, 38, 84, 0.04);
+  --shadow-2: 0 2px 4px rgba(20, 38, 84, 0.08),
+              0 6px 16px rgba(20, 38, 84, 0.08);
+  --shadow-3: 0 10px 30px rgba(20, 38, 84, 0.14),
+              0 4px 8px rgba(20, 38, 84, 0.08);
+
+  /* Motion. Slightly more humane than v1: still calm, but with a touch of
+     cubic-bezier ease for state transitions. No spring. */
+  --ease-out:        cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out-soft:   cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:        150ms;
+  --dur-base:        220ms;
+  --dur-slow:        360ms;
+
+  --hit-target: 44px;
+}
+
+:root[data-theme="dark"] {
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 14px 38px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================================
+ * BASE ELEMENT STYLES
+ * ============================================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  margin: 0 0 var(--space-3);
+  color: var(--text);
+}
+h1 { font-size: var(--fs-h1); line-height: var(--lh-tight); }
+h2 { font-size: var(--fs-h2); line-height: var(--lh-snug); }
+h3 { font-size: var(--fs-h3); line-height: var(--lh-snug); }
+
+p  { margin: 0 0 var(--space-3); color: var(--text); line-height: var(--lh-relaxed); }
+
+a       { color: var(--link); text-decoration: none; border-bottom: 1px solid currentColor; }
+a:hover { color: var(--primary-hover); }
+
+code, kbd, .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.num { font-variant-numeric: tabular-nums slashed-zero; }
+
+/* Bilingual lang attributes — letter-spacing differs slightly between scripts. */
+:lang(ja) { letter-spacing: 0.01em; }
+:lang(en) { letter-spacing: var(--tracking-normal); }
+
+/* utility for numeric meters on a page — use anywhere a digit changes */
+.t-meter {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "ss01";
+  font-weight: 500;
+}
+.t-meter--hero    { font-size: var(--fs-hero);    line-height: 1;   font-weight: 600; letter-spacing: -0.02em; }
+.t-meter--display { font-size: var(--fs-display); line-height: 1;   font-weight: 600; letter-spacing: -0.02em; }
+.t-meter--lg      { font-size: var(--fs-h2);      line-height: 1.1; }
+.t-meter--md      { font-size: var(--fs-h3);      line-height: 1.2; }

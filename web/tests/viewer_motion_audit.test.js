@@ -1,4 +1,4 @@
-// brief 35: viewer-maplibre.js が Terrain + Rider 2 層モデルに rewire されたことを
+// brief 35: viewer-map3d.js が Terrain + Rider 2 層モデルに rewire されたことを
 // source-grep + behavioral 両面で pin する gate.
 //
 // 検証要点:
@@ -22,7 +22,7 @@ import { createRider } from '../lib/rider.js';
 import { withCumulativeDistance } from './_helpers/course_fixture.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const RIDE_STATE_PATH = resolve(__dirname, '..', 'lib', 'ride_state.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const rideStateSrc = readFileSync(RIDE_STATE_PATH, 'utf8');

@@ -1,6 +1,6 @@
 // 地図描画モジュール (b12 Phase 2 / Phase 2.5).
 //
-// viewer-maplibre.js が地図を触る唯一の窓口。 viewer 本体は map インスタンスを持たず、
+// viewer-map3d.js が地図を触る唯一の窓口。 viewer 本体は map インスタンスを持たず、
 // createMapRenderer() が返す renderer の「意味メソッド」経由でしか地図を操作しない。
 //
 // Phase 2.5 の要点: 差し替え口を MapLibre API 寄りの粒度 (addSource / setData 的) から
@@ -27,7 +27,7 @@ import { computeTravelHeading } from './heading.js';
 // 生まない (= ただの補間)、 4 は 1 タイル 4 MB RGBA を生んで VRAM / 転送帯域を浪費する。
 const TERRAIN_UPSAMPLE_FACTOR = 2;
 
-// タイル取得経路の base URL (= viewer-maplibre.js と同一の location 由来導出)。
+// タイル取得経路の base URL (= viewer-map3d.js と同一の location 由来導出)。
 const BASE_PATH = location.pathname.replace(/\/[^/]*$/, '/');
 const BRIDGE_TILE_BASE_URL = `${location.origin}/tiles`;
 const STATIC_TILE_BASE_URL = `${location.origin}${BASE_PATH}static`;

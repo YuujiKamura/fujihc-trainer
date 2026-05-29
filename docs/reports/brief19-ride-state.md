@@ -4,7 +4,7 @@
 
 - 12 tests added to `web/tests/ride_state.test.js`, all green
 - Full suite: **96 / 96 passed** (existing 84 + new 12), no regressions
-- `viewer-maplibre.js` **untouched** (mtime 01:56, before this session)
+- `viewer-map3d.js` **untouched** (mtime 01:56, before this session)
 
 ## Files touched
 
@@ -20,10 +20,10 @@ reimplementation.
 
 ### `isAtEnd` is **distance-based**, not idx-based
 Drafted as `curIdx >= lastIdx` but that interacts badly with the existing tick
-logic in viewer-maplibre.js:
+logic in viewer-map3d.js:
 
 ```js
-// viewer-maplibre.js:622 — port target
+// viewer-map3d.js:622 — port target
 while (curIdx < course.length - 1 && course[curIdx + 1].distance_m < curDist) curIdx++;
 ```
 
@@ -32,7 +32,7 @@ The condition is **strict `<`**, so when `curDist` reaches exactly
 is false → `curIdx` stays at `lastIdx - 1` even at the goal.
 
 Two options:
-1. Change advanceIdx to `<=` → diverges from viewer-maplibre.js logic, would
+1. Change advanceIdx to `<=` → diverges from viewer-map3d.js logic, would
    change segment interpolation behavior (`p = course[curIdx]`, `pNext = course[curIdx+1]`
    would put rider past the final segment).
 2. Make `isAtEnd` distance-based: `curDist >= totalDist`.
@@ -90,7 +90,7 @@ in the same run — no shared-file collisions.
 
 ## Next steps (for orchestrator, not this subagent)
 
-- viewer-maplibre.js integration: replace the 6 module-level `let` declarations
+- viewer-map3d.js integration: replace the 6 module-level `let` declarations
   (lines 128–135) and the tick body (lines 619–682) with a `createRideState(course)`
   instance. **Out of scope for this brief** per the file-restriction clause.
 

@@ -1,7 +1,7 @@
 // brief b2: viewer の per-frame コスト削減 ── 「変化した時だけ更新する」 の判定を
 // 純関数に切り出して unit test 可能にする小モジュール。
 //
-// 背景: viewer-maplibre.js の rAF ループ tick() が毎フレーム無条件で
+// 背景: viewer-map3d.js の rAF ループ tick() が毎フレーム無条件で
 //   - rider GeoJSON を再構築 + GPU 再アップロード (setData)
 //   - debug ラベルを 30 件超 setText
 //   - minimap 2 canvas を全 clear + drawImage

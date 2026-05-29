@@ -14,7 +14,7 @@ b13-2 で高さの仕組み (TerrainSurface / ROAD_OFFSET_M) を整え、b13-3 �
 
 ## 現状
 
-- b13-1 完了後: viewer-maplibre.js に `CONTROL_DEFS` (9項目) と `mountControlPanel` 呼び出し。
+- b13-1 完了後: viewer-map3d.js に `CONTROL_DEFS` (9項目) と `mountControlPanel` 呼び出し。
 - b13-3 完了後: map3d ファサードに setRiderScale / setCourseWidth / setRoadHeight / setLabelHeight。
 - 現行の固定値: ライダー scale 3.6 / コース幅 10m / 路面高さ ROAD_OFFSET_M=2m / ラベル高さ 4m。
 - control_panel.js は input イベントで apply を呼ぶ (確定資産、変更しない)。

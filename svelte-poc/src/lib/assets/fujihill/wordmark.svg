@@ -1,0 +1,10 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 64" width="380" height="64" role="img" aria-label="fujihill viewer">
+  <circle cx="46" cy="28" r="9" fill="#ff7a4d"></circle>
+  <path d="M 4 50&#xA;           Q 14 46 22 38&#xA;           Q 30 30 34 20&#xA;           Q 37 12 40 12&#xA;           Q 43 12 46 20&#xA;           Q 50 30 58 38&#xA;           Q 66 46 76 50&#xA;           L 76 56&#xA;           L 4 56 Z" fill="#3461b3"></path>
+  <path d="M 31 22&#xA;           Q 33 18 36 14&#xA;           Q 39 11 40 11&#xA;           Q 41 11 44 14&#xA;           Q 47 18 49 22&#xA;           Q 46 21 43 21&#xA;           Q 40 22 38 21&#xA;           Q 35 22 31 22 Z" fill="#fbfcfe"></path>
+  <g font-family="IBM Plex Sans, IBM Plex Sans JP, system-ui, sans-serif">
+    <text x="92" y="38" font-size="26" font-weight="600" fill="#1a1f2a" letter-spacing="-0.5">fujihill</text>
+    <text x="200" y="38" font-size="26" font-weight="300" fill="#5b6577" letter-spacing="-0.5">viewer</text>
+  </g>
+</svg>

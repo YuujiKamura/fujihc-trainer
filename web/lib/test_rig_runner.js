@@ -4,7 +4,7 @@
 // rider + 物理 (bike_physics) + camera 追従だけが grid 背景上で動く検証 viewer を駆動する.
 //
 // 既存 lib/{terrain, rider, bike_physics, heading}.js を read-only で import するだけ、
-// 既存 viewer 本体 (viewer-maplibre.js) には触らない.
+// 既存 viewer 本体 (viewer-map3d.js) には触らない.
 
 import { createTerrain } from './terrain.js';
 import { createRider } from './rider.js';

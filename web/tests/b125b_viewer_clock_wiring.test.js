@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
-describe('b125b: viewer-maplibre.js が clock を正しく配線している', () => {
+describe('b125b: viewer-map3d.js が clock を正しく配線している', () => {
   it('clock.start が ride start 3 経路で呼ばれる (= ride_status / mode-view切替 / 観るモード解除)', () => {
     const matches = src.match(/clock\.start\s*\(\s*\{\s*nowMs:\s*performance\.now\(\)/g) || [];
     expect(matches.length).toBeGreaterThanOrEqual(3);

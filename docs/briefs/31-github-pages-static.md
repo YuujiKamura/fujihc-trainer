@@ -25,15 +25,15 @@ user 訂正: 「GitHub Pages 上で動くのが普通だろ、 ローカル brid
 | **TEST_MODE** | `?test=1` query | bridge / static の検知結果に従う | fake client、 UI 操作あり | 既存、 変更なし |
 
 - **static mode と MAP_MODE は別概念**: static は「tile origin の選択」、 MAP_MODE は「ride 駆動と UI 表示の選択」。 GitHub Pages 配信下では「static + MAP_MODE」「static + TEST_MODE」「static + query 無し (= MAP_MODE 同等 fallback)」の 3 組合せが起き得る
-- 既存 `checkSetupStatus()` (= viewer-maplibre.js L260) が status probe を担っているので **本 brief で新規 `detectBridgeMode` を導入しない** (= NG-R1-11 双子関数回避)。 既存関数に AbortSignal.timeout を追加するだけ、 既存返値 `{overall:'empty'}` を「static mode 確定」と同義に再定義
+- 既存 `checkSetupStatus()` (= viewer-map3d.js L260) が status probe を担っているので **本 brief で新規 `detectBridgeMode` を導入しない** (= NG-R1-11 双子関数回避)。 既存関数に AbortSignal.timeout を追加するだけ、 既存返値 `{overall:'empty'}` を「static mode 確定」と同義に再定義
 - 用語: brief 内で「bridge available」「static fallback」のみ使う、 `pages_mode` / `nobridge` / `offline` 等の同義語は持ち込まない
 
 ## 何が今足りないか (= 現状)
 
-- `web/viewer-maplibre.js` L29: `const TILE_BASE_URL = ${location.origin}/tiles`、 GitHub Pages では `${location.origin}/fujihc-trainer/static/tiles` に当たる必要 (= path prefix 考慮ゼロ、 `location.pathname` 未使用)
-- `web/viewer-maplibre.js` L80, L89: tile URL を `${TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf` で組み立てるが、 vector tile は **PMTiles 単一 file** から MapLibre `addProtocol('pmtiles', ...)` で読む形にできていない (= `pmtiles.js` 未統合、 vector source の type が `'vector'` + tiles 配列で個別 PBF 期待)
-- `web/viewer-maplibre.js` L260-270 `checkSetupStatus()`: catch で `{overall:'empty'}` を返す fallback はあるが **timeout が無い**、 GitHub Pages の 404 即時返答なら問題ないが、 network が遅い or proxy が握り続ける環境で初回表示が遅延する (= `AbortSignal.timeout` 未使用)
-- `web/viewer-maplibre.js` L593 `bootCheckSetupStatus()`: `overall='empty'` 時に `showDbinit()` を呼ぶ (= dbinit-overlay 表示) が、 static mode (= bridge 不在で MAP_MODE 相当に倒したい) では dbinit-overlay を出さず即 `initMapMode()` 相当に流す経路が無い
+- `web/viewer-map3d.js` L29: `const TILE_BASE_URL = ${location.origin}/tiles`、 GitHub Pages では `${location.origin}/fujihc-trainer/static/tiles` に当たる必要 (= path prefix 考慮ゼロ、 `location.pathname` 未使用)
+- `web/viewer-map3d.js` L80, L89: tile URL を `${TILE_BASE_URL}/osm/{z}/{x}/{y}.pbf` で組み立てるが、 vector tile は **PMTiles 単一 file** から MapLibre `addProtocol('pmtiles', ...)` で読む形にできていない (= `pmtiles.js` 未統合、 vector source の type が `'vector'` + tiles 配列で個別 PBF 期待)
+- `web/viewer-map3d.js` L260-270 `checkSetupStatus()`: catch で `{overall:'empty'}` を返す fallback はあるが **timeout が無い**、 GitHub Pages の 404 即時返答なら問題ないが、 network が遅い or proxy が握り続ける環境で初回表示が遅延する (= `AbortSignal.timeout` 未使用)
+- `web/viewer-map3d.js` L593 `bootCheckSetupStatus()`: `overall='empty'` 時に `showDbinit()` を呼ぶ (= dbinit-overlay 表示) が、 static mode (= bridge 不在で MAP_MODE 相当に倒したい) では dbinit-overlay を出さず即 `initMapMode()` 相当に流す経路が無い
 - `src/fujihc/tile_server.py`: SQLite からの tile 配信は実装済だが、 **静的 file ツリーへの export** (= `data/tiles.sqlite` の GSI PNG blob を `web/static/tiles/gsi_dem/{z}/{x}/{y}.png` に書き出す) script が存在しない
 - `data/fuji.pmtiles` (= 3.9 MB、 zoom 11-15 を含む Protomaps planet build の Fuji 周辺切り出し) は repo に存在するが、 viewer から `pmtiles://` URL で直接 read する経路 (= pmtiles.js loader + `maplibregl.addProtocol`) が無い
 - `data/tiles.sqlite` (= 18 MB) には現在 gsi_dem 179 タイル (z8-14、 17.3 MB) + osm 129 PBF (z13-15、 0.38 MB) が landed。 PMTiles を採用する static mode では osm PBF 129 件は **export 対象外** (= PMTiles 1 file で代替)、 gsi_dem 179 件のみ静的ツリー化
@@ -121,9 +121,9 @@ export function registerPmtilesProtocol(maplibregl, pmtiles) {
 - pin: `pmtiles.js v3.0.6` (= 2026-05 時点で MapLibre 4.x 対応 stable、 SemVer x.y.z の完全 pin、 NG-R3-7 「`>=` floating pin 禁止」遵守)
 - 採用 OSS: `pmtiles.js` v3.0.6 / BSD-3-Clause。 `protomaps-leaflet` (= Leaflet 用)、 `protomaps/protomaps.js` (= 廃止) は採用しない
 - vendoring 手順: `npm pack pmtiles@3.0.6 && tar -xzf pmtiles-3.0.6.tgz && cp package/dist/pmtiles.js web/lib/vendor/pmtiles.js` を README に記録、 `web/lib/vendor/LICENSE-pmtiles` (= BSD-3-Clause 全文) を同梱
-- module 形式: viewer-maplibre.js は ES module import 形式 (= L6-L17 既存)、 `pmtiles.js` は `<script>` で `window.pmtiles` global を作る IIFE、 `pmtiles_loader.js` 内で `window.pmtiles` を参照する 1 行 helper
+- module 形式: viewer-map3d.js は ES module import 形式 (= L6-L17 既存)、 `pmtiles.js` は `<script>` で `window.pmtiles` global を作る IIFE、 `pmtiles_loader.js` 内で `window.pmtiles` を参照する 1 行 helper
 
-### D. `web/viewer-maplibre.js` L260 周辺: `checkSetupStatus` の short-timeout 化と `bridgeReachable` 返値追加
+### D. `web/viewer-map3d.js` L260 周辺: `checkSetupStatus` の short-timeout 化と `bridgeReachable` 返値追加
 
 **既存 `checkSetupStatus()` を拡張** (= 新規関数追加しない、 NG-R1-11 回避):
 
@@ -147,7 +147,7 @@ async function checkSetupStatus() {
 - `AbortSignal.timeout(500)`: Modern 全 browser (= Chrome 103+, Firefox 100+, Safari 16+) で対応、 fallback 不要 (= GitHub Pages 配信対象は modern browser のみと割り切り、 vitest 環境の Node 18+ も対応)
 - `bridgeReachable` フィールド: 既存 `overall` の semantics を保ったまま「bridge 到達可否」を独立 flag に。 既存 caller (= `showDbinit` / `maybeAdvanceToPairing`) は `overall` のみ参照しているため後方互換、 新規 caller (= `bootCheckSetupStatus`) のみ `bridgeReachable` を見る
 
-### E. `web/viewer-maplibre.js` L593 `bootCheckSetupStatus`: static fallback 分岐の挿入
+### E. `web/viewer-map3d.js` L593 `bootCheckSetupStatus`: static fallback 分岐の挿入
 
 既存:
 ```js
@@ -176,7 +176,7 @@ async function bootCheckSetupStatus() {
 - `initMapMode()` は既存関数 (= L595)、 tile origin の切替は次節 F が担う (= `initMapMode` 内では touch せず、 style 構築側で `bridgeReachable` を参照)
 - dbinit-overlay は `showDbinit(s)` の中でのみ表示 (= bridge mode 内に閉じる、 static mode では dbinit-overlay 一切表示しない、 NG-R1-7 責務分離)
 
-### F. `web/viewer-maplibre.js` L29 + L73-149: TILE_BASE_URL と style の mode 別化
+### F. `web/viewer-map3d.js` L29 + L73-149: TILE_BASE_URL と style の mode 別化
 
 L29 を path-aware + mode-aware に変更:
 
@@ -231,7 +231,7 @@ function buildMapStyle({ bridgeReachable }) {
 ```
 
 - maplibre-gl の CDN は既存運用 (= 本 brief で touch しない、 別 brief でも vendoring 候補だが射程外)
-- 順序: maplibre-gl → pmtiles → viewer-maplibre.js の固定順、 pmtiles は maplibregl 依存だが `addProtocol` は viewer 側で呼ぶため独立 load 可
+- 順序: maplibre-gl → pmtiles → viewer-map3d.js の固定順、 pmtiles は maplibregl 依存だが `addProtocol` は viewer 側で呼ぶため独立 load 可
 
 ### H. `.github/workflows/pages.yml` (新規、 50 行以内)
 
@@ -262,7 +262,7 @@ jobs:
         run: |
           mkdir -p _site
           cp web/index.html _site/
-          cp web/viewer-maplibre.js _site/
+          cp web/viewer-map3d.js _site/
           cp web/course.json _site/
           cp -r web/lib _site/lib
           cp -r web/static _site/static
@@ -300,7 +300,7 @@ frontend (vitest、 既存 192 件に +14-16 件):
    - 既登録時の冪等性 (= 2 回呼んでも throw しない)
    - `pmtiles` global 不在 (= 第 2 引数 falsy) で明示 throw
 4. `web/tests/viewer_url_audit.test.js` (既存、 +2 件):
-   - viewer-maplibre.js の source 内に `https://tile.openstreetmap.org` / `https://cyberjapandata.gsi.go.jp` / `https://unpkg.com/pmtiles` 等の外部 URL 文字列を含まない grep (= 既存 NG-R1-15 gate を pmtiles 文字列でも拡張)
+   - viewer-map3d.js の source 内に `https://tile.openstreetmap.org` / `https://cyberjapandata.gsi.go.jp` / `https://unpkg.com/pmtiles` 等の外部 URL 文字列を含まない grep (= 既存 NG-R1-15 gate を pmtiles 文字列でも拡張)
    - `STATIC_TILE_BASE_URL` を含む URL は `${BASE_PATH}static` で組まれている grep gate
 
 backend (pytest、 既存 149 件に +5 件):
@@ -341,12 +341,12 @@ backend (pytest、 既存 149 件に +5 件):
 - GitHub Pages の 1 file 上限: 100 MB、 1 repo 上限 1 GB、 月間 帯域 100 GB → 余裕で 5 桁倍
 - `export_static.py` 実行時間: SQLite から 179 row × LENGTH(data) avg 97 KB を write = local SSD で **< 2 秒** + PMTiles copy (= 3.9 MB shutil) **< 0.1 秒**
 - GitHub Actions 1 回の build 時間: checkout + pip install + export + staging + upload artifact + deploy = **約 1-2 分**
-- 初回 viewer load 時間 (= GitHub Pages 上、 cold cache): HTML 30 KB + viewer-maplibre.js 約 60 KB + maplibre CDN 約 280 KB + pmtiles vendored 80 KB + PMTiles 3.9 MB + GSI 9 タイル × 97 KB = **約 5 MB / 約 2-3 秒** (= 100 Mbps 想定)
+- 初回 viewer load 時間 (= GitHub Pages 上、 cold cache): HTML 30 KB + viewer-map3d.js 約 60 KB + maplibre CDN 約 280 KB + pmtiles vendored 80 KB + PMTiles 3.9 MB + GSI 9 タイル × 97 KB = **約 5 MB / 約 2-3 秒** (= 100 Mbps 想定)
 - bridge mode 自動判定の overhead: `fetch(/tiles/_setup_status, timeout=500ms)` = bridge あり **< 50 ms** で resolve / Pages の 404 即時 **< 30 ms** / network error も timeout 待たず即 catch、 500 ms は worst case 上限
 
 ## ハマる罠
 
-- **pmtiles.js と MapLibre `addProtocol` の登録順序**: `maplibregl.addProtocol('pmtiles', ...)` を `new maplibregl.Map(...)` より前に呼ばないと、 初回 tile request が 'No protocol handler' で fail。 `index.html` で `<script src="maplibre">` → `<script src="./lib/vendor/pmtiles.js">` → `<script src="viewer-maplibre.js">` の順、 viewer 側の module init で `registerPmtilesProtocol(...)` を `new maplibregl.Map` 構築前に同期的に 1 回呼ぶ
+- **pmtiles.js と MapLibre `addProtocol` の登録順序**: `maplibregl.addProtocol('pmtiles', ...)` を `new maplibregl.Map(...)` より前に呼ばないと、 初回 tile request が 'No protocol handler' で fail。 `index.html` で `<script src="maplibre">` → `<script src="./lib/vendor/pmtiles.js">` → `<script src="viewer-map3d.js">` の順、 viewer 側の module init で `registerPmtilesProtocol(...)` を `new maplibregl.Map` 構築前に同期的に 1 回呼ぶ
 - **既存 `addProtocol('gsidem', ...)` との競合**: 別 scheme 名 (= `gsidem` vs `pmtiles`) なので競合しない、 ただし `registerPmtilesProtocol` の冪等性は test 3 で pin
 - **map 初期化の遅延 (F 節)**: 既存 viewer は L73 で即 `new maplibregl.Map` を構築している、 本 brief で「mode 判定後に構築」に変える。 副作用: map 構築まで `setAppState('checking')` の `state-checking` body class で `#map` が `display:none` のままになるが、 既存 CSS が `state-checking #map { display: block }` を持つかを実装時に確認、 不在なら CSS 1 行追加
 - **GSI dem PNG の SQLite 抽出時の encoding**: tiles 表の data 列は BLOB (= bytes そのまま)、 SQLite3 driver は Python bytes で返す。 `write_bytes(data)` を使う、 `write_text` 禁止 (= encoding 破壊で PNG header の magic 0x89 が壊れる)
@@ -364,7 +364,7 @@ backend (pytest、 既存 149 件に +5 件):
 3. `web/lib/pmtiles_loader.js` 新規 (+20 行)、 `registerPmtilesProtocol` export
 4. `web/lib/vendor/pmtiles.js` (= pmtiles@3.0.6 vendored、 BSD-3-Clause) + `web/lib/vendor/LICENSE-pmtiles` 配置
 5. `web/index.html` に `<script src="./lib/vendor/pmtiles.js">` 1 行追加 (= maplibre-gl.js の直後)
-6. `web/viewer-maplibre.js` (= 約 1225 行 → 約 1280 行):
+6. `web/viewer-map3d.js` (= 約 1225 行 → 約 1280 行):
    - L29 を `BASE_PATH` + `BRIDGE_TILE_BASE_URL` + `STATIC_TILE_BASE_URL` + `TILE_BASE_URL` の 4 const に拡張 (+5 行)
    - L100-133 の layers / sky 配列を `COMMON_LAYERS` / `COMMON_SKY` const に切り出し (+移動のみ)
    - `buildMapStyle({bridgeReachable})` helper 追加 (+30 行、 sources のみ条件分岐、 layers は COMMON 共有)

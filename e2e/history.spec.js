@@ -16,7 +16,7 @@
 //   - page.evaluate() で IndexedDB に直接 ride レコードを書き込む
 //     (= 完走まで待つと 80 分以上かかるため、保存経路のみ切り離してテスト)。
 //   - btnViewHistoryFromSetup を JS click → showHistoryOverlay() を起動。
-//   - viewer-maplibre.js の実コードをブラウザで動かすため、
+//   - viewer-map3d.js の実コードをブラウザで動かすため、
 //     showHistoryOverlay / appendHistoryRow / deleteRide / updatePostrideButtonVisibility
 //     のいずれを壊してもこのテストが落ちる。
 import { test, expect } from './base-test.js';

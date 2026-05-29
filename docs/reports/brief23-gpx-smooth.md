@@ -67,7 +67,7 @@ Test Files  11 passed (11)
 
 ## viewer 統合 (= 本 brief scope 外、 main session 引き継ぎ)
 
-`viewer-maplibre.js` での適用パターン (参考):
+`viewer-map3d.js` での適用パターン (参考):
 
 ```js
 import { smoothCourse } from './lib/gpx_smooth.js';

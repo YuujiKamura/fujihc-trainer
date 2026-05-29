@@ -130,7 +130,7 @@ describe('brief 34 ε-5: clearAllLocalData (= IndexedDB + localStorage 一括)',
 describe('brief 34 ε-5 viewer source: 確認 dialog 必須 + 完了 dialog + intro やり直し', () => {
   const fs = require('fs');
   const path = require('path');
-  const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+  const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
   const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 
   it('btnClearAllData click は直接 clearAllLocalData を呼ばず showClearConfirm 経由 (= 1 click flush 禁止、 B 軸 7 (c) 対策)', () => {
@@ -314,7 +314,7 @@ describe('b43: clearServiceWorkerCache (= SW キャッシュクリア、 非破�
 describe('b43: SW キャッシュクリアボタン source (= viewer / index.html)', () => {
   const fs = require('fs');
   const path = require('path');
-  const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+  const viewer = fs.readFileSync(path.resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
   const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 
   it('index.html に #btnRefreshApp があり #clear-data-section 内にある', () => {

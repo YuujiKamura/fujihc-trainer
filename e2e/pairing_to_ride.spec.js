@@ -10,7 +10,7 @@
 //   2. startRideConfirmed → client.sendRideStart() → ride_status:{state:'started'} が dispatch される
 //   3. wsHandlers.ride_status → hidePairing() → setAppState('riding') → body.classList に state-riding
 //
-// shim 再実装との違い: viewer-maplibre.js の実コードをブラウザで動かしているため、
+// shim 再実装との違い: viewer-map3d.js の実コードをブラウザで動かしているため、
 // hidePairing / setAppState / wsHandlers.ride_status を壊せばこのテストが落ちる。
 // 既存 shim テスト (integration_ble_ride_start.test.js 等) は viewer のコードを import しないため
 // 本体のバグを検出できない。
@@ -35,7 +35,8 @@ test('ペアリング完了 → ライド開始 → state-riding に遷移する
   await expect(page.locator('body')).toHaveClass(/state-riding/, { timeout: 20_000 });
 
   // b130: 状態遷移だけでなく実 paint が完了したかも assert. ?noterrain=1 mode のため
-  // terrain mesh は off、 MapLibre idle と minimap canvas 非空 pixel を確認.
+  // terrain mesh は off、 描画エンジン (= map3d / Three.js) の onceIdle と minimap canvas
+  // 非空 pixel を確認.
   await waitForPaintComplete(page, { waitTerrainMesh: false });
 
   // 走行画面でクリティカルな JS エラーが出ていないこと。

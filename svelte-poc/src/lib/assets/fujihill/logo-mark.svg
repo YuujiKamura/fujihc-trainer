@@ -1,0 +1,10 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="fujihill mark">
+  <rect width="64" height="64" rx="14" fill="#3461b3"></rect>
+  
+  <circle cx="48" cy="24" r="8" fill="#ff7a4d" opacity="0.95"></circle>
+  
+  <path d="M 4 52&#xA;           Q 14 48 22 42&#xA;           Q 28 36 30 26&#xA;           Q 32 19 34 19&#xA;           Q 36 19 38 26&#xA;           Q 40 36 44 42&#xA;           Q 50 48 60 52&#xA;           L 60 56&#xA;           L 4 56 Z" fill="#fbfcfe"></path>
+  
+  <path d="M 28 28&#xA;           Q 29 26 31 22&#xA;           Q 33 19 34 19&#xA;           Q 35 19 36 22&#xA;           Q 38 26 40 28&#xA;           Q 38 27 36 27&#xA;           Q 34 28 32 27&#xA;           Q 30 28 28 28 Z" fill="#3461b3"></path>
+</svg>

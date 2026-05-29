@@ -1,0 +1,14 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80" role="img" aria-label="fujihill">
+  
+  <circle cx="62" cy="38" r="11" fill="#ff7a4d"></circle>
+  
+  <path d="M 8 64&#xA;           Q 18 60 30 50&#xA;           Q 40 42 44 30&#xA;           Q 47 22 50 22&#xA;           Q 53 22 56 30&#xA;           Q 60 42 70 50&#xA;           Q 82 60 92 64&#xA;           L 92 70&#xA;           L 8 70 Z" fill="#3461b3"></path>
+  
+  <path d="M 41 33&#xA;           Q 43 30 46 26&#xA;           Q 49 22 50 22&#xA;           Q 51 22 54 26&#xA;           Q 57 30 59 33&#xA;           Q 56 32 53 31&#xA;           Q 50 32 48 31&#xA;           Q 45 32 41 33 Z" fill="#fbfcfe"></path>
+  
+  <g font-family="IBM Plex Sans, IBM Plex Sans JP, system-ui, sans-serif">
+    <text x="108" y="46" font-size="28" font-weight="600" fill="#1a1f2a" letter-spacing="-0.5">fujihill</text>
+    <text x="108" y="64" font-size="11" font-weight="400" fill="#5b6577" letter-spacing="0.5">富士ヒルクライム シミュレータ</text>
+  </g>
+</svg>

@@ -33,7 +33,7 @@ OSM Tile Usage Policy の "Limit to 2 download threads" "No bulk downloading" �
 
 ## 修正方針
 
-`web/viewer-maplibre.js` で 2 ステップ:
+`web/viewer-map3d.js` で 2 ステップ:
 
 1. **prefetch 呼出の完全 comment out** (1 行修正):
    ```js
@@ -42,7 +42,7 @@ OSM Tile Usage Policy の "Limit to 2 download threads" "No bulk downloading" �
    // prefetchTilesAlongCourse();  // <- comment out
    ```
 2. **関数本体は残すが test で「pairing 中の外部 fetch ゼロ」を保証**:
-   関数定義は viewer-maplibre.js 内に残置、 ただし呼出は無い。 brief 17 で viewer 経路ごと書き換わる時に関数定義も削除される。 「第二段の縮小版」「環境変数で復活」は削除 (= Round 2 で grey 経路と flag された)。
+   関数定義は viewer-map3d.js 内に残置、 ただし呼出は無い。 brief 17 で viewer 経路ごと書き換わる時に関数定義も削除される。 「第二段の縮小版」「環境変数で復活」は削除 (= Round 2 で grey 経路と flag された)。
 3. **status message 文言修正**: 既存 "裏読み中..." 表示が無意味になるため、 「ペアリング中 (タイルは表示時に取得)」に変更
 
 ## なぜ第二段を捨てるか
@@ -62,7 +62,7 @@ Round 2 audit (セキュリティ軸):
 
 ## 完了条件
 
-1. `web/viewer-maplibre.js` の `prefetchTilesAlongCourse()` 呼出が comment out されている
+1. `web/viewer-map3d.js` の `prefetchTilesAlongCourse()` 呼出が comment out されている
 2. status 表示文言が「ペアリング中 (タイルは表示時に取得)」に変更
 3. **JS test 追加** (= brief 18 完了後): `web/tests/no_external_fetch_on_load.test.js`
    - 内容: viewer を JSDOM 等で load した時、 `prefetchTilesAlongCourse` の呼出が走らないことを assertion

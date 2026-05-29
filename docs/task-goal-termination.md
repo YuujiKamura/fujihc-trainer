@@ -10,7 +10,7 @@
 ライドがゴール（コース終端）に到達すると、カメラ操作を含め viewer の操作が全部
 効かなくなり、ページをリロードするしか復帰できない。これを直す。
 
-真因は単純で、コードで確認済み。`viewer-maplibre.js` の描画ループ `tick`
+真因は単純で、コードで確認済み。`viewer-map3d.js` の描画ループ `tick`
 （2015〜2196 行）の末尾がこうなっている:
 
 ```
@@ -44,7 +44,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
 - **完走の自動終了** = ゴール初到達で 1 度だけ走る `_autoEnded` フラグ + `rideState.end()`
   + `sendRideEnd()`。2026-05-15 に入った既存機構（手動で「ライド終了」を押さなくても
   postride に行けるようにした fix）。
-- **postride** = 完走後オーバーレイ。`showPostride()`（viewer-maplibre.js:627）が出す。
+- **postride** = 完走後オーバーレイ。`showPostride()`（viewer-map3d.js:627）が出す。
   `sendRideEnd()` → `ride_status('ended')`（593 行）→ `showPostride` の経路。
 
 ## 目的（達成条件）
@@ -66,7 +66,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
 
 ## 実機構（コードで確認済み）
 
-- `tick`（`web/viewer-maplibre.js`:2015〜2196）が viewer 唯一の rAF ループ。カメラ更新
+- `tick`（`web/viewer-map3d.js`:2015〜2196）が viewer 唯一の rAF ループ。カメラ更新
   （`mapRenderer.updateCamera`）・HUD・描画（`mapRenderer.render`）・trkpt 蓄積・
   autosave が全部この中。
 - 末尾 2182〜2195 行が真因（上記「はじめに」のコード）。
@@ -99,7 +99,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
    ボタンを作るな。
 5. **ジャーニーテスト用のフックを足す**。ゴールまで実時間で 24km 走るのはテストでは
    不可能。`rider.placeAtDistance` を TEST_MODE 限定の URL パラメータ（例
-   `?seekTo=<メートル>`）から呼べる最小フックを `viewer-maplibre.js` に足し、コース
+   `?seekTo=<メートル>`）から呼べる最小フックを `viewer-map3d.js` に足し、コース
    ロード後に rider をコース終端の直前へ置けるようにしろ。フックは TEST_MODE
    ゲートで囲み、本番経路からは絶対に発火しないこと。
 6. テストを足す（下記「テスト」）。
@@ -117,7 +117,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
 
 ## テスト
 
-- **vitest（振る舞いの pin）**: `tick` ループは `viewer-maplibre.js` 内の
+- **vitest（振る舞いの pin）**: `tick` ループは `viewer-map3d.js` 内の
   module-scoped 関数で vitest からは到達不能。「ループが回る」を vitest 層に置くな。
   `rider.js` の `atGoal` / `clampDist` は既存ロジックで、本タスクで変更しない予定 ──
   変更しないなら新規 vitest は不要、既存テストを壊さないことだけ確認。`rider.js` の
@@ -147,7 +147,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
 `tick` の修正（ゴール後にも `requestAnimationFrame(tick)` を呼ぶ箇所）を 1 箇所
 わざと外して、ジャーニーテストの「固まっていない」assert が落ちることを手元で 1 回
 確認しろ → 戻す。落ちないなら観測点が真正でない、書き直し。戻したら
-`git diff web/viewer-maplibre.js` と他の触ったファイルの `git diff` で、意図した
+`git diff web/viewer-map3d.js` と他の触ったファイルの `git diff` で、意図した
 差分以外（壊しの戻し漏れ）が無いことを確認してから commit。
 
 ## 検証
@@ -170,7 +170,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
   `http://127.0.0.1:8000/?test=1&consent=dev` を開いてから `desk_capture` しろ。
   `desk_capture` が GPU 描画を白紙でしか返さない時は、PowerShell の
   `CopyFromScreen` で実画面をグラブしてよい。
-- `viewer-maplibre.js` は `.js` = `sw.js` の `isAppShell` で network-first 配信。
+- `viewer-map3d.js` は `.js` = `sw.js` の `isAppShell` で network-first 配信。
   online の限り常に最新が届くため CACHE_NAME / `?v=N` の bump は不要。
 - commit は自分が触ったファイルだけを `git commit -- <明示パス>` の一発でやれ
   （`git add` と `git commit` を分けるな、`git add -A` 禁止、他 worker のレース巻き
@@ -182,7 +182,7 @@ viewer のカメラ・HUD・描画・rider 更新はすべてこの 1 本の `ti
 - MDN Page Visibility API（タブ非表示時の rAF 挙動）:
   https://developer.mozilla.org/docs/Web/API/Page_Visibility_API
 - Playwright（e2e ジャーニーテスト）: https://playwright.dev/docs/writing-tests
-- 真因の箇所: `web/viewer-maplibre.js` の `tick`（2015〜2196、特に末尾 2182〜2195）
+- 真因の箇所: `web/viewer-map3d.js` の `tick`（2015〜2196、特に末尾 2182〜2195）
 - rider モデル: `web/lib/rider.js`（`atGoal` / `clampDist` / `placeAtDistance`）
 - 既存ジャーニーテスト: `web/../e2e/user_journey.spec.js`
 

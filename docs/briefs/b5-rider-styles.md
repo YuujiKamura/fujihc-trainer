@@ -8,7 +8,7 @@ fujihc-trainer viewer の rider マーカー (= 走行中に地図上を動く�
 
 ## 背景・現状
 
-- `web/viewer-maplibre.js` の `buildRiderFeatures(lat, lon, heading, spin)` が rider の
+- `web/viewer-map3d.js` の `buildRiderFeatures(lat, lon, heading, spin)` が rider の
   GeoJSON (FeatureCollection) を作る。各 feature は `{color, base, height}` を property に
   持ち、`rider` source → `rider-body` レイヤー (`fill-extrusion`) が押し出し描画する。
 - tick (rAF ループ) は b2 の per-frame 最適化で、`riderFrameChanged` が真の時だけ

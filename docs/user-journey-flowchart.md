@@ -5,7 +5,7 @@
 viewer の全画面と「どの画面から、何を押すと、どこへ動くか」を 1 枚に並べた地図。
 個別バグ(観るモードの trap 等)を 1 つずつ叩くのではなく、全体を観てから直すために作る。
 flowchart に起こすと「出口の無い画面 (= trap)」「埋もれた導線」が一目で分かる。
-出典: web/viewer-maplibre.js / web/index.html / web/lib/consent.js を読んで作成 (2026-05-19)。
+出典: web/viewer-map3d.js / web/index.html / web/lib/consent.js を読んで作成 (2026-05-19)。
 
 ---
 

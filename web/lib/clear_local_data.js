@@ -7,7 +7,7 @@
 //   削除完了後 dialog で Strava 設定ページへの導線を再提示する (= index.html:343 link 既存)。
 //
 // 設計:
-// - pure module、 caller (= viewer-maplibre.js) から「実行確認」が済んだ後にのみ呼ばれる前提
+// - pure module、 caller (= viewer-map3d.js) から「実行確認」が済んだ後にのみ呼ばれる前提
 // - confirm dialog は viewer 側で既存 #confirm-overlay (z=1700) を流用する (= B 軸 7 (c) 対策)
 // - storage / indexedDB は inject 可能 (= node test 用)
 
@@ -108,7 +108,7 @@ export async function clearAllLocalData(opts = {}) {
  * キャッシュ (= IndexedDB TileCache) は残る。「全データ削除」(= clearAllLocalData)
  * とは別操作。 deleteIndexedDb / clearAllLocalStorage を呼ばないことで非破壊を構造的に担保。
  *
- * viewer-maplibre.js の `?nosw=1` URL パラメータ経路と「アプリを最新版に更新」 ボタンの
+ * viewer-map3d.js の `?nosw=1` URL パラメータ経路と「アプリを最新版に更新」 ボタンの
  * 両方がこの 1 関数を呼ぶ (= SW クリアロジックの 1 本化、 双子コピペ回避)。
  *
  * @param {{serviceWorker?: ServiceWorkerContainer|null, caches?: CacheStorage|null}} [opts]

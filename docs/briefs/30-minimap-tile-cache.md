@@ -26,7 +26,7 @@ user 訂正 (= 引用):
 
 ## 何が今足りないか (= 現状)
 
-- `web/viewer-maplibre.js` L731-753 `loadOsmTile`: `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png` を `new Image().src` 直指定。 起動ごとに OSM サーバへ 9-16 req。 ToS 範囲内ではあるが「キャッシュが効く」状態ではない (= browser HTTP cache に乗っていれば再 fetch 抑止されるが、 cache の生存期間 / VPN / シークレット mode 等で容易に外れる、 物理的に DB 保存していないので不確実)。
+- `web/viewer-map3d.js` L731-753 `loadOsmTile`: `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png` を `new Image().src` 直指定。 起動ごとに OSM サーバへ 9-16 req。 ToS 範囲内ではあるが「キャッシュが効く」状態ではない (= browser HTTP cache に乗っていれば再 fetch 抑止されるが、 cache の生存期間 / VPN / シークレット mode 等で容易に外れる、 物理的に DB 保存していないので不確実)。
 - `src/fujihc/tile_constants.py`: minimap 用 zoom / bbox の中央定数なし。 viewer L823-828 で `const z = 11` `const buffer = 1` をマジック直書きしているのが load-bearing (= NG-R1-1 再演に近い、 brief 29 から持ち越し)。
 - `src/fujihc/tile_server.py` L29 `VALID_SOURCES = ('osm', 'gsi_dem')`: raster minimap タイル用の source 名が未定義。 `get_tile` は受け取った瞬間 400 で reject する。
 - `src/fujihc/tile_server.py` L152-213 `get_setup_status`: 計算対象は `gsi_dem` (= 36 タイル) + `osm` (= 300 タイル) の 2 source 固定。 minimap raster の充足度を viewer に返す手段ゼロ。
@@ -127,7 +127,7 @@ async def fetch_minimap_raster_async(
 - `dbinit.fetch_minimap_raster_async` を spawn、 progress_cb は既存 `_progress` (= `progress_broadcaster` 経由で WS push)。
 - 戻り値 202 `{state: 'started', source: 'osm_raster'}` (= 既存 GSI / OSM 同型)。
 
-### E. viewer-maplibre.js 切替
+### E. viewer-map3d.js 切替
 
 - `loadOsmTile` の `img.src` を `${TILE_BASE_URL}/osm_raster/${z}/${tx}/${ty}.png` に変更。 ただし 1 引数目の URL を fetch する形にせず、 (1) まず DB 経由を試す、 (2) 503/404 のみ OSM 直叩きに fallback、 の二段にする。 fallback 経路は cache 構築前の初回起動でも minimap polyline + OSM (= 初回 fetch) が出る保証。
 - 具体実装: `img.onerror` の中で `img.src` を `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png` に再設定 (= 1 回だけ retry、 二度目の onerror で resolve(silent fail))。 旧 brief 29 の挙動を超 set 維持。
@@ -185,7 +185,7 @@ async def fetch_minimap_raster_async(
 - `src/fujihc/tile_server.py` の `VALID_SOURCES` 拡張 + `get_setup_status` で `osm_raster` 計上。
 - `src/fujihc/dbinit.py` に `fetch_minimap_raster_async` 追加。
 - `src/fujihc/http_app.py` に `POST /tiles/_fetch_minimap_raster` route 追加。
-- `web/viewer-maplibre.js` の `loadOsmTile` が `${TILE_BASE_URL}/osm_raster/...` 一次経路 + OSM 直叩き fallback、 `buildMinimapTopBase` が起動時 1 回 POST。
+- `web/viewer-map3d.js` の `loadOsmTile` が `${TILE_BASE_URL}/osm_raster/...` 一次経路 + OSM 直叩き fallback、 `buildMinimapTopBase` が起動時 1 回 POST。
 - `web/tests/viewer_url_audit.test.js` に新 2 件 (= osm_raster 経路 + 起動 trigger) 追加、 `loadOsmTile` 限定例外維持。
 - `tests/test_minimap_raster_fetch.py` 新規 5-6 件、 `tests/test_setup_status.py` に 1-2 件追加。
 - `npm test --silent` 全 green (= 227 → 229)。
@@ -215,7 +215,7 @@ minimap (= 上半分 #minimap-top canvas) の raster タイルを既存 main vie
 - `tile_server.py` の `VALID_SOURCES` 拡張 + `get_setup_status` の sources_spec に `osm_raster` 追加
 - `dbinit.py` に `fetch_minimap_raster_async` 追加 (= GSI 踏襲、 URL / source 名 / metadata を OSM raster 用に振替)
 - `http_app.py` に `POST /tiles/_fetch_minimap_raster` route + inflight 制御追加
-- `viewer-maplibre.js` の `loadOsmTile` を `${TILE_BASE_URL}/osm_raster/...` 一次経路 + OSM 直叩き fallback に書換、 `buildMinimapTopBase` の冒頭で起動時 POST、 `handleDbinitProgress` に osm_raster 分岐追加
+- `viewer-map3d.js` の `loadOsmTile` を `${TILE_BASE_URL}/osm_raster/...` 一次経路 + OSM 直叩き fallback に書換、 `buildMinimapTopBase` の冒頭で起動時 POST、 `handleDbinitProgress` に osm_raster 分岐追加
 - `viewer_url_audit.test.js` に 2 件追加 (= DB 経路 + 起動 trigger)
 - `test_minimap_raster_fetch.py` 新規 5-6 件、 `test_setup_status.py` に 1-2 件追加
 - `npm test` 全 green (227 → 229)、 `pytest -q` 全 green (159 → 165)

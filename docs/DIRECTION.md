@@ -5,7 +5,7 @@
 現行の MapLibre GL JS viewer から脱却し、**Three.js のメッシュ地形 viewer に本番を移行する**
 方針が確定している。これは確定方針であり、実験ではない。
 
-- 現 viewer (`web/index.html` / `web/viewer-maplibre.js`) = MapLibre ベース。本物の3D
+- 現 viewer (`web/index.html` / `web/viewer-map3d.js`) = MapLibre ベース。本物の3D
   オブジェクトが置けず (rider が角柱「豆腐」、球が描けない)、汎用地図エンジンの
   overhead を抱える。アプリは富士ヒル24km1本の固定コースしか使わない。
 - 目標 = `web/terrain3d.html` (Three.js メッシュ地形、DEM から構築済) を土台に、

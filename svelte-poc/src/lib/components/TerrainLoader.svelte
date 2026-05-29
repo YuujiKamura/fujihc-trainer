@@ -1,35 +1,23 @@
 <script>
+  import { onMount } from 'svelte';
   import { completeTerrainLoad } from '../store.svelte.js';
-  
-  let isLoading = $state(false);
 
-  function startLoad() {
-    isLoading = true;
-    // フェイクのロード時間 (2秒後に完了)
+  onMount(() => {
+    // 仮想の地形読み込み
     setTimeout(() => {
-      isLoading = false;
       completeTerrainLoad();
-    }, 2000);
-  }
+    }, 1000);
+  });
 </script>
 
-<div class="overlay">
-  <h2>fujihill-trainer (Svelte PoC版)</h2>
-  <p>地形データの読み込みをシミュレーションします。</p>
-  
-  {#if !isLoading}
-    <button onclick={startLoad}>開始</button>
-  {:else}
-    <p>Loading terrain data...</p>
-    <progress value="50" max="100"></progress>
-  {/if}
+<div class="loader">
+  <h2>地形データを読み込み中...</h2>
 </div>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.8); color: white;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 2000;
+  .loader {
+    padding: 20px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 8px;
   }
-  button { padding: 10px 20px; font-size: 1.2rem; cursor: pointer; }
 </style>

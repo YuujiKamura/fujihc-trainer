@@ -29,7 +29,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const viewer = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const viewer = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 const html = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 
 // class 持ち div の最小 shim (= integration_ble_ride_start.test.js と同形).
@@ -67,7 +67,7 @@ function makeDoc() {
   };
 }
 
-// viewer-maplibre.js の setRideStartEnabled / connect_status connected branch /
+// viewer-map3d.js の setRideStartEnabled / connect_status connected branch /
 // showPreflightAndStart の overlay 管理を逐語的に再現する shim。
 function createViewerShim({ doc }) {
   // setRideStartEnabled (= viewer.js: btnRideStart.disabled と #ride-start-hint.hidden の単一窓口).

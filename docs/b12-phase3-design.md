@@ -4,7 +4,7 @@
 
 2026-05-18 更新: Phase2.5 完了 (40324 commit cb5bccc) で差し替え口が
 `web/lib/map_renderer.js` の意味メソッド15個に確定した。本メモを実際の契約に
-突合して書き直した。実コードは read のみ、viewer-maplibre.js / map_renderer.js /
+突合して書き直した。実コードは read のみ、viewer-map3d.js / map_renderer.js /
 web/courses/ は不可侵で遵守。
 
 ---
@@ -381,4 +381,4 @@ viewer 本体の既存モジュールをそのまま使う。Three.js モジュ�
   取得経路 / buildCourseRibbon 改修の test 影響 / 光強度マッピング / 実装の置き場と
   Phase4 の切替) は着手時に確認・ユーザー判断。確証なく進めない。
 
-実コードは read のみ。viewer-maplibre.js / map_renderer.js / web/courses/ は不可侵で遵守。
+実コードは read のみ。viewer-map3d.js / map_renderer.js / web/courses/ は不可侵で遵守。

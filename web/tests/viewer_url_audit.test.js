@@ -1,4 +1,4 @@
-// brief 17b: viewer-maplibre.js の外部 fetch ゼロを物理的に pin する source-grep gate。
+// brief 17b: viewer-map3d.js の外部 fetch ゼロを物理的に pin する source-grep gate。
 // 1 ヶ月後に誰かが OSM 直叩きを復活させた瞬間に test が fail する。
 // brief 13/17b の「外部第三者 endpoint への runtime fetch ゼロ」を維持するための
 // 唯一の機械化された防衛線。
@@ -8,7 +8,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 // brief 33: _site/ 配信物の規律 describe block で参照する path (= scripts/build_pages.py が生成)
 const SITE_DIR = resolve(__dirname, '..', '..', '_site');
 
@@ -317,7 +317,7 @@ describe('viewer MAP_MODE (?map=1) で UI 操作ゼロの地図表示確認', ()
 // に集約。 旧 buildMinimapBase / loadOsmTile が viewer に存在し、 #minimap-top が canvas であり、
 // brief 28 の initMinimapMap / buildMapStyle が viewer に存在しないことを minimap_osm_direct で pin。
 
-// b31: terrain 経路の GSI dem 許可と物理 gate (= viewer-maplibre.js 単体 scan の scope 外、
+// b31: terrain 経路の GSI dem 許可と物理 gate (= viewer-map3d.js 単体 scan の scope 外、
 // lib 側 source を別途 grep)。 既存 describe (= brief 17b の viewer 単体 GSI 直叩き禁止) は
 // 無改変で継続 pin、 本 describe は lib 側で GSI dem direct 経路を許可することと、
 // CLAUDE.md §地図タイル配布元への配慮 の物理 gate (= FETCH_LIMIT / MAX_TILES / seamlessphoto 固定)
@@ -336,8 +336,8 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
     expect(terrainLoader).toMatch(/export\s+const\s+GSI_DEM_DIRECT_BASE\s*=\s*['"]https:\/\/cyberjapandata\.gsi\.go\.jp\/xyz\/dem5a_png['"]/);
   });
 
-  it('viewer 本体 (viewer-maplibre.js) には GSI URL literal が出現しない (= 既存 audit 互換)', () => {
-    // viewer-maplibre.js 本体には GSI URL literal が出現してはならない (= 既存 L46-48 で pin 済)。
+  it('viewer 本体 (viewer-map3d.js) には GSI URL literal が出現しない (= 既存 audit 互換)', () => {
+    // viewer-map3d.js 本体には GSI URL literal が出現してはならない (= 既存 L46-48 で pin 済)。
     // b42: probe オーケストレーションが terrain_phase.js へ切り離され、viewer は
     // GSI_DEM_DIRECT_BASE を import しなくなった。GSI URL literal 不在は引き続き pin。
     expect(viewer).not.toMatch(/cyberjapandata\.gsi\.go\.jp/);
@@ -377,7 +377,7 @@ describe('b31: terrain 経路の GSI dem 許可と物理 gate', () => {
   });
 
   it('terrain_loader.js / tile_loader3d.js 内に #attrib / maplibregl-ctrl-attrib literal が存在しない (= 出典機構の責務分離維持)', () => {
-    // 出典機構は index.html の static #attrib + viewer-maplibre.js の verifyAttributionVisible()
+    // 出典機構は index.html の static #attrib + viewer-map3d.js の verifyAttributionVisible()
     // 本 lib 側に出典 DOM 識別子が出現すると責務分離が壊れる
     expect(terrainLoader).not.toMatch(/['"]#attrib['"]/);
     expect(terrainLoader).not.toMatch(/maplibregl-ctrl-attrib/);
@@ -447,7 +447,7 @@ describe('brief 31: 外部 fetch ゼロ規律の拡張 (= pmtiles CDN 経由 blo
 });
 
 // brief 33: _site/ 配信物の規律 (= build_pages.py で生成した artifact の URL pin)。
-// 既存 describe block (= b17b の viewer-maplibre.js source 単体 scan) には触らず、
+// 既存 describe block (= b17b の viewer-map3d.js source 単体 scan) には触らず、
 // 新規 describe で _site/ 配下を target にする (= b31 worker 編集との衝突回避)。
 //
 // 実行前提: `python scripts/build_pages.py` で _site/ を生成済。
@@ -463,7 +463,7 @@ describe('_site/ 配信物の規律 (= brief 33)', () => {
     expect(html).not.toMatch(/https?:\/\/\*\.strava\.com/);
   });
 
-  // 2026-05-20 fix: viewer-maplibre.js が L48 で strava_oauth.js から import してるため、
+  // 2026-05-20 fix: viewer-map3d.js が L48 で strava_oauth.js から import してるため、
   // source 自体を削除すると module evaluation が落ちて viewer boot がゼロになる
   // (= 公開後の実画面確認で発覚)。 source は配信維持、 Strava endpoint への通信は
   // CSP の connect-src / img-src 削除 (= 既存「Strava CDN URL が消えている」 test で pin)

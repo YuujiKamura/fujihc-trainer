@@ -50,7 +50,7 @@ fujihc-trainer の brief 34 ε-9 (= 地形 load ステータス + 全アクシ�
 ## 参照すべき file
 
 - `~/.agents/scratch/fujihc-trainer-project/phase-design-2026-05-15.md` (= v3 設計図、 ε-9 節は「実装計画」内)
-- `~/fujihc-trainer/web/viewer-maplibre.js` (= 起動分岐周辺、 bootEnv / ensureMapBooted / dispatchAfterIntro)
+- `~/fujihc-trainer/web/viewer-map3d.js` (= 起動分岐周辺、 bootEnv / ensureMapBooted / dispatchAfterIntro)
 - `~/fujihc-trainer/web/index.html` (= setup-overlay / intro overlay / step-indicator)
 - `~/fujihc-trainer/web/lib/consent.js` / `web/lib/ride_state.js` (= ε-1〜ε-8 で landed 済の lib)
 - `~/fujihc-trainer/web/tests/integration_*.test.js` (= 既存 integration test の pattern)

@@ -1,14 +1,14 @@
 // terrain_phase.js — フェーズ0「地形データ準備」のオーケストレーション。
 //
 // b42 (2026-05-21 user 指示「初回地形データフェッチを他のフェーズと切り離して」):
-// viewer-maplibre.js 内 inline だった terrain probe のオーケストレーション (= URL 構築 /
+// viewer-map3d.js 内 inline だった terrain probe のオーケストレーション (= URL 構築 /
 // SKIP_TERRAIN 分岐 / loader 生成 / start / subscribe 配線) をこの module へ切り離す。
 // design の #step-indicator「0. 地形データ準備」とコード境界を一致させ、単体テスト可能にする。
 //
 // 責務分担:
 //   - terrain_phase.js (本 module) : probe の lifecycle オーケストレーションのみ。DOM 非依存。
 //   - terrain_loader.js            : probe の fetch 実体 (= 本 module で触らない)。
-//   - viewer-maplibre.js           : UI / gate / ロード overlay。本 module を subscribe で消費。
+//   - viewer-map3d.js           : UI / gate / ロード overlay。本 module を subscribe で消費。
 //
 // GSI direct base の URL literal SoT は terrain_loader.js の GSI_DEM_DIRECT_BASE のまま。
 // 本 module はその定数を import して loader へ渡すだけ (= literal をここに書かない、

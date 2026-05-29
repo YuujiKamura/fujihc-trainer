@@ -11,7 +11,7 @@
 // (= cancel 経路) は復元する。 accept 経路は startRideConfirmed → ride_status:started →
 // hidePairing が setup を再度 hide した上で setAppState('riding') へ。
 //
-// この test は behavioral simulation: viewer-maplibre.js を import せず (= 大きすぎ +
+// この test は behavioral simulation: viewer-map3d.js を import せず (= 大きすぎ +
 // browser-only API 依存)、 viewer の DOM 操作経路を node 上で再現して visible class の
 // 遷移を assertion で固定する。 fix 不在では「click 後も setup-overlay.visible == true」が
 // 残るため fail、 fix 後は consent-overlay.visible == true + setup-overlay.visible == false に
@@ -26,7 +26,7 @@ import {
 } from '../lib/consent.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const html = readFileSync(INDEX_PATH, 'utf8');
@@ -78,7 +78,7 @@ function makeDoc() {
   };
 }
 
-// viewer-maplibre.js の showConsentOverlay / hideConsentOverlay / hidePairing /
+// viewer-map3d.js の showConsentOverlay / hideConsentOverlay / hidePairing /
 // setAppState / wsHandlers.ride_status / btnRideStart click handler / btnConsentAccept handler /
 // btnConsentCancel handler を behavioral に再現する shim.
 //

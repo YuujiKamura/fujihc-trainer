@@ -2,7 +2,7 @@
 
 ## 成果物
 
-- `web/lib/route_styling.js` (新規) — pure functions、 viewer-maplibre.js touch せず
+- `web/lib/route_styling.js` (新規) — pure functions、 viewer-map3d.js touch せず
 - `web/tests/route_styling.test.js` (新規) — 29 件、 全 pass
 
 ## API
@@ -55,7 +55,7 @@ route_styling 29 件 + 既存 96 件すべて pass、 regression なし。
 
 ## 統合ポイント (main session への hand-off)
 
-main が viewer-maplibre.js で `polyline` source を `buildGradeColoredRoute(course)` の結果に差し替え、 line-color paint を `makeGradeColorExpression()` に置き換える。 例:
+main が viewer-map3d.js で `polyline` source を `buildGradeColoredRoute(course)` の結果に差し替え、 line-color paint を `makeGradeColorExpression()` に置き換える。 例:
 
 ```js
 import { buildGradeColoredRoute, makeGradeColorExpression } from './lib/route_styling.js';

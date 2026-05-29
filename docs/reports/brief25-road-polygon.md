@@ -12,7 +12,7 @@ MapLibre の `line` layer (= pixel 単位幅, zoom で見た目変動) ではな
 - `web/tests/road_polygon.test.js` (新規, 181 行)
 
 scope 外 (= 触っていない):
-- `web/viewer-maplibre.js` (main が統合担当)
+- `web/viewer-map3d.js` (main が統合担当)
 - `web/lib/route_styling.js` (brief 24, import で再利用のみ)
 - `web/lib/gpx_smooth.js` (brief 23, peer F 担当)
 
@@ -76,7 +76,7 @@ Rule 1 (= 既存 test を壊すな) 遵守: 私の追加分は 0 regression、 1
 
 ## 次の統合 (= main の作業, 私の scope 外)
 
-main は `viewer-maplibre.js` の grade-color line layer source を
+main は `viewer-map3d.js` の grade-color line layer source を
 `buildGradeColoredRoadPolygons(course)` の出力に差し替える。 paint property は
 `fill-color` で `['get', 'color']` を読むだけ。 layer type は `fill` (平面) または
 `fill-extrusion` (立体) のどちらでも properties.color が効く。

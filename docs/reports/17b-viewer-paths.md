@@ -2,7 +2,7 @@
 
 ## やったこと
 
-`web/viewer-maplibre.js` から外部第三者 endpoint への runtime fetch を物理的にゼロ化。
+`web/viewer-map3d.js` から外部第三者 endpoint への runtime fetch を物理的にゼロ化。
 gate は新規 `web/tests/viewer_url_audit.test.js` の 4 件 source-grep assertion で固定。
 
 ### 1. TILE_BASE_URL 定数追加 (line 7 付近)
@@ -54,7 +54,7 @@ gate は新規 `web/tests/viewer_url_audit.test.js` の 4 件 source-grep assert
 
 ## やらなかったこと (= scope 外、 別 brief 待ち)
 
-- viewer-maplibre.js の全体 ES modules 化 (= brief 18 残り)
+- viewer-map3d.js の全体 ES modules 化 (= brief 18 残り)
 - `web/lib/terrarium.js` への addProtocol 変換ロジック委譲 (= 選択肢 A 採用、 ES modules 化と一括で行う)
 - 503 fallback DOM (= 別 brief)
 - camera tick / WebSocket / ride state のリファクタ (= brief 19)
@@ -65,7 +65,7 @@ gate は新規 `web/tests/viewer_url_audit.test.js` の 4 件 source-grep assert
 
 なし。
 - peer B (`web/lib/tile_coverage.js`) と peer C (`scripts/init_tile_db.py`) には触っていない。
-- 編集 file は `web/viewer-maplibre.js` + 新規 `web/tests/viewer_url_audit.test.js` のみ。
+- 編集 file は `web/viewer-map3d.js` + 新規 `web/tests/viewer_url_audit.test.js` のみ。
 - `web/index-maplibre.html` は元から外部 URL 参照がなく編集不要だった。
 
 ## commit suggest
@@ -73,7 +73,7 @@ gate は新規 `web/tests/viewer_url_audit.test.js` の 4 件 source-grep assert
 ```
 brief 17b: viewer 外部 fetch ゼロ化 + source-grep audit gate
 
-- viewer-maplibre.js: TILE_BASE_URL 経由に切替、 OSM/GSI 直叩き削除
+- viewer-map3d.js: TILE_BASE_URL 経由に切替、 OSM/GSI 直叩き削除
 - prefetchTilesAlongCourse + 関連 dead code 完全削除 (-46 lines)
 - minimap の OSM 直叩きを単色背景に置換 (= 外部 fetch ゼロ優先)
 - web/tests/viewer_url_audit.test.js: 4 件 source-grep gate

@@ -8,7 +8,7 @@
 //   - 地形ロード完了でトレーナー接続画面 (#setup-overlay) へ遷移しなくなった。
 //   - 起動シーンに同意記憶 (= intro consent / introConsented / view 短絡) が再混入した。
 //
-// viewer-maplibre.js は maplibre-gl global を要求する大型 module で直 import 不可。
+// viewer-map3d.js は maplibre-gl global を要求する大型 module で直 import 不可。
 // DOM 構造は index.html を grep、 起動経路は viewer source を grep + terrain_phase の
 // loaderFactory mock で「start 未呼出」 を behavior として pin する。
 
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { createTerrainPhase } from '../lib/terrain_phase.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 const HTML = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 
 /*

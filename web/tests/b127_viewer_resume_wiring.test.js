@@ -1,11 +1,11 @@
-// b127: viewer-maplibre.js が ride_resume.js を import + showHistoryOverlay で bind する pin.
+// b127: viewer-map3d.js が ride_resume.js を import + showHistoryOverlay で bind する pin.
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
 describe('b127: viewer (= Controller) が ride_resume (= Model) を import + bind', () => {
   it('ride_resume.js から resumeFromRecord を import', () => {

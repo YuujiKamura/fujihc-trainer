@@ -1,4 +1,4 @@
-// hud_chart_viewer.test.js ── viewer-maplibre.js / index.html / hud.js の source string を grep で
+// hud_chart_viewer.test.js ── viewer-map3d.js / index.html / hud.js の source string を grep で
 // pin する gate test. impl の挙動でなく impl の string 構造 (= 「正しい結線が書かれていること」
 // + 「不可侵契約 file が touch されていないこと」) を物理 verify する。
 // 既存 segment_labels_viewer.test.js と同型 pattern.
@@ -9,11 +9,11 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf-8');
+const VIEWER = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf-8');
 const HTML   = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
 const HUD_JS = readFileSync(resolve(__dirname, '../lib/hud.js'), 'utf-8');
 
-describe('viewer-maplibre.js: chart 結線 (= 新規結線が書かれていることを物理 verify)', () => {
+describe('viewer-map3d.js: chart 結線 (= 新規結線が書かれていることを物理 verify)', () => {
   it('hud_chart_buffer import が存在 (= 落ちると chart push helper が未結線、 1 Hz sample が積まれない)', () => {
     expect(VIEWER).toMatch(/import\s*\{[^}]*\bcreateChartBuffer\b[^}]*\}\s*from\s*['"]\.\/lib\/hud_chart_buffer\.js['"]/);
   });
@@ -38,7 +38,7 @@ describe('viewer-maplibre.js: chart 結線 (= 新規結線が書かれている�
   });
 });
 
-describe('viewer-maplibre.js: 既存 hud 呼出不変 (= 不可侵契約、 floor pin)', () => {
+describe('viewer-map3d.js: 既存 hud 呼出不変 (= 不可侵契約、 floor pin)', () => {
   // 既存呼出件数の floor pin (= 削除されていないことを物理 verify)
   it('hud.trainer(...) 呼出が最低 1 件', () => {
     expect((VIEWER.match(/hud\.trainer\s*\(/g) || []).length).toBeGreaterThanOrEqual(1);
@@ -87,7 +87,7 @@ describe('index.html: chart panel DOM + CSS', () => {
   });
 });
 
-describe('viewer-maplibre.js: 折りたたみ結線 (= b99 ui-tune)', () => {
+describe('viewer-map3d.js: 折りたたみ結線 (= b99 ui-tune)', () => {
   it('hud-chart-fold-btn の getElementById 呼出が存在', () => {
     expect(VIEWER).toMatch(/getElementById\(['"]hud-chart-fold-btn['"]\)/);
   });
@@ -99,7 +99,7 @@ describe('viewer-maplibre.js: 折りたたみ結線 (= b99 ui-tune)', () => {
   });
 });
 
-describe('viewer-maplibre.js: CP (= chart-state を bridge に POST、 背景タブ verify path)', () => {
+describe('viewer-map3d.js: CP (= chart-state を bridge に POST、 背景タブ verify path)', () => {
   it('postChartStateToBridge 関数が定義されている', () => {
     expect(VIEWER).toMatch(/function\s+postChartStateToBridge/);
   });

@@ -1,5 +1,5 @@
 // brief 26b: dbinit-overlay DOM の物理 grep gate + index.html 構造の pin.
-// viewer-maplibre.js を直接 import すると maplibre-gl global が無くて落ちるため、
+// viewer-map3d.js を直接 import すると maplibre-gl global が無くて落ちるため、
 // DOM 構造は source-grep で確認 + 状態遷移は単体 unit を抽出して test する.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 
 describe('brief 26b: dbinit-overlay DOM 構造', () => {
   const html = readFileSync(INDEX_PATH, 'utf8');
@@ -36,7 +36,7 @@ describe('brief 26b: dbinit-overlay DOM 構造', () => {
   });
 });
 
-describe('brief 26b: viewer-maplibre.js dbinit logic snippets', () => {
+describe('brief 26b: viewer-map3d.js dbinit logic snippets', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
   it('startGsiFetch / startOsmExtract / skipDbinit の 3 関数が定義済', () => {

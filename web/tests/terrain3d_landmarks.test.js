@@ -4,7 +4,7 @@
 // (= readFileSync で source string を検査、 実 map runtime に依存しない) を踏襲する。
 //
 // 役割:
-//   - viewer-maplibre.js: mapRenderer.setLandmarks 経由必須 + scene 直接 touch 禁止 (= 契約 gate)
+//   - viewer-map3d.js: mapRenderer.setLandmarks 経由必須 + scene 直接 touch 禁止 (= 契約 gate)
 //   - terrain3d.html: createMapRenderer 経由しない直結 form (= scene 直接 touch を明示許可)
 //   - index.html: <span id="eta"> 存在 (= hud.eta の DOM 出力先)
 //
@@ -16,11 +16,11 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const viewerJs = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const viewerJs = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 const terrain3dHtml = readFileSync(resolve(__dirname, '..', 'terrain3d.html'), 'utf8');
 const indexHtml = readFileSync(resolve(__dirname, '..', 'index.html'), 'utf8');
 
-describe('b39 viewer-maplibre.js 結線 (= mapRenderer 経由必須、 scene 直接 touch 禁止)', () => {
+describe('b39 viewer-map3d.js 結線 (= mapRenderer 経由必須、 scene 直接 touch 禁止)', () => {
   it('FUJIHC_LANDMARKS と snapLandmarksToCourse を course_landmarks.js から import している', () => {
     expect(viewerJs).toMatch(/import\s*\{[^}]*FUJIHC_LANDMARKS[^}]*\}\s*from\s*['"]\.\/lib\/course_landmarks\.js['"]/);
     expect(viewerJs).toMatch(/import\s*\{[^}]*snapLandmarksToCourse[^}]*\}\s*from\s*['"]\.\/lib\/course_landmarks\.js['"]/);
@@ -46,7 +46,7 @@ describe('b39 viewer-maplibre.js 結線 (= mapRenderer 経由必須、 scene 直
     expect(matches.length).toBe(0);
   });
 
-  it('createLandmarks3d を viewer-maplibre.js が直接 import していない (= mapRenderer 経由必須の契約)', () => {
+  it('createLandmarks3d を viewer-map3d.js が直接 import していない (= mapRenderer 経由必須の契約)', () => {
     // landmarks3d.js は map3d/index.js (= mapRenderer.setLandmarks 内部) からのみ import。
     expect(viewerJs).not.toMatch(/from\s*['"]\.\/lib\/map3d\/landmarks3d\.js['"]/);
   });

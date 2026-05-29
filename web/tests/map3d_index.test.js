@@ -47,7 +47,7 @@ describe('createMapRenderer — 差し替え口30メソッド', () => {
     expect(fnKeys.sort()).toEqual([...CONTRACT_METHODS].sort());
   });
 
-  it('boot 前 setLandmarks を呼んでも例外にならない (= viewer-maplibre.js の早呼びを許容、 b39)', () => {
+  it('boot 前 setLandmarks を呼んでも例外にならない (= viewer-map3d.js の早呼びを許容、 b39)', () => {
     const r = createMapRenderer();
     expect(() => r.setLandmarks([])).not.toThrow();
     expect(() => r.setLandmarks(null)).not.toThrow();

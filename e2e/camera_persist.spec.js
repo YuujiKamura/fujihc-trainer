@@ -31,7 +31,9 @@ async function reachViewModeMap(page) {
   await expect(page.locator('body')).toHaveClass(/mode-view/, { timeout: 5_000 });
   // b130: 地図描画が完了するまで待ってから drag を実行 (= drag 中に MapLibre が
   // まだ load 中だと event 取りこぼしの risk あり).
-  await waitForPaintComplete(page, { waitTerrainMesh: false });
+  // 観るモードでは maplibre idle が登録前に発火済で来ないため waitMapIdle:false、
+  // minimap canvas の実 pixel 描画だけを pin する。
+  await waitForPaintComplete(page, { waitMapIdle: false, waitTerrainMesh: false });
 }
 
 // 地図中央を右ボタンで水平 dx px ドラッグして orbit (= bearing) を回す。

@@ -1,5 +1,5 @@
 // brief 19: WebSocket client を 1 module に集約 (= NG-R1-12 解消).
-// viewer-maplibre.js から ws send / message dispatch を消す pure-ish module.
+// viewer-map3d.js から ws send / message dispatch を消す pure-ish module.
 // DOM / localStorage は触らない (= viewer 側の責務、 受信は handlers callback で渡す).
 //
 // protocol message 種別はここで一覧:

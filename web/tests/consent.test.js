@@ -76,7 +76,7 @@ describe('brief 34 ε-3: ride consent (= field 別 opt-in、 default OFF)', () =
 });
 
 describe('brief 34 ε-3 / b46: HTML / CSS grep gate (= ride consent overlay が index.html に存在)', () => {
-  // viewer-maplibre.js 側の grep gate と並んで index.html 側を独立に pin.
+  // viewer-map3d.js 側の grep gate と並んで index.html 側を独立に pin.
   // b46: intro overlay は地形データローダー画面に作り変えた ── intro 文言 / btnIntro*
   //   ボタンの grep は撤去。 ride consent overlay (= consent-overlay) の grep は残す。
   const fs = require('fs');

@@ -70,7 +70,7 @@ rider / 自転車 / 物理 / ride 駆動 / HUD / ミニマップ / 本番 viewer
 
 ## 制約
 
-- MapLibre / viewer-maplibre.js / index.html には触らない。
+- MapLibre / viewer-map3d.js / index.html には触らない。
 - push 禁止 (commit は OK)。 silent execution。
 - 調査メモは repo 外 (`~/.agents/scratch/fujihc-trainer-project/`) へ。
 

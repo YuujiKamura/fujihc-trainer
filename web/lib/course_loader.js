@@ -1,5 +1,5 @@
 // @ts-check
-// b50: viewer-maplibre.js の loadCourse() から「fetch → 平滑化 → terrain 構築」の
+// b50: viewer-map3d.js の loadCourse() から「fetch → 平滑化 → terrain 構築」の
 // 純粋部を切り出した course ローダ。
 //
 // b56: このファイルは TypeScript の型の壁に入っている。先頭の // @ts-check で

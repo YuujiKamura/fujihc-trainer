@@ -2,7 +2,7 @@
 
 ## はじめに
 
-Path B 移行計画 (b11) の Phase 0。viewer-maplibre.js (2946 行) は HUD の表示更新を
+Path B 移行計画 (b11) の Phase 0。viewer-map3d.js (2946 行) は HUD の表示更新を
 本体のフレーム処理と WebSocket ハンドラに setText でべた書きしている。専用モジュール
 が無いので、Three.js 版 viewer が HUD をそのまま使えない。
 
@@ -13,7 +13,7 @@ import できる。これが移行の下ごしらえ。
 ## ゴール
 
 ライド HUD (時間・距離・標高・勾配・速度・パワー・ケイデンス・心拍・trainer 応答)
-の表示更新を web/lib/hud.js に集約する。viewer-maplibre.js は hud.js を呼ぶ形に
+の表示更新を web/lib/hud.js に集約する。viewer-map3d.js は hud.js を呼ぶ形に
 変える。**画面の出方は一切変えない** ── 既存ユーザーには見た目の変化ゼロ。
 
 ## 背景・既存資産 (= 作り直すな、再利用しろ)
@@ -22,7 +22,7 @@ import できる。これが移行の下ごしらえ。
   (= 値が変わった時だけ DOM を触る writer)。hud.js もこの createTextWriter を使う。
 - HUD の DOM 構造は index.html の #hud (time/dist/total/ele/ack) と #rider-hud
   (r-slope/r-speed/r-power/r-cadence/r-hr)。要素 id は変えない。
-- HUD 更新の現在地: viewer-maplibre.js のフレーム処理 (elapsed/dist/ele/r-slope/
+- HUD 更新の現在地: viewer-map3d.js のフレーム処理 (elapsed/dist/ele/r-slope/
   speed)、trainer データの WebSocket ハンドラ (power/cadence/hr/r-*/ack)、
   total の初期化 1 箇所。
 
@@ -36,7 +36,7 @@ import できる。これが移行の下ごしらえ。
      更新メソッド束 (ride / total / speed / trainer / ack / riderHudAt)。
      内部で createTextWriter を使い、値を整形して span に書く。MapLibre にも
      Three.js にも触らない。値の計算と rider-hud の画面座標は呼び出し側の責務。
-2. viewer-maplibre.js を hud.js を使う形に変える。HUD の inline setText の塊を
+2. viewer-map3d.js を hud.js を使う形に変える。HUD の inline setText の塊を
    hud のメソッド 1 呼び出しに置き換える。整形ロジックは hud.js へ移し、viewer
    からは消す。HUD 以外の setText (BLE 状態・ペアリングパネル p-*・スライダー値・
    debug-hud の d-*) はこの石では触らない ── ペアリングパネルが trainer 整形を
@@ -68,13 +68,13 @@ debug-hud (#debug-hud の d-*、?debug=1 専用の開発者用パネル)、cam-z
 
 ## 参照
 
-- 既存 lib: web/lib/frame_diff.js (createTextWriter)、web/viewer-maplibre.js
+- 既存 lib: web/lib/frame_diff.js (createTextWriter)、web/viewer-map3d.js
 - b11 移行計画 (Phase 0): ~/.agents/scratch/fujihc-trainer-project/briefs/b11-maplibre-to-threejs-migration.md
 - MDN textContent: https://developer.mozilla.org/docs/Web/API/Node/textContent
 
 ## まとめ
 
-ゴール = ライド HUD の表示更新を hud.js に集約し、viewer-maplibre.js はそれを呼ぶ
+ゴール = ライド HUD の表示更新を hud.js に集約し、viewer-map3d.js はそれを呼ぶ
 だけにする。画面は一切変えない。整形は純関数で hud.js に置きテストで pin。debug-hud
 やペアリングパネルは対象外。これで Three.js 版 viewer が同じ hud.js を import できる、
 Path B 移行の Phase 0。

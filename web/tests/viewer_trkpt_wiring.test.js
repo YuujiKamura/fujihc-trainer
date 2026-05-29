@@ -8,7 +8,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 
 describe('brief 33 fix: viewer tick が trkpts を蓄積する (= 整合性 gate)', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');

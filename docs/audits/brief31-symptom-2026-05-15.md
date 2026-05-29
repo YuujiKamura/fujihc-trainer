@@ -10,7 +10,7 @@
 
 ## 直前 1 行 fix (= 対症療法、 構造はそのまま)
 
-viewer-maplibre.js の `checkSetupStatus()` line 336:
+viewer-map3d.js の `checkSetupStatus()` line 336:
 ```
 - if (!resp.ok) return { ... bridgeReachable: true };   // 404 も bridge と誤認
 + if (!resp.ok) return { ... bridgeReachable: false };  // 404 = static server
@@ -30,7 +30,7 @@ npm 389 全 green。 ただし画面検証は未済 (= Chrome cache か古いタ
 
 ## 関連 file
 
-- `web/viewer-maplibre.js`
+- `web/viewer-map3d.js`
   - line 42-52: BASE_PATH / TILE_BASE_URL 系の宣言
   - line 135-180: buildMapStyle で sources の分岐
   - line 183: `let _bridgeReachable = true;` (初期値 true)

@@ -15,8 +15,8 @@ user 訂正: 「最初から地形とか地図とかをDBに保存するって�
 
 ## 何が今足りないか (= 現状)
 
-- `web/viewer-maplibre.js` L204-205: `setAppState('pairing')` を起動直後に無条件で発火、 DB 状態を見ていない。 state 種は `pairing / riding` の 2 つだけ (= `state-checking / state-dbinit` 不在)
-- `web/viewer-maplibre.js` L433: `if (TEST_MODE) initTestMode(); else connectBridge();` の起動分岐に DB 検知 step ゼロ
+- `web/viewer-map3d.js` L204-205: `setAppState('pairing')` を起動直後に無条件で発火、 DB 状態を見ていない。 state 種は `pairing / riding` の 2 つだけ (= `state-checking / state-dbinit` 不在)
+- `web/viewer-map3d.js` L433: `if (TEST_MODE) initTestMode(); else connectBridge();` の起動分岐に DB 検知 step ゼロ
 - `web/index.html` L43-49: overlay は `setup-overlay / postride-overlay / confirm-overlay` の 3 種、 `dbinit-overlay` 不在
 - `src/fujihc/http_app.py` L17-64: route は `tile / metadata / style / metrics` の 4 種、 setup 状態を返す endpoint 不在 (= viewer から DB の completeness を問い合わせる手段ゼロ)
 - `src/fujihc/tile_server.py`: tile 単位の 503 は返すが「いま全体で N/M タイル揃っている」の集計 API 無し
@@ -104,7 +104,7 @@ source 別進捗:
 
 ### D. viewer 側: 状態機械拡張
 
-- `web/viewer-maplibre.js` L204-205 の `setAppState` 関数はそのまま、 呼び出し側で `'checking' / 'dbinit'` の 2 state を追加
+- `web/viewer-map3d.js` L204-205 の `setAppState` 関数はそのまま、 呼び出し側で `'checking' / 'dbinit'` の 2 state を追加
 - 起動分岐 L433 を以下に置換:
   ```js
   if (TEST_MODE) {
@@ -130,7 +130,7 @@ source 別進捗:
   - 「skip (地形のみで進む)」 button (`#btnDbinitSkip`) → 直接 `connectBridge()` 呼ぶ
   - 完走時自動: setup_status 再 GET で overall=ready なら `connectBridge()` 自動遷移
   - cancel button (`#btnDbinitCancel`) は本 brief 範囲外 (= async task の cancel 機構は phase 2)
-- `web/viewer-maplibre.js` の `wsHandlers` に dbinit_progress 追加:
+- `web/viewer-map3d.js` の `wsHandlers` に dbinit_progress 追加:
   ```js
   dbinit_progress(msg) {
     const bar = document.getElementById(`dbinit-${msg.source}-bar`);
@@ -185,7 +185,7 @@ integration:
 3. `src/fujihc/dbinit.py` 新規 (+120 行)、 `fetch_gsi_async` / `extract_osm_async` 2 関数 export
 4. `scripts/fetch_gsi_dem.py` / `scripts/fetch_osm_pmtiles.py` を薄い CLI wrapper に短縮 (= main() が `asyncio.run(...)` 呼ぶだけ、 各 30 行以内)
 5. `web/index.html` に `<div id="dbinit-overlay">` 新規 (+40 行)、 既存 overlay 群と CSS 独立
-6. `web/viewer-maplibre.js` の起動分岐 L433 を `checkSetupStatus` + `initDbInit` に置換 (+50 行)、 `wsHandlers.dbinit_progress` 追加 (+10 行)
+6. `web/viewer-map3d.js` の起動分岐 L433 を `checkSetupStatus` + `initDbInit` に置換 (+50 行)、 `wsHandlers.dbinit_progress` 追加 (+10 行)
 7. test 約 25-29 件 全 green (= pytest 既存 130+ 件 + 新規 12-15 件、 vitest 既存 168+ 件 + 新規 12-14 件)
 8. 物理 grep gate (= dbinit-overlay 内 5 要素 id / setup-overlay 内 dbinit 要素ゼロ / `body.state-dbinit` CSS 規則 1 件以上)
 9. 既存 `test_ws_smoke.py` / `test_tile_server.py` / `test_http_app.py` 不変

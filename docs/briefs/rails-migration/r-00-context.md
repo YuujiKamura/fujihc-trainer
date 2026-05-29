@@ -12,7 +12,7 @@ fujihc-trainer (= JS + Python の旧構成、 brief 00-33 で結実) を Rails 8
 
 | 旧 | 新 |
 |---|---|
-| `web/viewer-maplibre.js` (= ~2200 行) | `app/views/viewer/show.html.erb` + 複数 Stimulus controller (= `viewer_3d_controller.js` + 純 module 群) + Three.js GLTFLoader |
+| `web/viewer-map3d.js` (= ~2200 行) | `app/views/viewer/show.html.erb` + 複数 Stimulus controller (= `viewer_3d_controller.js` + 純 module 群) + Three.js GLTFLoader |
 | `web/lib/terrain.js` | `app/domain/terrain.rb` (= PORO、 r-04 layered architecture 参照、 ActiveRecord 不要) |
 | `web/lib/rider.js` | `app/domain/rider.rb` (= PORO、 Terrain を query して「今ここ」 を取る) |
 | `src/fujihill/bridge.py` (= Python WebSocket BLE bridge) | **Flow A**: ブラウザ完結 BLE (= `trainer_ble_controller.js` + `hrm_ble_controller.js`) + ActionCable で server に state push |

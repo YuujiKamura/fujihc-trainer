@@ -1,4 +1,4 @@
-// b125d: viewer-maplibre.js が viewer_session + bike_settings labelScale 経由に
+// b125d: viewer-map3d.js が viewer_session + bike_settings labelScale 経由に
 // 集約された pin (= grep gate).
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(resolve(__dirname, '../viewer-maplibre.js'), 'utf8');
+const src = readFileSync(resolve(__dirname, '../viewer-map3d.js'), 'utf8');
 
 // コメント剥がしの軽量版 (viewer_physics_drive と同型). 同名識別子のコメント混入と
 // コード上の identifier を区別する.
@@ -18,7 +18,7 @@ function stripComments(s) {
 }
 const srcLive = stripComments(src);
 
-describe('b125d: 4 module-global が viewer-maplibre.js から撤去されている', () => {
+describe('b125d: 4 module-global が viewer-map3d.js から撤去されている', () => {
   it.each([
     'ENV',
     'scanMode',

@@ -59,7 +59,7 @@
   `history_row.js` を踏襲)、 ride 状態を直接読まず caller (Controller) が値を
   渡す形. ride 開始 / state 遷移 / IDB 書込はしない、 callback で Controller に
   上げるだけ.
-- **Controller** (`web/viewer-maplibre.js`、 当面これ 1 つ): Model と View の協調、
+- **Controller** (`web/viewer-map3d.js`、 当面これ 1 つ): Model と View の協調、
   event bind、 state 遷移、 ride 開始 / 終了の orchestration. **当面 1 file** だが
   軽量化方向 (= 上 section) に常に動かす、 Model と View に運べる部分は運ぶ.
 
@@ -83,13 +83,13 @@
 - 2026-05-15 (= b1 復元バグ): rider が view に癒着、 model 側で位置が更新されないのに
   view が動いて見える bug. JS 地形コンポーネントは問題なかった、 壊れたのは「ビューに
   癒着したライダー」 だけ. MVC 分離が事故境界そのもの.
-- 2026-05-29: AI が viewer-maplibre.js に新規 inline 関数を生やそうとして user 訂正
+- 2026-05-29: AI が viewer-map3d.js に新規 inline 関数を生やそうとして user 訂正
   「MVC モデルを規約にしておけ。 違反してるようなのを最初から作りこませるな」.
   本 section はこの訂正の永続化.
 
 ## viewer 軽量化 + Svelte 移行準備 (= 機能追加と同位の最優先)
 
-viewer-maplibre.js (= 3000+ 行の塊) は **常に軽量化方向に動かす**。 svelte-poc/ への
+viewer-map3d.js (= 3000+ 行の塊) は **常に軽量化方向に動かす**。 svelte-poc/ への
 移行準備として、 viewer 内の module-global / inline 関数 / DOM bind / 物理積分 /
 時計 state は **別 file (= `web/lib/*.js`) に切り出すのを default**。 機能追加だけが
 食えるコードではなく、 「viewer を分けて Svelte 側に運べる形にする」 こと自体が

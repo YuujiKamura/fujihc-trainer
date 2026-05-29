@@ -11,7 +11,7 @@ blocks: [14-tile-local-db, 17-tile-server-endpoint]
 
 ## はじめに
 
-fujihc-trainer の地図表示は現状 Cesium 版 (`web/viewer.js` 831 行 + `web/index.html`) と MapLibre 版 (`web/viewer-maplibre.js` 733 行 + `web/index-maplibre.html`) の 2 系統並走。yuuji の判断で **Cesium 版は OSS にできない** ため凍結する。本 brief は「凍結」を物理処理と責務確定 (= MapLibre 版が単一本流) に落とす。
+fujihc-trainer の地図表示は現状 Cesium 版 (`web/viewer.js` 831 行 + `web/index.html`) と MapLibre 版 (`web/viewer-map3d.js` 733 行 + `web/index-maplibre.html`) の 2 系統並走。yuuji の判断で **Cesium 版は OSS にできない** ため凍結する。本 brief は「凍結」を物理処理と責務確定 (= MapLibre 版が単一本流) に落とす。
 
 7 軸 audit で「2 系統並走の本流宣言なし」が複数軸で NG 指摘されており、これを解消する load-bearing な前提作業。後続の brief 14 (ローカル tile DB)、brief 17 (tile server endpoint) は MapLibre 版だけを前提に書ける。
 

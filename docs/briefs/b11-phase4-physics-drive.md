@@ -19,7 +19,7 @@ Phase 3 でコース始点に静止配置済み。Phase 4 は、これを物理�
 - `rider.js` の `createRider({terrain})` → `distanceTraveled` / `speed` を保持、
   `setSpeed(mps)` で速度入力、`tick(dt)` で `distanceTraveled += speed*dt`、
   `start()` で distance=0・active 化。生成直後は paused。
-- viewer-maplibre.js の確立した配線:
+- viewer-map3d.js の確立した配線:
   `physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, power, slope);
    rider.setSpeed(physicsSpeedMps); rider.tick(dt);` ── これを踏襲する。
 - terrain3d.html: Phase 3 で `riderStartPlacement(ribbon.positions, vertexCount)`
@@ -29,7 +29,7 @@ Phase 3 でコース始点に静止配置済み。Phase 4 は、これを物理�
 ## 用語 (この brief 内で固定)
 
 - **physics 速度** ── `integratePhysics` が積分する rider の速度 (m/s)。実装上の
-  変数名は `physicsSpeedMps` (= viewer-maplibre.js の既存変数名に揃える)。これを
+  変数名は `physicsSpeedMps` (= viewer-map3d.js の既存変数名に揃える)。これを
   `rider.setSpeed()` に渡し、rider.js 内部の `speed` プロパティになる ── 「physics
   速度 → physicsSpeedMps → rider.setSpeed → rider.speed」は 1 本の経路で、語の
   揺れではなく層をまたぐ受け渡しの各段の名前。
@@ -134,7 +134,7 @@ node test 対象外 ── 前進挙動は実画面目視で検証する。
 - terrain.js (createTerrain ── 距離→勾配 query)
 - rider.js (createRider ── distanceTraveled / setSpeed / tick / start)
 - Three.js Object3D.lookAt: https://threejs.org/docs/#api/en/core/Object3D.lookAt
-- viewer-maplibre.js (integratePhysics → rider.setSpeed → rider.tick の確立配線)
+- viewer-map3d.js (integratePhysics → rider.setSpeed → rider.tick の確立配線)
 
 ## リスク
 
@@ -173,7 +173,7 @@ node test 対象外 ── 前進挙動は実画面目視で検証する。
 
 Phase 4 = Phase 3 で始点に静止していた自転車を物理で走らせる。物理は
 `integratePhysics` (検証済 SoT) をそのまま呼び、ride モデルは `createTerrain` /
-`createRider` を再利用、配線は viewer-maplibre.js の確立パターンを踏襲する。
+`createRider` を再利用、配線は viewer-map3d.js の確立パターンを踏襲する。
 新規コードは (a) `riderStartPlacement` を距離一般の `riderPlacementAtDistance`
 に拡張、(b) terrain3d.html のループに物理 step + 自転車再配置を足す、の 2 点のみ。
 固定パワー 250W で前進を実証、BLE は Phase 7。検証は npm test 全緑 + 実 Chrome

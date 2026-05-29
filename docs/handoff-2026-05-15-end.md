@@ -68,17 +68,17 @@ drift catalog: `~/.agents/state/fujihc-trainer/audit-drift-catalog.md` (Round 1-
 
 ### 1. brief 19b: viewer 統合層を viewer に組み込む
 
-ws_client / ride_state / camera_controller の 3 lib は既に landed (= test 44 件 全 pass)、 ただし viewer-maplibre.js は依然 inline で WebSocket / ride state / camera を持つ。 NG-R1-12 (= ws.send 7+ 箇所散在) は未解消。
+ws_client / ride_state / camera_controller の 3 lib は既に landed (= test 44 件 全 pass)、 ただし viewer-map3d.js は依然 inline で WebSocket / ride state / camera を持つ。 NG-R1-12 (= ws.send 7+ 箇所散在) は未解消。
 
 具体:
-- viewer-maplibre.js 冒頭で 3 lib を import
+- viewer-map3d.js 冒頭で 3 lib を import
 - `connectBridge()` を `createBridgeClient(WS_URL, wsHandlers)` 呼出に置換、 `client.sendRideStart()` 等で send 集約
 - `initTestMode()` を `createTestModeClient(wsHandlers, options)` に置換 (= fake ws オブジェクトの inline 廃止)
 - ride 進行関連の global state (= `curIdx`, `curDist`, `paused`, `rideActive` 等) を `rideState = createRideState(course)` で管理、 tick 内で `rideState.advance(dt, playSpeed)` 呼出
 - `map.jumpTo()` の引数を `computeCameraParams(course, rideState.snapshot(), { userZoom, userPitch, lookAhead: 5 })` で計算
 - viewer_url_audit.test.js に「ws.send が viewer 内 0 件」「createBridgeClient import」「rideState 使用」を pin
 
-注意: 既存挙動を変えない、 source-grep gate + 全 52+ 件 JS test pass + 全 125 件 Python test pass を維持。 viewer-maplibre.js は約 700 行から 400 行程度に縮む見込み。
+注意: 既存挙動を変えない、 source-grep gate + 全 52+ 件 JS test pass + 全 125 件 Python test pass を維持。 viewer-map3d.js は約 700 行から 400 行程度に縮む見込み。
 
 ### 2. baseline ride 計測 (= user 手動)
 
@@ -145,11 +145,11 @@ DB 構築前は viewer の tile 経路が 503 (= setup 未完了 signal、 bridg
 
 ## ハマる罠 (= 次 session が拾う時)
 
-- viewer-maplibre.js は ES modules 化済 (= `<script type="module">`)、 import / export 可能だが、 globalThis 経由の MapLibre / localStorage / document アクセスは module scope でも動く
+- viewer-map3d.js は ES modules 化済 (= `<script type="module">`)、 import / export 可能だが、 globalThis 経由の MapLibre / localStorage / document アクセスは module scope でも動く
 - web/lib/* は test では vitest、 viewer から使う時は browser の native ES modules、 両環境で同 file が動く前提を維持
 - cross-language fixture (= `web/tests/fixtures/py_*.json`) は Python test 実行で生成、 JS test が `existsSync` skip で fixture 不在を許容、 ただし peer B (= brief 14 Python) が先に走ってないと cross-language test は skip 扱い
 - bridge.py の bind は `127.0.0.1` 厳守、 `0.0.0.0` への変更は `test_bind_is_127_0_0_1_in_source` test が fail させる物理 gate
-- viewer-maplibre.js の `prefetchTilesAlongCourse` 関数定義は brief 17b で完全削除済、 復活させると `test_viewer_url_audit` が fail
+- viewer-map3d.js の `prefetchTilesAlongCourse` 関数定義は brief 17b で完全削除済、 復活させると `test_viewer_url_audit` が fail
 - `SCHEMA_VERSION` は `tile_constants.py` が唯一の真実源、 各 script で再定義禁止 (= init_tile_db.py の重複定義は SoT 統合済)
 - `.omc/` は AI session state、 `.gitignore` 追加済、 commit しないこと
 

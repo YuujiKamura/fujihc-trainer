@@ -1,6 +1,6 @@
 // ライド HUD の表示更新を 1 モジュールに集約 (Path B 移行の Phase 0)。
 //
-// 旧来 viewer-maplibre.js 本体に setText でべた書きだった HUD 更新 (時間/距離/標高/
+// 旧来 viewer-map3d.js 本体に setText でべた書きだった HUD 更新 (時間/距離/標高/
 // 勾配/速度/パワー/ケイデンス/心拍/trainer 応答) を、 値の整形と DOM 書き込みだけを
 // 担う純モジュールに括り出す。 MapLibre にも Three.js にも依存しない ── 値の計算と
 // rider-hud の画面座標は呼び出し側の責務で、 hud は受け取った値を整形して書くだけ。

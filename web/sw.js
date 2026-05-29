@@ -20,7 +20,7 @@ const CACHE_NAME = 'fujihill-v21';  // b97: bump (= b88〜95 修正が user SW c
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './viewer-maplibre.js?v=46',
+  './viewer-map3d.js?v=46',
   './course.json',
   './static/course.json',
   './static/map.pmtiles',

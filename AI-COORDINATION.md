@@ -11,7 +11,7 @@
 | AI | 担当 | 触ってよいパス |
 |---|---|---|
 | **Gemini (Antigravity)** | Svelte 版の殻・UI・ビルドパイプライン | `web/src/**`, `svelte-poc/**`, リポ直下 `vite.config.js`, `package.json` の Svelte/Vite 関連, Svelte ビルド成果物 |
-| **Claude (Claude Code)** | 既存 viewer engine を framework 非依存モジュールに作り変える (= 載せ替え可能化リファクタ) | `web/lib/**`, `web/viewer-maplibre.js`, `web/index.html`, `web/tests/**`, `src/fujihill/**`, `e2e/**` (`e2e/debug_capture.spec.js` を除く) |
+| **Claude (Claude Code)** | 既存 viewer engine を framework 非依存モジュールに作り変える (= 載せ替え可能化リファクタ) | `web/lib/**`, `web/viewer-map3d.js`, `web/index.html`, `web/tests/**`, `src/fujihill/**`, `e2e/**` (`e2e/debug_capture.spec.js` を除く) |
 
 **接点** = `web/lib/` の framework 非依存モジュール。Claude がインターフェースを安定に
 保ち、Gemini の Svelte 殻はそれを import するだけ。相手レーンのファイルは編集しない。
@@ -59,7 +59,7 @@ PDCA ループに必ず組み込むこと。
 | b55 | wsHandlers を emitter/adapter 化 | 将来 | - |
 | b56 | bootApp 初期化フローの async 直列化 | 将来 | - |
 
-Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**に進める。
+Phase 1 (b50-b53) は全部 `viewer-map3d.js` を編集するので**直列**に進める。
 
 ## Worklog (append-only、新しいものを上に)
 
@@ -173,7 +173,7 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
   (`loadDemStitched` 経路) のみ」 scope 外、 viewer は GSI direct fallback で
   正常起動。 同型問題なので別 brief b70 (仮称) で起動 probe にも同じ撤去を
   適用するのが自然。 詳細は brief §実画面検証で発見した残課題。
-- 2026-05-23 Claude — b68 完了 (commit `1576e1e`)。完成済みブランチ `b62-atmosphere-tuning-sliders` を `b46-terrain-loader-screen` にマージし、富士遠景の物理ベース大気散乱 (b61) と散乱パラメータ調整スライダー 4 本 (`atmoMie` / `atmoG` / `atmoDensity` / `atmoSun`、b62) を現行ブランチへ復活 (新規実装でなくブランチ合流)。実コンフリクトは AI-COORDINATION.md の Worklog のみ ── b62 側 2 エントリと b46 側「全ワーカー通達」1 エントリを時系列順で両方残して解決。`viewer-maplibre.js` は auto-merge で b62 の atmosphere 4 def と b46 のパワー def が共存、`index.js` / `scene.js` / `map3d_index.test.js` は b46 が分岐点以降未 touch で b62 版がそのまま入る。7軸 audit 3 round で CONVERGED (LOAD-BEARING 0 / COSMETIC 1)。検証: vitest 1519 passed / 0 failed、pytest 239 passed / 4 skipped / 0 failed (test_fake_trainer はポート衝突で既知ハング、b59 と同じく --ignore)、e2e `atmosphere_sliders.spec.js` 2/2 passed、bridge 無し静的サーバ (python http.server 8090) で viewer を起動 → atmoMie デフォルト (5e-6) と 40e-6 で 2 枚キャプチャを比較、Mie 上昇で富士遠景が霞み Mie 低下で山体の輪郭が戻る挙動を目視確認、機器設定パネルに散乱スライダー 4 本が並ぶことも確認。
+- 2026-05-23 Claude — b68 完了 (commit `1576e1e`)。完成済みブランチ `b62-atmosphere-tuning-sliders` を `b46-terrain-loader-screen` にマージし、富士遠景の物理ベース大気散乱 (b61) と散乱パラメータ調整スライダー 4 本 (`atmoMie` / `atmoG` / `atmoDensity` / `atmoSun`、b62) を現行ブランチへ復活 (新規実装でなくブランチ合流)。実コンフリクトは AI-COORDINATION.md の Worklog のみ ── b62 側 2 エントリと b46 側「全ワーカー通達」1 エントリを時系列順で両方残して解決。`viewer-map3d.js` は auto-merge で b62 の atmosphere 4 def と b46 のパワー def が共存、`index.js` / `scene.js` / `map3d_index.test.js` は b46 が分岐点以降未 touch で b62 版がそのまま入る。7軸 audit 3 round で CONVERGED (LOAD-BEARING 0 / COSMETIC 1)。検証: vitest 1519 passed / 0 failed、pytest 239 passed / 4 skipped / 0 failed (test_fake_trainer はポート衝突で既知ハング、b59 と同じく --ignore)、e2e `atmosphere_sliders.spec.js` 2/2 passed、bridge 無し静的サーバ (python http.server 8090) で viewer を起動 → atmoMie デフォルト (5e-6) と 40e-6 で 2 枚キャプチャを比較、Mie 上昇で富士遠景が霞み Mie 低下で山体の輪郭が戻る挙動を目視確認、機器設定パネルに散乱スライダー 4 本が並ぶことも確認。
 - 2026-05-22 Claude — b62 完了 (branch `b62-atmosphere-tuning-sliders`、base `ada555f`)。
   b61 の大気散乱が白っぽすぎる件を是正。`atmosphere3d.js` の `ATMO_BETA_MIE` を
   21e-6 → 5e-6 に下げ Rayleigh 優位に (= 白濁を脱し青い透明感)。散乱パラメータを機器設定
@@ -230,7 +230,7 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
 - 2026-05-22 Claude — b53 (brief `b53-section-collapse-and-power-slider`、 タスク表の
   b53「tick ループ抽出」とは別件、 user 直接指示の UI 追加)。観るモードに 2 機能を追加。
   (1) 区間リストパネル `#section-list-panel` のヘッダ折りたたみトグル `#btnSectionCollapse`
-  (index.html / CSS / viewer-maplibre.js)。(2) 調整パネル `CONTROL_DEFS` にパワー
+  (index.html / CSS / viewer-map3d.js)。(2) 調整パネル `CONTROL_DEFS` にパワー
   スライダー power def (default 250W)。`createFakeStateGenerator` に `getPower` 第 3
   引数を追加 (省略時 150 で後方互換)、 観る/デモ/TEST の fake trainer の power_w を
   スライダー値 `manualPowerW` にした ── 既存の `wsHandlers.state` → `integratePhysics`
@@ -254,7 +254,7 @@ Phase 1 (b50-b53) は全部 `viewer-maplibre.js` を編集するので**直列**
   `web/lib/course_loader.js` に抽出。viewer は `loadCourseData` を import。
   挙動不変、vitest 1448 / e2e user_journey 13 件 green。commit 8cb70c0。
 - 2026-05-22 Claude — viewer 載せ替え可能化リファクタ計画を策定。engine を
-  viewer-maplibre.js から framework 非依存モジュールへ剥がす方針。
+  viewer-map3d.js から framework 非依存モジュールへ剥がす方針。
 - 2026-05-22 Claude — b47/b48/b49 (観るモードフラグ修正 / カメラ視点永続化 /
   `?cap=1` 画面送信モード) を実装・push。
 - 2026-05-22 Gemini — Svelte 版の殻を `svelte-poc/` → `web/src/` へ移行中。

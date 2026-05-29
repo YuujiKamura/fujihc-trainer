@@ -6,20 +6,20 @@
 
 ## 目的
 
-index.html の手書きスライダー9個と、viewer-maplibre.js に5系統で散らばった配線を、作成済みの `web/lib/control_panel.js` (定義駆動の共通機構) に一本化する。機器設定パネルを折りたたみ可能にする。
+index.html の手書きスライダー9個と、viewer-map3d.js に5系統で散らばった配線を、作成済みの `web/lib/control_panel.js` (定義駆動の共通機構) に一本化する。機器設定パネルを折りたたみ可能にする。
 
 ## なぜ
 
-スライダーを1個増やすたびに index.html の `<input type=range>` 行と viewer-maplibre.js の配線を両方手書きしていた。control_panel.js は調整項目1個を定義オブジェクト1個で宣言できる。新規調整スライダー (b13-4) を足す前提工事。
+スライダーを1個増やすたびに index.html の `<input type=range>` 行と viewer-map3d.js の配線を両方手書きしていた。control_panel.js は調整項目1個を定義オブジェクト1個で宣言できる。新規調整スライダー (b13-4) を足す前提工事。
 
 ## 現状
 
 - index.html L429-445: 手書き `<input type="range">` 9個 (rngDiff/rngSpd/rngInertia/rngMass/rngRr/rngCda/rngLightDir/rngLightStr/rngLabelSize)
-- viewer-maplibre.js のスライダー配線が5系統に分裂: `bindSlider` 定義 L2250・使用 L2259-2260 / `bindBikeSlider` 定義 L2279・使用 L2293-2298 / 慣性 個別配線 L2263-2275 / 光源 個別関数 applyLightDir/applyLightStr L2302-2316 / ラベルサイズ 個別配線 L2320-2332
+- viewer-map3d.js のスライダー配線が5系統に分裂: `bindSlider` 定義 L2250・使用 L2259-2260 / `bindBikeSlider` 定義 L2279・使用 L2293-2298 / 慣性 個別配線 L2263-2275 / 光源 個別関数 applyLightDir/applyLightStr L2302-2316 / ラベルサイズ 個別配線 L2320-2332
 - 物理グローバル変数: diffMult(L183) speedMult(L184) inertiaKg(L190) bikeMass(L201) bikeCrr(L202) bikeCda(L203)、labelSizeScale(L256)
 - `web/lib/control_panel.js`: 作成済。export = `mountControlPanel` ほか。createSliderRow は input id を `'rng_'+key`、値表示 span id を `key+'Val'` で生成する。テスト control_panel.test.js 25件 green。**worker は control_panel.js を作り直さず、そのまま使う。**
-- 既存テスト segment_labels_viewer.test.js が index.html / viewer-maplibre.js のスライダー配線を静的 grep で pin している (後述)。
-- sw.js: app shell (html/js/css) は network-first。CACHE_NAME='fujihill-v11'。index.html L808 が `<script type="module" src="viewer-maplibre.js?v=39"></script>`、sw.js PRECACHE_URLS (L23) にも同じ `viewer-maplibre.js?v=39`。
+- 既存テスト segment_labels_viewer.test.js が index.html / viewer-map3d.js のスライダー配線を静的 grep で pin している (後述)。
+- sw.js: app shell (html/js/css) は network-first。CACHE_NAME='fujihill-v11'。index.html L808 が `<script type="module" src="viewer-map3d.js?v=39"></script>`、sw.js PRECACHE_URLS (L23) にも同じ `viewer-map3d.js?v=39`。
 
 ## 変更
 
@@ -27,9 +27,9 @@ index.html の手書きスライダー9個と、viewer-maplibre.js に5系統で
 - L429-445 の9スライダー行を撤去。
 - `#controls` 内、ボタン群 (L424-428) と hillshade dbg 表示 (L446-451) の間に `<div id="control-sliders"></div>` を置く。
 - `<style>` に `.panel-header` (cursor:pointer・太字) と `.panel-body` のスタイルを追加。既存 `.row`/`.val` (L87-89) はそのまま使う。
-- index.html L808 `<script type="module" src="viewer-maplibre.js?v=39"></script>` の `?v=39` を `?v=40` に。
+- index.html L808 `<script type="module" src="viewer-map3d.js?v=39"></script>` の `?v=39` を `?v=40` に。
 
-### viewer-maplibre.js
+### viewer-map3d.js
 - import 群に `import { mountControlPanel } from './lib/control_panel.js';`
 - L2250-2332 のスライダー配線5系統を撤去。
 - 物理グローバル宣言 (L183-203) より後ろで `CONTROL_DEFS` を定義。apply は現行挙動を保つ:
@@ -74,7 +74,7 @@ control_panel.js は localStorage に「スライダー生値」を保存する�
 
 ### sw.js
 - CACHE_NAME を `'fujihill-v11'` → `'fujihill-v12'`。
-- PRECACHE_URLS の `viewer-maplibre.js?v=39` を `?v=40` に (index.html の script src と一致させる)。
+- PRECACHE_URLS の `viewer-map3d.js?v=39` を `?v=40` に (index.html の script src と一致させる)。
 - `web/tests/sw_cache_version.test.js` を通す。
 
 ## 注意 (= 決め切った仕様)

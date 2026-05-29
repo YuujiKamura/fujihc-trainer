@@ -11,7 +11,7 @@ blocks: []
 
 ## はじめに
 
-brief 14-16 で `data/tiles.sqlite` に GSI 標高 + OSM ベクタタイルがローカルに揃った状態を作る。 本 brief はその DB を **HTTP endpoint** として viewer に提供する。 既存の `bridge.py` (WebSocket + 静的ファイル配信) に tile 用 GET ハンドラを追加し、 viewer-maplibre.js の source URL をローカル endpoint に書き換える。
+brief 14-16 で `data/tiles.sqlite` に GSI 標高 + OSM ベクタタイルがローカルに揃った状態を作る。 本 brief はその DB を **HTTP endpoint** として viewer に提供する。 既存の `bridge.py` (WebSocket + 静的ファイル配信) に tile 用 GET ハンドラを追加し、 viewer-map3d.js の source URL をローカル endpoint に書き換える。
 
 これで viewer は外部 tile server に一切アクセスしなくなる。 prefetch 概念自体が不要になり (= 全部既に手元にある)、 7 軸 audit のセキュリティ境界軸 / 設計境界軸の問題が根本解として閉じる。
 
@@ -37,7 +37,7 @@ GET /tiles/{source}/style.json (OSM のみ)
   response: MapLibre style 形式の JSON、 source URL を /tiles/osm/{z}/{x}/{y}.pbf に向ける
 ```
 
-## viewer 側 (`web/viewer-maplibre.js`) の変更
+## viewer 側 (`web/viewer-map3d.js`) の変更
 
 現状 (L60 付近):
 ```js
@@ -95,7 +95,7 @@ prefetch 関連の旧 code は brief 13 で comment out 済、 本 brief で完�
    - 不正な source → 400
 2. `bridge.py` に `/tiles/{source}/metadata.json` 実装、 unit test で metadata の JSON が返る
 3. `bridge.py` に `/tiles/osm/style.json` 実装、 unit test で style 構造が valid (= layers[] が空でない)
-4. `web/viewer-maplibre.js` の tile source URL を `/tiles/osm/...` `/tiles/gsi_dem/...` に書き換え
+4. `web/viewer-map3d.js` の tile source URL を `/tiles/osm/...` `/tiles/gsi_dem/...` に書き換え
 5. prefetch 関連 dead code (brief 13 で comment out した行 + `lastJumpToT` 等の未使用変数) を削除
 6. 実走: bridge.py 起動 → browser で開く → DevTools Network panel で 外部ドメインへの request が 0 件 (= localhost のみ)
 7. ride を 1 周走らせて、 タイル表示 / terrain / camera が壊れていない

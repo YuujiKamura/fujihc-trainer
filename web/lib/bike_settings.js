@@ -1,5 +1,5 @@
 // model: 自転車 / rider 物理パラメータの SoT store. localStorage と双方向同期する 5 state
-// (= inertia / mass / crr / cda / power) を 1 closure に閉じ込め、 viewer-maplibre.js から
+// (= inertia / mass / crr / cda / power) を 1 closure に閉じ込め、 viewer-map3d.js から
 // 同名 module-global を撤去する足場 + Svelte 移行時の reactive store の素地.
 // 副作用は cfg.storage R/W のみ、 DOM / window / fetch を直接参照しない (= test で fake
 // storage を渡せる、 node 単独で副作用ゼロ pin 可能).

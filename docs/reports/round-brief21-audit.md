@@ -25,7 +25,7 @@ Brief 21 は bookend (はじめに / まとめ) 完備、 scope 境界 (やら�
 
 ## 主要 NG (= main session が即時 fix できる、 優先順)
 
-1. **(設計境界、 high)** line 83-85 の「inline 実装 + pure module の二重実装」を撤回、 viewer-maplibre.js の `addProtocol('gsidem', ...)` callback 内は `gsiToTerrariumUpsampled(src.data, W, H, 4)` の **1 行呼出に統一**、 logic は lib 側のみに置く。 既存 `web/lib/terrarium.js` が同じ pattern (viewer から呼ぶだけ) なので踏襲。 二重実装は test では守れない drift を新規に生む (NG-R1-11 同型)。
+1. **(設計境界、 high)** line 83-85 の「inline 実装 + pure module の二重実装」を撤回、 viewer-map3d.js の `addProtocol('gsidem', ...)` callback 内は `gsiToTerrariumUpsampled(src.data, W, H, 4)` の **1 行呼出に統一**、 logic は lib 側のみに置く。 既存 `web/lib/terrarium.js` が同じ pattern (viewer から呼ぶだけ) なので踏襲。 二重実装は test では守れない drift を新規に生む (NG-R1-11 同型)。
 
 2. **(抽象段差 + マイグレ可逆、 medium)** 「数値見積もり」section line 92 の「200 タイル × 4 MB = 800 MB」の **200 の根拠を明示**するか、 MapLibre `maxTileCacheSize` を brief 21 で 50 に **explicit に設定**して 200 MB 上限を保証しろ。 「ただし viewport 9 タイル」での 36 MB は瞬間値であって cache 保持タイル数とは別概念、 brief 内で混同している。
 

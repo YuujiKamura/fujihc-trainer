@@ -133,7 +133,7 @@ export async function hasPendingAutosave(opts = {}) {
  * autosave record を rideState (= createRideState の戻り値 shim) に適用し、
  * rider を復元距離・active 状態へ持ち上げる純粋関数.
  *
- * なぜ共有関数か: viewer-maplibre.js の applyPendingRestore が record→rideState 変換を
+ * なぜ共有関数か: viewer-map3d.js の applyPendingRestore が record→rideState 変換を
  * 直書きしていたが、 (1) rider.distanceTraveled は getter-only accessor なので
  * `_rider.distanceTraveled = ...` の直接代入は strict mode (= ES module) で TypeError を
  * throw し復元が丸ごと abort していた、 (2) この経路を pin する test が無く嘘の緑のまま

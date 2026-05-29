@@ -27,7 +27,7 @@ user 訂正 (= 引用):
 
 ## 何が今足りないか (= 現状)
 
-- `web/viewer-maplibre.js` L715-765 `initMinimapMap`: 2nd MapLibre instance を立て `buildMapStyle()` を共有、 fitBounds(course) で固定俯瞰、 course polyline + start/goal markers + rider Marker (cyan) を載せる構造。 ── **visual 機能していない** (= 灰白固定で OSM が出ない、 user 確認済)。 推定要因は MapLibre 2nd instance の resize timing / canvas size 0 / source-layer 名 mismatch / minzoom 13 で z=11 リクエストが空振り、 等の複合だが diagnose せずに rollback する判断 (= brief 14-16 の OSM PMTiles 整備 ≠ 即 minimap で動く、 だった)。
+- `web/viewer-map3d.js` L715-765 `initMinimapMap`: 2nd MapLibre instance を立て `buildMapStyle()` を共有、 fitBounds(course) で固定俯瞰、 course polyline + start/goal markers + rider Marker (cyan) を載せる構造。 ── **visual 機能していない** (= 灰白固定で OSM が出ない、 user 確認済)。 推定要因は MapLibre 2nd instance の resize timing / canvas size 0 / source-layer 名 mismatch / minzoom 13 で z=11 リクエストが空振り、 等の複合だが diagnose せずに rollback する判断 (= brief 14-16 の OSM PMTiles 整備 ≠ 即 minimap で動く、 だった)。
 - `web/index.html` L257-260: `#minimap-container` div の中に `<div id="minimap-top">` (= MapLibre container) + `<canvas id="minimap-bottom">` の 2 要素。 旧 1 canvas 構造 (= commit `2c1e116` の `<canvas id="minimap" width="320" height="720">`) は廃止済。
 - `web/tests/viewer_url_audit.test.js` L16-22: `tile.openstreetmap.org` / `cyberjapandata.gsi.go.jp` への 直叩きを全面禁止 grep gate。 brief 17b の物理 freeze。 minimap 限定の例外を持たない。
 - `web/tests/minimap_maplibre.test.js` (= 16 件): brief 28 の MapLibre 2nd instance を pin する gate。 rollback すると全件 obsolete。
@@ -82,7 +82,7 @@ OSM Tile Usage Policy (= <https://operations.osmfoundation.org/policies/tiles/>)
 
 ### A. brief 28 関連の削除
 
-`web/viewer-maplibre.js`:
+`web/viewer-map3d.js`:
 - `initMinimapMap()` 関数 (= L715-765) 削除 ── MapLibre 2nd instance 不要
 - `buildMapStyle()` 関数 (= L69-113) 削除 ── 共有不要、 main map 初期化 (= L116-) の `style:` に inline 化
 - module-scope `let minimapMap = null;` `let minimapRider = null;` 削除、 `let minimapBase = null;` 復活 (= 1 canvas off-screen base)
@@ -161,8 +161,8 @@ zoom 11 を選ぶ根拠: 富士山ヒルクライムコースは bbox 約 0.2 �
 ## 完了条件
 
 - 本 brief draft (= `29-minimap-osm-direct.md`) が `~/.agents/scratch/fujihc-trainer-project/briefs/` に landed
-- `web/viewer-maplibre.js` から `initMinimapMap` / `buildMapStyle` / `buildMinimapBottom` (= brief 28 版) 削除
-- `web/viewer-maplibre.js` に 旧 `loadOsmTile` / `buildMinimapBase` / `drawDirTriangle` 復活、 z=11 周辺 9-16 タイル 1-shot
+- `web/viewer-map3d.js` から `initMinimapMap` / `buildMapStyle` / `buildMinimapBottom` (= brief 28 版) 削除
+- `web/viewer-map3d.js` に 旧 `loadOsmTile` / `buildMinimapBase` / `drawDirTriangle` 復活、 z=11 周辺 9-16 タイル 1-shot
 - `web/index.html` の `<div id="minimap-top">` を `<canvas id="minimap-top" width="320" height="561">` に書き換え
 - `web/tests/viewer_url_audit.test.js` の brief 17b OSM 直叩き禁止 gate を `loadOsmTile` 限定例外に緩和、 brief 28 describe block 削除
 - `web/tests/minimap_maplibre.test.js` を `minimap_osm_direct.test.js` に rename、 内容 5-7 件に書き換え

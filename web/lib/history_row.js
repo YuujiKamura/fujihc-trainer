@@ -1,5 +1,5 @@
 // view: history-overlay の 1 行 (= 1 ride) を組み立てる DOM helper.
-// `viewer-maplibre.js` の showHistoryOverlay() (= Controller) から呼ばれる (=
+// `viewer-map3d.js` の showHistoryOverlay() (= Controller) から呼ばれる (=
 // postride_buttons.js と同じ「inline DOM → testable helper」 extraction 構造).
 // ride 状態は読まない、 cfg.ride を受け取って描く、 click は cfg.onDelete /
 // onResume / onGpxDownloaded callback で Controller に上げる.
@@ -7,7 +7,7 @@
 // 過去 ride の .gpx 出力は Strava 連携 / consent と完全独立 (= ローカル Blob のみ).
 // → consent flag を読まない、 単純に ride.trkpts → buildGpxXml() → Blob download。
 // history overlay 自体への到達経路 (= history consent ON かつ IndexedDB に保存実績あり) は
-// caller (= viewer-maplibre.js) が gate 済みなので、 ここでは guard 不要。
+// caller (= viewer-map3d.js) が gate 済みなので、 ここでは guard 不要。
 //
 // 設計:
 // - DOM 生成は document.createElement のみ、 globalThis 直叩きは無し
@@ -37,7 +37,7 @@ export function rideFilename(ride) {
  * 1 ride の `<li>` を作って `<ul>` に append する.
  *
  * b127: onResume callback を渡すと「続きから」 button を 1 個追加する.
- * click すると caller (= viewer-maplibre.js の showHistoryOverlay) が resumeFromRecord
+ * click すると caller (= viewer-map3d.js の showHistoryOverlay) が resumeFromRecord
  * を呼んで rider 位置 + 物理を復元、 新 ride として走り出す.
  *
  * @param {{

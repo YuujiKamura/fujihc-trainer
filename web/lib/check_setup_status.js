@@ -1,4 +1,4 @@
-// brief 31 commit γ: checkSetupStatus を viewer-maplibre.js から lib 抽出。
+// brief 31 commit γ: checkSetupStatus を viewer-map3d.js から lib 抽出。
 // 旧 grep gate (= 出現回数 == N の literal counting) が「実装の bug 形状を pin する」
 // anti-pattern だったため、 behavioral test (= fetch stub の 5 経路) で仕様 literal を
 // 確認できる形に切り出す。

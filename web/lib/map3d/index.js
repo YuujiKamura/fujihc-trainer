@@ -31,7 +31,7 @@ import { computeTravelHeading } from '../heading.js';
 import { resampleCourse } from '../rider_placement.js';
 import { openTileCache } from '../tile_cache.js';
 // b31: GSI dem direct base は terrain_loader.js 側で定義 (= literal を本体に書かない、
-// viewer_url_audit.test.js が viewer-maplibre.js 単体 scan する scope と整合させる用 ── 本 file は
+// viewer_url_audit.test.js が viewer-map3d.js 単体 scan する scope と整合させる用 ── 本 file は
 // scan 対象外だが、 source-of-truth を 1 箇所に集約しておくことで dead URL constant の散在を避ける)。
 // b71: 外周ストリップ用 dem_png 経路は廃止 (= 単一 zoom 構成へ統合)、 dem5a_png 経路のみ使う。
 import { GSI_DEM_DIRECT_BASE } from '../terrain_loader.js';
@@ -333,7 +333,7 @@ export function createMapRenderer() {
           const tileCache = await openTileCache().catch(() => null);
           // DEM 経路: IndexedDB (= TileCache) hit → GSI 直 (= GSI_DEM_DIRECT_BASE) の 2 段。
           // b71: 外周ストリップ / 高精細 2 段構成は廃止、 単一 zoom (= fujihill.terrainConfig.zoom)
-          // で `opts.dbBounds` (= viewer-maplibre.js が fujihill.demBounds を渡す、
+          // で `opts.dbBounds` (= viewer-map3d.js が fujihill.demBounds を渡す、
           // = 12 km 四方の正方形) を直接覆う 1 mesh のみ。
           // brief 35: onProgress (= (done, total) => void) で進捗 cb。 b41: opts.skipTerrain
           // なら DEM / 航空写真とも配布元を叩かず平坦標高ゼロ + 下地一色で組む。
@@ -362,7 +362,7 @@ export function createMapRenderer() {
           // 散乱パラメータを、 ここで一括反映する (= sunDir / sunStrength と同じ並び)。
           if (pending.atmoParams) scene.setAtmosphereParams(pending.atmoParams);
           if (Number.isFinite(pending.skyIntensity)) scene.setSkyIntensity(pending.skyIntensity);
-          // b75: NOAA 注入 solarPosition の保留反映 ── boot 前に viewer-maplibre.js から
+          // b75: NOAA 注入 solarPosition の保留反映 ── boot 前に viewer-map3d.js から
           // setSolarPosition({az, el}) が呼ばれていれば、 scene 生成直後にここで流す。
           if (pending.solarPosition) scene.setSolarPosition(pending.solarPosition);
 
@@ -371,7 +371,7 @@ export function createMapRenderer() {
 
           // b74: volumetric clouds を boot 内で動的 import + 生成 + scene.add。
           // cloudVolume は terrain と同じ world XZ 範囲 (= demBounds 派生)、 別 SoT を作らない。
-          // 初期 cloudCover=0 (= 雲なし)、 viewer-maplibre.js が AMeDAS から setWeatherClouds で
+          // 初期 cloudCover=0 (= 雲なし)、 viewer-map3d.js が AMeDAS から setWeatherClouds で
           // 流し込む。 boot 前に setWeatherClouds が呼ばれていれば pending から反映。
           try {
             const { createVolumetricClouds } = await import('./volumetric_clouds.js');
@@ -684,7 +684,7 @@ export function createMapRenderer() {
       }
     },
 
-    // b74: volumetric clouds の雲量・雲底・雲頂を実行時に差し替える ── viewer-maplibre.js が
+    // b74: volumetric clouds の雲量・雲底・雲頂を実行時に差し替える ── viewer-map3d.js が
     // AMeDAS → cloud_estimator → 本メソッド で流し込む。 boot 前 (= cloudInstance 未生成)
     // なら pending.weatherClouds にキー単位でマージ保留 (= setAtmosphereParams と同型)。
     setWeatherClouds(weather) {
@@ -702,7 +702,7 @@ export function createMapRenderer() {
       return cloudInstance ? cloudInstance.getWeather() : null;
     },
 
-    // b75: NOAA 由来の太陽位置 (方位 + 仰角) を流す ── viewer-maplibre.js が boot 後に
+    // b75: NOAA 由来の太陽位置 (方位 + 仰角) を流す ── viewer-map3d.js が boot 後に
     // computeSolarPosition で出した値をそのまま渡す。 scene 未生成なら pending に保留、
     // 生成済なら scene.setSolarPosition に直叩き。 既存 lightDir スライダー手動操作との
     // 共存は scene 側で override リセットの形で encode。 null / undefined / 非 object は
@@ -805,7 +805,7 @@ export function createMapRenderer() {
      *
      * 入力 snappedLandmarks は course_landmarks.js の snapLandmarksToCourse 戻り
      * (= { id, name, idx, distance_m, lat, lon, elevation_m }[])。 boot 前 / 地形未準備で
-     * 呼ばれた場合は何もしない (= viewer-maplibre.js は map3d boot 完了後 + course 読込後に
+     * 呼ばれた場合は何もしない (= viewer-map3d.js は map3d boot 完了後 + course 読込後に
      * 呼ぶ契約、 pending 保留はしない)。 既存 landmarks3d があれば dispose + scene
      * remove してから作り直す (= 再呼出時の GPU リソース leak 防止)。
      */

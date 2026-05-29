@@ -16,7 +16,7 @@ brief 31 で viewer が GitHub Pages の静的配信下で起動するように�
 ## 何が今足りないか (= 現状)
 
 - `web/lib/ws_client.js` L27-97: `createBridgeClient` は WebSocket 前提、 `createTestModeClient` (L113-) は固定 fake state、 trainer に直接話す client が存在しない
-- `web/viewer-maplibre.js` L591-592: 起動分岐は `MAP_MODE / TEST_MODE / (default) connectBridge` の 3 way、 BLE 直接接続 path 無し
+- `web/viewer-map3d.js` L591-592: 起動分岐は `MAP_MODE / TEST_MODE / (default) connectBridge` の 3 way、 BLE 直接接続 path 無し
 - BLE 関連 logic は Python 側のみ: `src/fujihc/discover.py` L14-46 (= FTMS scan)、 `src/fujihc/bridge.py` L40-46 (= FTMS / HRM UUID 定数)、 L89-108 (= `_parse_heart_rate`)、 L111-151 (= `_parse_indoor_bike_data`)、 L251-270 (= `_encode_set_indoor_bike_simulation`)、 L375-419 (= Control Point indication + 3 段ハンドシェイク)、 L597-651 (= `_hrm_loop`)
 - 上記 5 関数は pure binary decode / encode、 JS に移植可能 (= bleak / websockets 依存ゼロ部分)。 だが port 先のテスト基盤が無い (= NG-R1-8 再演を避けるため本 brief 内で test 同時 land)
 - GitHub Pages 環境では `http://localhost:8765` への WebSocket は CORS 以前に届かない (= user の PC に bridge が立ってない、 brief 31 の前提)、 BLE 経路が無いと riding 不能
@@ -114,7 +114,7 @@ address 引数は Web BT に存在しない (= browser が device chooser を出
 
 ### E. viewer 起動分岐 4 way 化
 
-`web/viewer-maplibre.js` L591-592 を拡張:
+`web/viewer-map3d.js` L591-592 を拡張:
 
 ```js
 const BLE_MODE = new URLSearchParams(location.search).has('ble');
@@ -178,7 +178,7 @@ BLE_MODE 起動時のみ `ble-section` を unhide、 既存 `scan_result` handle
 4. **`web/tests/ble_responsibility_grep.test.js` 3 件** (= 完了条件 7 の物理 grep gate を test 化、 NG-R1-8 半再演回避):
    - `web/lib/ble_client.js` を `fs.readFileSync` で読み、 `/\bWebSocket\b/` match ゼロを assert (= BLE client に WS 文字列ゼロ)
    - `web/lib/ws_client.js` を読み、 `/\bbluetooth\b/i` match ゼロを assert (= WS client に BLE 文字列ゼロ)
-   - `web/viewer-maplibre.js` を読み、 `/navigator\.bluetooth/` match ゼロを assert (= viewer 直叩き禁止、 ble_client.js に閉じる)
+   - `web/viewer-map3d.js` を読み、 `/navigator\.bluetooth/` match ゼロを assert (= viewer 直叩き禁止、 ble_client.js に閉じる)
    - 既存 brief 19b / 26b の物理 grep gate test (= `web/tests/dbinit_overlay.test.js` 等) と同 pattern、 import path を相対 (`../lib/ble_client.js`) で固定
 
 mock 戦略: `web-bluetooth-mock` library を入れず、 vitest fake で `navigator.bluetooth.requestDevice` / `BluetoothRemoteGATTServer` / `BluetoothRemoteGATTCharacteristic` の最小 surface (= `connect / getPrimaryService / getCharacteristic / startNotifications / writeValueWithResponse / writeValueWithoutResponse / addEventListener / removeEventListener`) を手書き fake で stub (= NG-R3-7 の依存 sprawl 回避、 vendor mock library 追加禁止)。fake は `web/tests/_helpers/bluetooth_fake.js` に切り出し、 ble_client.test.js から import (= test 間で重複させない)。
@@ -229,11 +229,11 @@ mock 戦略: `web-bluetooth-mock` library を入れず、 vitest fake で `navig
 
 1. `web/lib/ftms_parse.js` 新規、 `parseIndoorBikeData` / `parseHeartRate` / `parseControlResponse` / `encodeSetIndoorBikeSimulation` の 4 関数 export
 2. `web/lib/ble_client.js` 新規、 `createBleClient` + `isWebBluetoothSupported` の 2 関数 export、 既存 `createBridgeClient` と同 interface 9 method
-3. `web/viewer-maplibre.js` の起動分岐 L591-592 を 4 way 化、 `BLE_MODE` + `initBleMode()` 追加、 既存 3 mode (= MAP/TEST/default) 不変
+3. `web/viewer-map3d.js` の起動分岐 L591-592 を 4 way 化、 `BLE_MODE` + `initBleMode()` 追加、 既存 3 mode (= MAP/TEST/default) 不変
 4. `web/index.html` に `<section id="ble-section">` 追加、 BLE mode 時のみ unhide、 既存 `setup-overlay` の DOM は触らない (= NG-R1-3 / NG-R1-7 再演回避、 独立 section)
 5. test 新規 21-25 件 (= `ftms_parse.test.js` 8-10 / `ble_client.test.js` 8-10 / `viewer_ble_branch.test.js` 2 / `ble_responsibility_grep.test.js` 3)、 全 green
 6. `npm test` 約 213-217 件 全 green、 `pytest` 149 件 regression なし
-7. 物理 grep gate (= `ble_responsibility_grep.test.js` 3 件で test 化、 inline doc には書かない、 落ちれば必ず止まる物理層): (a) `web/viewer-maplibre.js` 内に `navigator.bluetooth` 文字列ゼロ (= ble_client.js に閉じる、 viewer 直叩き禁止)、 (b) `web/lib/ble_client.js` 内に `WebSocket` 文字列ゼロ、 (c) `web/lib/ws_client.js` 内に `bluetooth` 文字列ゼロ (case-insensitive)
+7. 物理 grep gate (= `ble_responsibility_grep.test.js` 3 件で test 化、 inline doc には書かない、 落ちれば必ず止まる物理層): (a) `web/viewer-map3d.js` 内に `navigator.bluetooth` 文字列ゼロ (= ble_client.js に閉じる、 viewer 直叩き禁止)、 (b) `web/lib/ble_client.js` 内に `WebSocket` 文字列ゼロ、 (c) `web/lib/ws_client.js` 内に `bluetooth` 文字列ゼロ (case-insensitive)
 8. ローカル commit のみ、 push は user per-action 認可 (Rule 3) 待ち
 9. brief 31 (= GitHub Pages 静的配信) との接続確認: BLE_MODE 起動 → trainer 接続 → ride 開始 → tile 表示 (= remote tile を brief 31 が解決) が end-to-end で動く mental model 説明を完了条件文書に含める
 10. 既存 `test_bridge.py` / `test_ws_smoke.py` / `web/tests/ws_client.test.js` 不変 (= bridge / WS 経路は触らない、 並存維持の証跡)

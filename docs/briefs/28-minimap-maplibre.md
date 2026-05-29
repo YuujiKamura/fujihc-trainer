@@ -15,8 +15,8 @@ user 訂正: 「ミニマップの地図が出てないのはなんでだ」。 
 
 ## 何が今足りないか (= 現状)
 
-- `web/viewer-maplibre.js` の `buildMinimapBase` (= L693-769): 上半分 clip 領域 (= L726-730) を `ctx.fillStyle = '#e8e8e8'` で塗りつぶし固定、 OSM 経由ゼロ。 course polyline (L733-735) と start/goal dot (L736-741) は手描きで重ねている。
-- `web/viewer-maplibre.js` の `updateMinimap` (= L800-822): rider 位置を `drawDirTriangle` (= L775-779) で canvas に三角形描画、 minimap 上半分の base を 180 度回転して貼っているため `rotateTop` 再投影 (L808-815) が必要、 OSM 地図と整合させる仕組み無し。
+- `web/viewer-map3d.js` の `buildMinimapBase` (= L693-769): 上半分 clip 領域 (= L726-730) を `ctx.fillStyle = '#e8e8e8'` で塗りつぶし固定、 OSM 経由ゼロ。 course polyline (L733-735) と start/goal dot (L736-741) は手描きで重ねている。
+- `web/viewer-map3d.js` の `updateMinimap` (= L800-822): rider 位置を `drawDirTriangle` (= L775-779) で canvas に三角形描画、 minimap 上半分の base を 180 度回転して貼っているため `rotateTop` 再投影 (L808-815) が必要、 OSM 地図と整合させる仕組み無し。
 - `web/index.html` L248: `<canvas id="minimap" width="320" height="720">` の 1 枚 canvas で上下責務同居、 MapLibre instance を載せる DOM 不在。
 - 結果: ride 中の全体俯瞰で道路 / 緑地 / 水域がゼロ、 user は polyline 1 本と標高曲線しか見れない。
 
@@ -59,7 +59,7 @@ user 訂正: 「ミニマップの地図が出てないのはなんでだ」。 
   #minimap-bottom { display: block; width: 100%; height: 159px; } /* 22% */
   ```
 
-### B. viewer-maplibre.js 変更
+### B. viewer-map3d.js 変更
 
 - `buildMinimapBase` (= L693-769) を 2 関数に分割:
   - `initMinimapMap()`: `#minimap-top` に 2nd `maplibregl.Map` instance を作る (= 既存 main map L60-110 の style 定義を共有 helper `buildMapStyle()` に切り出して両方から呼ぶ、 二重 inline 化禁止 NG-R1-11)。 `fitBounds(courseBounds, {padding: 20, animate: false})` で course 全体を表示。 interaction を **全 disable** (= 後述「やらないこと」「ハマる罠」)。 ready 後に course polyline source / layer (= id `'minimap-route'`、 line color `#ffd54a` width 3) と start/goal marker 2 件を addLayer / addMarker。 rider marker は `maplibregl.Marker({color:'#00ffff'})` を 1 個生成して `minimapRider = marker` で保持 (= まだ addTo しない、 ride 開始時に追加)。
@@ -74,12 +74,12 @@ user 訂正: 「ミニマップの地図が出てないのはなんでだ」。 
 新規 `web/tests/minimap_maplibre.test.js` 6-8 件:
 - index.html 物理 grep: `#minimap-top` / `#minimap-bottom` / `#minimap-container` の 3 要素存在
 - index.html 物理 grep: 旧 `<canvas id="minimap"` (= 単一 canvas) が消えている (= 二重実装ガード NG-R1-11)
-- viewer-maplibre.js grep: `function initMinimapMap` 定義存在
-- viewer-maplibre.js grep: `function buildMinimapBottom` 定義存在
-- viewer-maplibre.js grep: `function buildMapStyle` 定義存在 (= main + minimap で共有)
-- viewer-maplibre.js grep: minimap の interaction 全 disable (= `dragRotate.disable` / `scrollZoom.disable` / `dragPan.disable` / `keyboard.disable` / `doubleClickZoom.disable` / `boxZoom.disable` / `touchZoomRotate.disable` の 7 系全揃)
-- viewer-maplibre.js grep: `updateMinimap` 内に `setLngLat` 呼出存在 (= rider marker 更新)
-- viewer-maplibre.js grep: 旧 `'#e8e8e8'` (= 単色固定塗り) の string literal が消えている (= 旧実装ガード NG-R1-11)
+- viewer-map3d.js grep: `function initMinimapMap` 定義存在
+- viewer-map3d.js grep: `function buildMinimapBottom` 定義存在
+- viewer-map3d.js grep: `function buildMapStyle` 定義存在 (= main + minimap で共有)
+- viewer-map3d.js grep: minimap の interaction 全 disable (= `dragRotate.disable` / `scrollZoom.disable` / `dragPan.disable` / `keyboard.disable` / `doubleClickZoom.disable` / `boxZoom.disable` / `touchZoomRotate.disable` の 7 系全揃)
+- viewer-map3d.js grep: `updateMinimap` 内に `setLngLat` 呼出存在 (= rider marker 更新)
+- viewer-map3d.js grep: 旧 `'#e8e8e8'` (= 単色固定塗り) の string literal が消えている (= 旧実装ガード NG-R1-11)
 
 既存 `web/tests/viewer_url_audit.test.js` に regression gate 3 件追加:
 - `#minimap-top` を載せる `<div>` 要素が index.html に存在
@@ -89,7 +89,7 @@ user 訂正: 「ミニマップの地図が出てないのはなんでだ」。 
 ### D. 数値見積もり
 
 - DOM 変更: index.html L248 周辺 +6 行 (= canvas 1 → div+div+canvas)、 CSS L51-55 を 3 規則化 +5 行、 state-*** セレクタ書き換え 0 行 (= 同行内置換)
-- viewer-maplibre.js: `buildMinimapBase` 77 行 → `initMinimapMap` 約 60 行 + `buildMinimapBottom` 約 35 行 + `buildMapStyle` 抽出 約 50 行 (= 既存 main map L60-110 50 行 + minimap で共有)、 net +60 行
+- viewer-map3d.js: `buildMinimapBase` 77 行 → `initMinimapMap` 約 60 行 + `buildMinimapBottom` 約 35 行 + `buildMapStyle` 抽出 約 50 行 (= 既存 main map L60-110 50 行 + minimap で共有)、 net +60 行
 - 旧 `drawDirTriangle` (= L775-779) は updateMinimap 下半分 dot 用は不要、 上半分は marker 任せで参照ゼロ → 削除 -5 行
 - 旧 `rotateTop` ロジック (= L808-815) 削除 -8 行
 - test 追加: minimap_maplibre.test.js 約 50 行 + viewer_url_audit.test.js +12 行
@@ -107,7 +107,7 @@ user 訂正: 「ミニマップの地図が出てないのはなんでだ」。 
 ## 完了条件
 
 1. `web/index.html` L248 周辺の minimap DOM 分割 (= container/top/bottom)、 CSS 3 規則 + state セレクタ書換
-2. `web/viewer-maplibre.js` の `buildMinimapBase` を `initMinimapMap` + `buildMinimapBottom` + `buildMapStyle` の 3 関数に分割、 `updateMinimap` を上下分担で書き直し
+2. `web/viewer-map3d.js` の `buildMinimapBase` を `initMinimapMap` + `buildMinimapBottom` + `buildMapStyle` の 3 関数に分割、 `updateMinimap` を上下分担で書き直し
 3. 新規 `web/tests/minimap_maplibre.test.js` 6-8 件 全 green
 4. 既存 `web/tests/viewer_url_audit.test.js` に regression gate 3 件追加、 全 green
 5. `npm test` 既存 201 + 新規 8-10 = **209-211 件目標**で全 green

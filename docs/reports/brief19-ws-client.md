@@ -3,7 +3,7 @@
 ## Scope
 - 切出対象: `web/lib/ws_client.js` (新規)
 - テスト: `web/tests/ws_client.test.js` (新規)
-- viewer-maplibre.js は触っていない (= main session の統合責務)
+- viewer-map3d.js は触っていない (= main session の統合責務)
 
 ## 成果物
 
@@ -36,7 +36,7 @@
 - 実装後: `npm test` **96/96 passed** (= peer B `ride_state.test.js` 12 件と peer C `camera_controller.test.js` 12 件も既に landed、 衝突なし)
 - 既存 52 件は壊していない (heading / tile_math / tile_coverage / terrain_mesh / terrarium / viewer_url_audit)
 - ws_client.test.js 単体: 20/20 passed
-- viewer-maplibre.js は無変更、 main session が後続 commit で `createBridgeClient` を呼ぶ統合作業
+- viewer-map3d.js は無変更、 main session が後続 commit で `createBridgeClient` を呼ぶ統合作業
 
 ## 注意点 (main session 向け統合メモ)
 1. viewer は今 `WS_URL` 定数 + `connectBridge()` + `initTestMode()` + `wsHandlers` + `maybeSendSlope` を内包している

@@ -4,7 +4,7 @@
 // 構造的弱点を全 e2e spec で物理層 block するための共有 API.
 //
 // 3 layer:
-//   1. MapLibre 描画ループの idle event (= mapRenderer.onceIdle hook 経由)
+//   1. 描画エンジン (= map3d / Three.js) の idle event (= mapRenderer.onceIdle hook 経由)
 //   2. minimap canvas に非空 pixel が存在する (= 「fetch は走ったが描かれてない」 block)
 //   3. Three.js terrain mesh が scene に乗ったか (= ?noterrain=1 spec では false)
 //
@@ -29,7 +29,7 @@ export async function waitForPaintComplete(page, opts = {}) {
 
   if (opts.waitMapIdle !== false) {
     await page.evaluate(({ timeoutMs }) => new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('paint_complete: map.on(idle) timeout')), timeoutMs);
+      const t = setTimeout(() => reject(new Error('paint_complete: mapRenderer.onceIdle timeout')), timeoutMs);
       // viewer が globalThis.__mapIdle を export している前提 (b130 で hook 追加).
       if (typeof globalThis.__mapIdle === 'function') {
         globalThis.__mapIdle(() => { clearTimeout(t); resolve(); });

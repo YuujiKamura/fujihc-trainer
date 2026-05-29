@@ -13,7 +13,7 @@ import { tileRangeForBounds } from '../lib/terrain3d.js';
 import { MAX_TILES } from '../lib/map3d/tile_loader3d.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-maplibre.js'), 'utf8');
+const VIEWER = readFileSync(resolve(__dirname, '..', 'viewer-map3d.js'), 'utf8');
 // b12 Phase 2: buildMapStyle / 地図生成は web/lib/map_renderer.js に移設済。 source の
 // bounds / center 設定はそちらを grep する。 buildMapStyle は course 定義由来の dbBounds を
 // 引数受けし、 source に `bounds: dbBounds` として渡す (= 値は fujihill.dbBounds)。
@@ -30,7 +30,7 @@ describe('b12 Phase 1: 富士ヒル DB bbox / center は course 定義 (web/cour
     expect(fujihill.dbCenter).toEqual([138.75, 35.40]);
   });
 
-  it('viewer-maplibre.js は FUJIHILL_DB_BOUNDS / FUJIHILL_DB_CENTER を course 定義から re-export 済 (= 後方互換)', () => {
+  it('viewer-map3d.js は FUJIHILL_DB_BOUNDS / FUJIHILL_DB_CENTER を course 定義から re-export 済 (= 後方互換)', () => {
     expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_BOUNDS\s*=\s*fujihill\.dbBounds/);
     expect(VIEWER).toMatch(/export\s+const\s+FUJIHILL_DB_CENTER\s*=\s*fujihill\.dbCenter/);
   });
@@ -169,7 +169,7 @@ describe('b71: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲�
     expect(range.count).toBeLessThanOrEqual(MAX_TILES);
   });
 
-  it('viewer-maplibre.js の bootMap は DEM 範囲に fujihill.demBounds を渡す (= dbBounds 流用への回帰防止)', () => {
+  it('viewer-map3d.js の bootMap は DEM 範囲に fujihill.demBounds を渡す (= dbBounds 流用への回帰防止)', () => {
     expect(VIEWER).toMatch(/dbBounds:\s*fujihill\.demBounds/);
   });
 });

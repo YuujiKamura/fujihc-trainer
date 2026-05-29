@@ -31,7 +31,7 @@ import { fujihill } from '../courses/fujihill.js';
 
 // b31/b59: GSI dem の公式 endpoint (= dem5a_png 256x256、 国土地理院 地理院タイル一覧)。
 // Pages 環境で同梱 tile が無い時の fallback 取得元 (= 訪問者単位 fetch + TileCache 90 日 TTL)。
-// viewer-maplibre.js / map3d/index.js は本 constant を import して渡す (= literal を本体 source に
+// viewer-map3d.js / map3d/index.js は本 constant を import して渡す (= literal を本体 source に
 // 書かない、 viewer_url_audit.test.js の単体 scan は本体に GSI URL 出現ゼロを引き続き保証)。
 // b59: `dem5a_png` (= 5mメッシュ、 z15 が native 上限) を使う。 viewer は PNG bytes として
 // decode する経路 (= tile_loader3d.js bytesToBitmap)、 txt 形式の `dem` に `.png` 拡張子を

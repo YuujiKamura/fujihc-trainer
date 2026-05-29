@@ -194,7 +194,7 @@ export function buildRoadPolygons(course, widthM = 5) {
 
     // 2026-05-15 fix (= user 指摘「路面の色が先に変わって、 しばらく進んでから負荷が
     // 遅れてくる」): 旧版は b.slope_pct (= 次区間の勾配) で polygon を塗っていたが、
-    // viewer-maplibre.js の maybeSendSlope は course[curIdx].slope_pct (= 始点側) を
+    // viewer-map3d.js の maybeSendSlope は course[curIdx].slope_pct (= 始点側) を
     // 送信していたため、 視覚 (1 segment 先) と体感 (今の segment) が 1 段ずれていた。
     // segment [i → i+1] は「rider が i から i+1 へ進む区間」、 a.slope_pct (= 始点側) で
     // 塗ると trainer 負荷と同期する (= 物理直感に一致).

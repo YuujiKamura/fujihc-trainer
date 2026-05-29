@@ -1,4 +1,4 @@
-// b124: viewer-maplibre.js から sensor 4 module-global と chart 合成バッファ 4 個が消え、
+// b124: viewer-map3d.js から sensor 4 module-global と chart 合成バッファ 4 個が消え、
 // sensor 流入の入口が handleTrainerStatePush (pure 関数) 1 本に集約されたことを source-grep で pin。
 // negative gate (= 旧 identifier が無いこと) と入口集約 gate を両方持つ。
 import { describe, it, expect } from 'vitest';
@@ -7,10 +7,10 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
+const VIEWER_PATH = resolve(__dirname, '..', 'viewer-map3d.js');
 const HANDLER_PATH = resolve(__dirname, '..', 'lib', 'trainer_handler.js');
 
-describe('b124: viewer-maplibre.js から sensor 4 module-global と chart 合成バッファ 4 個が消えている', () => {
+describe('b124: viewer-map3d.js から sensor 4 module-global と chart 合成バッファ 4 個が消えている', () => {
   const viewer = readFileSync(VIEWER_PATH, 'utf8');
 
   it('currentCadence / currentPower / currentHr / currentSpeedMps の identifier が無い', () => {

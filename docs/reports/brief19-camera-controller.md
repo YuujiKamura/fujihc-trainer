@@ -4,7 +4,7 @@
 - 新規ファイル 2 件のみ:
   - `web/lib/camera_controller.js`
   - `web/tests/camera_controller.test.js`
-- `web/viewer-maplibre.js` は touch せず。
+- `web/viewer-map3d.js` は touch せず。
 - peer A (`ws_client.js`) / peer B (`ride_state.js`) と並列、 共有ファイルなし。
 
 ## 実装
@@ -16,7 +16,7 @@
   - `adjustPitch(currentPitch, delta, minPitch=0, maxPitch=85)`
 - `heading.js` の `computeTravelHeading` / `clampIndex` を import、 再実装なし。
 - default 値:
-  - `userZoom=23.95`, `userPitch=85`, `lookAhead=5` (viewer-maplibre.js L467-468, L632 の既存 hard-code に一致)
+  - `userZoom=23.95`, `userPitch=85`, `lookAhead=5` (viewer-map3d.js L467-468, L632 の既存 hard-code に一致)
 - pure 関数、 MapLibre オブジェクト依存ゼロ。
 - 安全余白:
   - `course.length === 0` で fallback (`center=[0,0]`, bearing=0) — viewer 側 race 防御。
@@ -46,7 +46,7 @@ $ npx vitest run web/tests/camera_controller.test.js
 - camera_controller 導入による既存 test (heading / terrain_mesh / terrarium / tile_coverage / tile_math / viewer_url_audit / heading) regression なし。
 
 ## 触っていないことの確認
-- `viewer-maplibre.js` は read のみ (line 115, 144-175, 467-473, 630-655 を context 把握のため)、 編集なし。
+- `viewer-map3d.js` は read のみ (line 115, 144-175, 467-473, 630-655 を context 把握のため)、 編集なし。
 - peer A の `ws_client.js` / peer B の `ride_state.js` も触っていない。
 
 ## stdout signal

@@ -42,7 +42,7 @@ status: brief 26b〜33 全 landed、 GitHub Pages 公開 Phase 1/2/3 全部 impl
 - npm test: 起点 168 → **389 全 green** (= +221 件、 27 file)
 - pytest: 起点 125 → **171 全 green** (= +46 件、 / 4 skipped 維持)
 - commit 数: 22 個
-- viewer-maplibre.js: 759 → **約 1700 行** (= 約 1000 行追加)
+- viewer-map3d.js: 759 → **約 1700 行** (= 約 1000 行追加)
 - 新規 web/lib/: 14 file (= ws_client, ride_state, camera_controller, ftms_parse, ble_client, road_polygon, route_styling, terrain_mesh, gpx_smooth, gpx_builder, ride_db, strava_oauth, strava_upload, postride_buttons, oauth_callback_main, pmtiles_loader)
 - web/vendor/: pmtiles.js v3.0.6 (= BSD-3-Clause) + MapLibre CSS / JS (= MIT) 同梱
 - 新規 brief: 28 / 29 / 30 / 31 / 32 / 33 (= 全部 redraft + audit + impl 完了)

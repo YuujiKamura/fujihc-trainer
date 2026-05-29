@@ -112,11 +112,11 @@ async function bootViewerToViewMode(page) {
   await startBtn.click();
   await page.waitForTimeout(8_000);
   // 2. trainer 接続画面 (= setup-overlay) の「コースを観る」 ボタンを ID 直指定で click
-  // (= 観るモード唯一の入口、 b46 で集約済、 viewer-maplibre.js:1215 参照)
+  // (= 観るモード唯一の入口、 b46 で集約済、 viewer-map3d.js:1215 参照)
   const goViewBtn = page.locator('#btnSetupGoView');
   if (await goViewBtn.isVisible({ timeout: 8_000 }).catch(() => false)) {
     await goViewBtn.click();
-    // 3. body.mode-view class が立つのを待つ (= 観るモード判定の唯一の signal、 viewer-maplibre.js:1217)
+    // 3. body.mode-view class が立つのを待つ (= 観るモード判定の唯一の signal、 viewer-map3d.js:1217)
     await page.waitForFunction(() => document.body.classList.contains('mode-view'), { timeout: 8_000 }).catch(() => {});
     // 4. 観るモード 3D シーンが描画安定するまで wait
     await page.waitForTimeout(5_000);
