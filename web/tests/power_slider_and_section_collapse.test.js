@@ -113,19 +113,25 @@ describe('b53: viewer-maplibre.js source — パワースライダーの配線',
     expect(m[0]).toMatch(/label\s*:\s*['"]パワー['"]/);
   });
 
-  it('manualPowerW を localStorage キー fujihill.power から読む (= 既定 250)', () => {
-    expect(viewer).toMatch(/let\s+manualPowerW\s*=\s*_lsNum\(\s*['"]fujihill\.power['"]\s*,\s*250\s*\)/);
+  it('b125c: power の SoT は bike_settings.js (= fujihill.power key、 default 250)', () => {
+    // 旧: viewer の `let manualPowerW = _lsNum('fujihill.power', 250)`
+    // 新: bike_settings.js に集約、 viewer は bikeSettings.getPower() / setPower() / getPowerProvider() 経由
+    expect(viewer).not.toMatch(/let\s+manualPowerW\s*=/);
+    const bikeSettingsSrc = readFileSync(resolve(__dirname, '..', 'lib', 'bike_settings.js'), 'utf8');
+    expect(bikeSettingsSrc).toMatch(/power:\s*STORAGE_PREFIX\s*\+\s*['"]power['"]/);
+    expect(bikeSettingsSrc).toMatch(/power:\s*250/);
   });
 
-  it('power def の apply が manualPowerW を書き換える', () => {
+  it('b125c: power def の apply が bikeSettings.setPower(raw) を呼ぶ', () => {
     const m = viewer.match(/key\s*:\s*['"]power['"][\s\S]{0,260}/);
-    expect(m[0]).toMatch(/manualPowerW\s*=\s*raw/);
+    expect(m[0]).toMatch(/bikeSettings\.setPower\s*\(\s*raw\s*\)/);
   });
 
-  it('createFakeStateGenerator 呼び出し 3 箇所に () => manualPowerW を渡している', () => {
-    // コメント除去後の live コードで数える (= コメント内の例示と区別)。
-    const occurrences = viewerLive.match(/\(\)\s*=>\s*manualPowerW/g) || [];
-    // initTestMode / initViewMode / initMapMode の 3 箇所。
+  it('b125c: createFakeStateGenerator 3 箇所に bikeSettings.getPowerProvider() を渡している', () => {
+    // 旧: () => manualPowerW を 3 箇所
+    // 新: bikeSettings.getPowerProvider() を 3 箇所
+    expect(viewerLive).not.toMatch(/\(\)\s*=>\s*manualPowerW/);
+    const occurrences = viewerLive.match(/bikeSettings\.getPowerProvider\s*\(/g) || [];
     expect(occurrences.length).toBe(3);
   });
 

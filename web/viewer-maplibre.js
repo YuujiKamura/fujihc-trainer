@@ -32,6 +32,7 @@ import { createRideState } from './lib/ride_state.js';
 // 内側に持つため二重 state にはならない).
 import { createRider } from './lib/rider.js';
 import { createPhysicsState } from './lib/physics_state.js';
+import { createBikeSettings } from './lib/bike_settings.js';
 // b125b: ride 時計 6 state (ride 開始時刻 / cadence / 確定走行時間) は ride_clock.js の closure に集約。
 import { createRideClock } from './lib/ride_clock.js';
 // b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は minimap.js に切り出し済。
@@ -295,27 +296,11 @@ let speedMult = (() => { try { const v = parseFloat(localStorage.getItem('fujihi
 // 2026-05-17: 物理駆動への切替。 旧 inertiaFactor (= EMA 係数 0..0.95) は見せかけの慣性で、
 // 「下りで足を止めると減速がデカすぎる」 という user 不満を解けなかった。 新方式は
 // web/lib/bike_physics.js の applyPhysicsStep で trainer の power とコース勾配から速度を
-// 時間積分する。 慣性 slider は EMA 係数ではなくフライホイール慣性 (kg 相当) を指す。
-// localStorage キーは旧 fujihill.inertia (= 0..0.95 を保存) と別名にする (= 読み違え防止)。
-let inertiaKg = (() => {
-  try { const v = parseFloat(localStorage.getItem('fujihill.inertiaKg')); return Number.isFinite(v) ? v : 800; }
-  catch { return 800; }
-})();
-// 2026-05-17: 慣性シミュ (inertia-sim.html) と同じ自転車パラメータ。 applyPhysicsStep に渡す。
-// 旧来 wsHandlers.state にハードコードしていた値 (mass:88 / c_rr:0.005 / c_d:0.35) を slider 化、
-// localStorage に物理値で永続 (= mass kg / c_rr 係数 / cda m²)。
-const _lsNum = (k, d) => {
-  try { const v = parseFloat(localStorage.getItem(k)); return Number.isFinite(v) ? v : d; }
-  catch { return d; }
-};
-let bikeMass = _lsNum('fujihill.mass', 88);    // kg (= rider + bike 総重量)
-let bikeCrr  = _lsNum('fujihill.crr', 0.001);  // 転がり抵抗係数 (= 既定 1‰、 競技寄り)
-let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
-// b53: 観る / デモ / TEST モードの手動パワー (W)。 パワースライダー (CONTROL_DEFS の
-// power def) が apply で書き換える。 createFakeStateGenerator に () => manualPowerW で
-// 渡し、 fake state の power_w として 1Hz で wsHandlers.state → physicsState.advance に届く。
-// 実ライド (bridge / BLE) は fake generator を通らないため、 trainer 接続中は実 power 優先。
-let manualPowerW = _lsNum('fujihill.power', 250);
+// b125c: 自転車 / rider 物理パラメータ 5 state (inertia / mass / crr / cda / power) は
+// web/lib/bike_settings.js の closure に集約. localStorage 同期 + 範囲 clamp + physicsOpts
+// 構築 + power provider + 旧 key migration は全部 module 内に閉じてる. viewer は値を
+// 取り出す / 入れるだけ. settings panel の apply は bikeSettings.setX(raw) 経由.
+const bikeSettings = createBikeSettings();
 // b125a: 物理積分 state 4 値 (目標速度 / 受信時刻 / 表示値 / 補間 seed) と補間定数
 // (state push 期待間隔 1.0s) は web/lib/physics_state.js の closure に集約済。 viewer は描画と入力
 // 配線だけを持つ。 state push は physicsState.advance、 rAF tick は physicsState.interpolate を叩く。
@@ -713,7 +698,7 @@ const wsHandlers = {
         nowMs: now,
         power,
         slopePct,
-        physicsOpts: { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg },
+        physicsOpts: bikeSettings.getPhysicsOpts(),
       });
     }
     // b124: trainer 値の整形は hud.js が SoT (= 整形ロジックの二重化なし)。 HUD は hud.trainer、
@@ -1014,7 +999,7 @@ function initTestMode() {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
       () => (rideState ? rideState.snapshot() : null), 'OK (TEST MODE)',
-      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
+      bikeSettings.getPowerProvider()),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
   // 2026-05-16 fix: user 報告 「F5 すると HUD もなにもない画面で詰む」.
   // ?test=1 は元々「自動 ride start」 設計だったが、 担当 C の preflight 統合で
@@ -1435,7 +1420,7 @@ function initViewMode() {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
       () => (rideState ? rideState.snapshot() : null), 'OK (VIEW MODE)',
-      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
+      bikeSettings.getPowerProvider()),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
 
   // 2026-05-15 fix: section-overlay 全画面 modal は撤回、 右上 persistent panel
@@ -1794,7 +1779,7 @@ function initMapMode() {
     fakeStateInterval: 1000,
     fakeStateGenerator: createFakeStateGenerator(
       () => (rideState ? rideState.snapshot() : null), 'OK (MAP MODE)',
-      () => manualPowerW),  // b53: パワースライダー値を fake trainer の power_w に流す
+      bikeSettings.getPowerProvider()),  // b53: パワースライダー値を fake trainer の power_w に流す
   });
   // 描画完了まで ride を待機 (= user 指示: 「全体描画が終わるまでスタートせずに待機」).
   // ローディングインジケータを表示、 rideState 準備済 + map.idle (= 全 tile load + render flush)
@@ -2316,9 +2301,10 @@ document.getElementById('btnClosePairing').addEventListener('click', () => {
   document.getElementById('setup-overlay').classList.remove('visible');
 });
 
-// b13-1: 旧5系統スライダー配線を共通機構に一本化。
-// 形式不一致の旧キーを先に消去 (inertiaKg / mass は生値一致のため保持)。
-['fujihill.diff','fujihill.spd','fujihill.crr','fujihill.cda','fujihill.labelSize'].forEach(k => { try { localStorage.removeItem(k); } catch {} });
+// b125c: 旧 key migration は bike_settings.js 内に移送. 衝突する 'fujihill.crr' /
+// 'fujihill.cda' (= 新 key と同名) を巻き添えに消してた起票時 bug を解消、 安全な
+// 3 件のみ (= diff / spd / labelSize) に絞った.
+bikeSettings.migrateLegacyKeys();
 // b89: 旧 CONTROL_DEFS 単一配列を 3 カテゴリに分離 (= 自機挙動 / コース環境 / 大気環境)、
 // 各カテゴリを別 mountControlPanel で独立フォールド。 panel 名と def の対応:
 //   BIKE_DEFS       = 「自機挙動」 (= 負荷 / 速度 / 慣性 / 質量 / 物理係数 / パワー / 自機表示)
@@ -2327,14 +2313,14 @@ document.getElementById('btnClosePairing').addEventListener('click', () => {
 const BIKE_DEFS = [
   { key:'diff',       label:'負荷',        min:10,  max:200,  step:5,  value:100, unit:'%',      format:raw=>String(Math.round(raw)),      apply(raw){ diffMult=raw/100; lastSlopeSent=null; } },
   { key:'spd',        label:'速度倍率',    min:50,  max:200,  step:5,  value:100, unit:'x',      format:raw=>(raw/100).toFixed(2),         apply(raw){ speedMult=raw/100; } },
-  { key:'inertiaKg',  label:'慣性',        min:0,   max:3000, step:50, value:800, unit:'kg相当', format:raw=>String(Math.round(raw)),      apply(raw){ inertiaKg=raw; } },
-  { key:'mass',       label:'質量',        min:60,  max:110,  step:1,  value:88,  unit:'kg',     format:raw=>String(Math.round(raw)),      apply(raw){ bikeMass=raw; } },
-  { key:'crr',        label:'転がり抵抗',  min:1,   max:25,   step:1,  value:1,   unit:'‰',      format:raw=>String(Math.round(raw)),      apply(raw){ bikeCrr=raw/1000; } },
-  { key:'cda',        label:'空気抵抗',    min:18,  max:60,   step:1,  value:35,  unit:'m²',     format:raw=>(raw/100).toFixed(2),         apply(raw){ bikeCda=raw/100; } },
+  { key:'inertiaKg',  label:'慣性',        min:0,   max:3000, step:50, value:800, unit:'kg相当', format:raw=>String(Math.round(raw)),      apply(raw){ bikeSettings.setInertia(raw); } },
+  { key:'mass',       label:'質量',        min:60,  max:110,  step:1,  value:88,  unit:'kg',     format:raw=>String(Math.round(raw)),      apply(raw){ bikeSettings.setMass(raw); } },
+  { key:'crr',        label:'転がり抵抗',  min:1,   max:25,   step:1,  value:1,   unit:'‰',      format:raw=>String(Math.round(raw)),      apply(raw){ bikeSettings.setCrr(raw/1000); } },
+  { key:'cda',        label:'空気抵抗',    min:18,  max:60,   step:1,  value:35,  unit:'m²',     format:raw=>(raw/100).toFixed(2),         apply(raw){ bikeSettings.setCda(raw/100); } },
   // b53: 観る / デモ / TEST モードの手動パワー。 range 50–600W は一般的なロード走の
   // 出力域 (ホビー巡航 100–200W、 競技 250–400W、 スプリント上限 600W 強) を覆う。
-  // step 10W は微調整に十分な粒度。 trainer 接続中の実ライドには効かない (上記 manualPowerW)。
-  { key:'power',      label:'パワー',      min:50,  max:600,  step:10, value:250, unit:'W',      format:raw=>String(Math.round(raw)),      apply(raw){ manualPowerW=raw; } },
+  // step 10W は微調整に十分な粒度。 trainer 接続中の実ライドには効かない (= bikeSettings の power).
+  { key:'power',      label:'パワー',      min:50,  max:600,  step:10, value:250, unit:'W',      format:raw=>String(Math.round(raw)),      apply(raw){ bikeSettings.setPower(raw); } },
   { key:'riderScale', label:'ライダー倍率', min:10,  max:500,  step:5,  value:36,  unit:'x',      format:raw=>(raw/10).toFixed(1),          apply(raw){ mapRenderer.setRiderScale(raw/10); } },
 ];
 const COURSE_DEFS = [

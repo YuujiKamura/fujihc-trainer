@@ -95,14 +95,18 @@ describe('viewer 物理駆動: 旧 EMA blend は live コードから撤去済',
     expect(viewerLive).not.toMatch(/oldS\s*\*/);
   });
 
-  it('フライホイール慣性 inertiaKg を module global に持つ', () => {
-    expect(viewerLive).toMatch(/let\s+inertiaKg\s*=/);
+  it('b125c: フライホイール慣性は bike_settings.js が SoT (= viewer 内 module-global は撤去)', () => {
+    // 旧: viewer が `let inertiaKg = ...` を持っていた
+    // 新: bike_settings.js に集約、 viewer は bikeSettings.getInertia() / setInertia() 経由
+    expect(viewerLive).not.toMatch(/let\s+inertiaKg\s*=/);
+    expect(viewerLive).toMatch(/bikeSettings\.setInertia/);
   });
 });
 
 describe('viewer 物理駆動: 慣性 slider は kg、 localStorage キーは新名', () => {
-  it('localStorage キーは fujihill.inertiaKg (= 旧 fujihill.inertia 0..0.95 と別名)', () => {
-    expect(viewer).toMatch(/fujihill\.inertiaKg/);
+  it('b125c: localStorage キー fujihill.inertiaKg は bike_settings.js が読む (= 旧 fujihill.inertia と別名)', () => {
+    const bikeSettingsSrc = readFileSync(resolve(__dirname, '..', 'lib', 'bike_settings.js'), 'utf8');
+    expect(bikeSettingsSrc).toMatch(/fujihill\.inertiaKg|inertia:\s*STORAGE_PREFIX\s*\+\s*['"]inertiaKg['"]/);
   });
 
   it('rngInertia slider は 0..3000 kg、 step 50 (= CONTROL_DEFS で定義)', () => {
