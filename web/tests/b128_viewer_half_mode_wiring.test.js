@@ -29,14 +29,18 @@ describe('b128: viewer (Controller) が halfMode を物理 + 記録 + UI に反�
     expect(src).toMatch(/const\s+halfMode\s*=\s*bikeSettings\.getHalfMode/);
   });
 
-  it('halfModeToggle checkbox を bike_settings と双方向 bind', () => {
-    expect(src).toMatch(/getElementById\(['"]halfModeToggle['"]\)/);
-    expect(src).toMatch(/halfModeToggle\.checked\s*=\s*bikeSettings\.getHalfMode/);
-    expect(src).toMatch(/bikeSettings\.setHalfMode\(\s*halfModeToggle\.checked\s*\)/);
+  it('難易度 radio (rideDifficultyFull / rideDifficultyHalf) を bike_settings と双方向 bind', () => {
+    expect(src).toMatch(/getElementById\(['"]rideDifficultyFull['"]\)/);
+    expect(src).toMatch(/getElementById\(['"]rideDifficultyHalf['"]\)/);
+    expect(src).toMatch(/bikeSettings\.setHalfMode\(\s*false\s*\)/);
+    expect(src).toMatch(/bikeSettings\.setHalfMode\(\s*true\s*\)/);
   });
 
-  it('index.html に halfModeToggle checkbox が静的 DOM として存在', () => {
-    expect(html).toMatch(/<input[^>]*id="halfModeToggle"[^>]*type="checkbox"|<input[^>]*type="checkbox"[^>]*id="halfModeToggle"/);
-    expect(html).toMatch(/勾配半減モード/);
+  it('index.html に 難易度 radio 2 つが setup-overlay 内の static DOM として存在', () => {
+    expect(html).toMatch(/<input[^>]*id="rideDifficultyFull"[^>]*type="radio"|<input[^>]*type="radio"[^>]*id="rideDifficultyFull"/);
+    expect(html).toMatch(/<input[^>]*id="rideDifficultyHalf"[^>]*type="radio"|<input[^>]*type="radio"[^>]*id="rideDifficultyHalf"/);
+    expect(html).toMatch(/獲得標高を半分にする/);
+    expect(html).toMatch(/疑似簡単モード/);
+    expect(html).toMatch(/ノーマル/);
   });
 });

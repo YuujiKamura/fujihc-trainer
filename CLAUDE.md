@@ -1,5 +1,45 @@
 # fujihc-trainer — AI エージェント向けルール
 
+## UI 要素を画面に追加する前は必ず user に問う (= 場所を勝手に決めるな)
+
+新しい button / checkbox / トグル / row / panel / chip 等の **画面上に出る UI 要素を
+追加するときは、 brief に「どこに置く」 と書いた時点で仮、 **実装直前に user に
+場所を問う**. 私 (AI) が「機器設定 panel の奥に控えめ」 等の仮定を立てるのは構わないが、
+実装に降ろす前に必ず user 確認を取る. 場所の選択肢が 1 つしか妥当でないと AI が
+判断した場合でも、 user の判断を取れ ── AI の「答えは 1 つ」 は user 体験に対しては
+ほぼ間違っている.
+
+特に厳しく扱う:
+
+- **ride 中画面 (`#controls` / `#hud` / `#minimap`)** への新規 UI 追加は **default 禁止**.
+  ride 中は user の集中対象、 勝手なボタン / checkbox を生やすな. 必要があると判断
+  しても user に問え、 user OK が出るまで実装するな.
+- **setup-overlay への追加**も場所選定は user 確認. 「自然な位置」 は user の使用順
+  によって変わる、 AI が決めるな.
+- **HUD / 常時表示要素**への追加は特に厳禁. 富士ヒル本物画面に余計な要素が常時
+  乗ると体験汚染、 user 怒りの core になる.
+
+過去 anti-example:
+
+- 2026-05-29 (= b128): AI が「機器設定 panel の bike slider 隣に halfMode checkbox を
+  独立 row で追加」 を user 相談なしに決定. 結果として ride 開始前は controls panel
+  が hide されてて触れない死に機能になった上、 ride 中画面に勝手な checkbox を生やした.
+  user 訂正「勝手な判断でライド中にボタンを追加した時点でマジで死んだ方がいい」.
+  本 section はこの訂正の永続化.
+- 2026-05-29 (= b128 直後): 撤回しようと AI が「setup-overlay の ride 開始 button
+  直前に移す」 を再度勝手に決めた. 移動先も AI が選ぶこと自体が user 訂正の対象、
+  「答えが 1 つしかない」 と AI が思っても判断を user に渡せ.
+
+実装手順:
+
+1. brief / 設計段階で UI 配置を仮で書くのは OK (= 検討材料として).
+2. 実装に降ろす直前、 「ここに置こうとしてるが OK?」 を user に必ず問う.
+3. user OK が出てから initial 配置を実装. user が「他に置けるか」 と問うなら
+   候補を 2-4 個並べる前に「正しい答えは 1 つしかない場面」 と「user 好みが分かれる
+   場面」 を区別、 **前者なら 1 個提示**、 後者なら 2-3 個並べて user 選択.
+4. UI 追加後の test も grep gate (= identifier 存在 pin) で済むなら最小化、
+   配置場所自体は test しない (= user が後で動かしたくなる前提).
+
 ## MVC 規約 (= 新 module の責務を最初から分けろ、 後で剥がすな)
 
 新規 module / 既存 module を編集する時、 **その module が Model / View / Controller の

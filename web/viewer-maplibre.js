@@ -2388,14 +2388,21 @@ mountControlPanel(document.getElementById('control-sliders-bike'),   BIKE_DEFS, 
 mountControlPanel(document.getElementById('control-sliders-course'), COURSE_DEFS, {collapsible:true, title:'コース環境', collapsed:true});
 mountControlPanel(document.getElementById('control-sliders-atmo'),   ATMO_DEFS,   {collapsible:true, title:'大気環境',  collapsed:true});
 
-// b128: 勾配半減モード checkbox の bind (= 自機挙動 panel 直下の独立 row、 index.html L789 隣).
+// b128 (2026-05-29 改訂): 「難易度」 radio 2 つ (= setup-overlay 内、 ride 開始前のみ).
+// 旧 checkbox から radio に変更、 user 言葉のラベル「本物 / 獲得標高半分」 で明示.
 // view (= html) は静的 DOM、 controller (= ここ) は bike_settings との両向 sync を 1 か所に閉じる.
 {
-  const halfModeToggle = document.getElementById('halfModeToggle');
-  if (halfModeToggle) {
-    halfModeToggle.checked = bikeSettings.getHalfMode();
-    halfModeToggle.addEventListener('change', () => {
-      bikeSettings.setHalfMode(halfModeToggle.checked);
+  const fullRadio = document.getElementById('rideDifficultyFull');
+  const halfRadio = document.getElementById('rideDifficultyHalf');
+  if (fullRadio && halfRadio) {
+    // 初期 state を bike_settings から復元.
+    if (bikeSettings.getHalfMode()) halfRadio.checked = true;
+    else fullRadio.checked = true;
+    fullRadio.addEventListener('change', () => {
+      if (fullRadio.checked) bikeSettings.setHalfMode(false);
+    });
+    halfRadio.addEventListener('change', () => {
+      if (halfRadio.checked) bikeSettings.setHalfMode(true);
     });
   }
 }

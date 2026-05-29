@@ -787,15 +787,6 @@
   <!-- b89: 調整スライダー群を 3 カテゴリにフォールド (= 自機挙動 / コース環境 / 大気環境)。
        旧 #control-sliders 1 つに全 19 項目混在で見通し悪化、 分類で開閉スコープを限定する。 -->
   <div id="control-sliders-bike"></div>
-  <!-- b128: 勾配半減モード (おまけ機能). default OFF. ON で物理 slope を 0.5 倍 +
-       獲得標高記録も 0.5 倍. 富士ヒル本物コースではなくなるので「上級者向け」 ラベル.
-       view は raw コース勾配のまま (= 観測表示と物理体感の分離). -->
-  <div id="half-mode-row" style="margin-top:0.4rem; padding:0.3rem 0.4rem; border-top:1px solid #333; font-size:12px; color:#bbb;">
-    <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-      <input type="checkbox" id="halfModeToggle" />
-      <span>勾配半減モード <span style="color:#888; font-size:11px;">(おまけ / 時間ない時用、 富士ヒル本物ではなくなります)</span></span>
-    </label>
-  </div>
   <div id="control-sliders-course"></div>
   <div id="control-sliders-atmo"></div>
   <div id="bike-shape-sliders"></div>
@@ -904,6 +895,21 @@
       <button id="btn-ble-trainer">Trainer に接続 (BLE)</button>
       <button id="btn-ble-hrm">心拍計に接続 (BLE、 任意)</button>
       <p class="ble-support-msg" style="color:#ff8; font-size:12px; margin-top:0.4rem;" hidden>このブラウザは Web Bluetooth 非対応です (= iOS Safari / Firefox)。 Chrome / Edge / Android Chrome をご利用ください。</p>
+    </section>
+    <!-- b128 (2026-05-29 改訂): ride 開始前の「難易度」 グループ. user 指摘で checkbox から
+         radio 2 つに変更、 「本物 / 疑似簡単」 を user 言葉のラベルで明示. 将来「集団走行
+         アシスト」 を 1 つ追加できる枠. ride 中の切替は提供しない (= 本物体験中に簡単側へ
+         切替えてしまう事故を防ぐ). -->
+    <section id="ride-difficulty-section" style="margin-top:0.6rem; padding:0.4rem 0.6rem; border-top:1px solid #333; font-size:13px; color:#bbb; text-align:left;">
+      <div style="color:#ffd54a; font-weight:bold; margin-bottom:0.3rem; font-size:12px;">難易度</div>
+      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; padding:0.15rem 0;">
+        <input type="radio" name="rideDifficulty" id="rideDifficultyFull" value="full" checked />
+        <span>ノーマル (= コースの勾配そのまま)</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; padding:0.15rem 0;">
+        <input type="radio" name="rideDifficulty" id="rideDifficultyHalf" value="half" />
+        <span>獲得標高を半分にする (距離は変わらない) — 疑似簡単モード</span>
+      </label>
     </section>
     <button id="btnRideStart" disabled>▶ ライド開始</button>
     <div id="ride-start-hint" style="text-align:center; color:#888; font-size:11px; margin-top:0.3rem;">trainer のハンドシェイク完了後に押せるようになります</div>
