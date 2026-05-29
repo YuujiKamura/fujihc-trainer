@@ -87,21 +87,21 @@ describe('brief 35: 旧 module global (playSpeed / spinAngle) は live コード
   });
 });
 
-describe('brief 35 → b83: state は physicsSpeedMps を更新、 setSpeed は rAF tick 経由 (EMA 平滑化)', () => {
-  it('state ハンドラ内で physicsSpeedMps が integratePhysics の戻りで更新される', () => {
-    // b83: state ハンドラ内の rider.setSpeed 直書きは撤去、 物理積分結果は physicsSpeedMps
-    //      へ代入するだけ。 rider.setSpeed は tick (rAF 60Hz) 経由で EMA 平滑化して呼ぶ。
+describe('brief 35 → b83 → b125a: state は physicsState.advance を呼ぶ、 setSpeed は rAF tick 経由 (線形補間)', () => {
+  it('state ハンドラ内で physicsState.advance が呼ばれる (= 物理積分は physics_state.js に集約)', () => {
+    // b125a: state ハンドラ内の物理積分は physicsState.advance に集約。 dt 算出 / clamp /
+    //      integratePhysics 呼び出し / 補間 seed pin は physics_state.js の closure 内。
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/physicsSpeedMps\s*=\s*integratePhysics\(/);
+    expect(m[0]).toMatch(/physicsState\.advance\(/);
   });
 
-  it('rAF tick 内に rider.setSpeed が EMA 経由で呼ばれる (= displaySpeedMps を渡す)', () => {
-    // b83: tick 内で displaySpeedMps を physicsSpeedMps へ EMA 追従させ、 setSpeed する。
+  it('rAF tick 内で physicsState.interpolate の戻りを rider.setSpeed に渡す (= 60Hz 線形補間)', () => {
+    // b125a: tick 内で physicsState.interpolate(t) が表示速度を返し、 それを rider.setSpeed に流す。
     const m = viewer.match(/function\s+tick\s*\([^)]*\)\s*\{[\s\S]*?^\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/displaySpeedMps/);
-    expect(m[0]).toMatch(/rider\.setSpeed\(\s*displaySpeedMps\s*\)/);
+    expect(m[0]).toMatch(/physicsState\.interpolate\(/);
+    expect(m[0]).toMatch(/rider\.setSpeed\(\s*speedMps\s*\)/);
   });
 
   it('state ハンドラ内で sensor 流入が handleTrainerStatePush に集約されている (b124)', () => {
@@ -109,10 +109,10 @@ describe('brief 35 → b83: state は physicsSpeedMps を更新、 setSpeed は 
     expect(m).not.toBeNull();
     // b124: rider.setSensors は trainer_handler.js に切り出し、 state ハンドラは handler を呼ぶだけ。
     expect(m[0]).toMatch(/handleTrainerStatePush\s*\(\s*msg\s*,\s*\{\s*rider\s*\}\s*\)/);
-    // b124 完了条件 2/§3: handleTrainerStatePush は physics (integratePhysics) より前に呼ぶ
-    // (= physics が rider.power の最新値を読めるため)。 呼び順を物理 pin する ── handler を
-    // physics の後ろに動かす将来 regression を捕まえる (= 存在 pin だけでは順序逆転を通してしまう)。
-    expect(m[0]).toMatch(/handleTrainerStatePush[\s\S]*?integratePhysics/);
+    // b124 完了条件 2/§3 (b125a 追随): handleTrainerStatePush は physics (physicsState.advance)
+    // より前に呼ぶ (= physics が rider.power の最新値を読めるため)。 呼び順を物理 pin する ──
+    // handler を physics の後ろに動かす将来 regression を捕まえる (= 存在 pin だけでは順序逆転を通す)。
+    expect(m[0]).toMatch(/handleTrainerStatePush[\s\S]*?physicsState\.advance/);
   });
 });
 

@@ -32,8 +32,10 @@ import { createRider } from '../lib/rider.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VIEWER_PATH = resolve(__dirname, '..', 'viewer-maplibre.js');
 const INDEX_PATH = resolve(__dirname, '..', 'index.html');
+const PHYSICS_STATE_PATH = resolve(__dirname, '..', 'lib', 'physics_state.js');
 const viewer = readFileSync(VIEWER_PATH, 'utf8');
 const indexHtml = readFileSync(INDEX_PATH, 'utf8');
+const physicsStateSrc = readFileSync(PHYSICS_STATE_PATH, 'utf8');
 
 // live コード走査用: コメントを剥がす (viewer_motion_audit.test.js と同型).
 function stripComments(src) {
@@ -45,14 +47,18 @@ function stripComments(src) {
 const viewerLive = stripComments(viewer);
 
 describe('viewer 物理駆動: bike_physics 統合 (静的走査)', () => {
-  it('integratePhysics を web/lib/bike_physics.js から import している', () => {
-    expect(viewer).toMatch(/import\s+\{[^}]*integratePhysics[^}]*\}\s+from\s+['"]\.\/lib\/bike_physics\.js['"]/);
+  it('b125a: viewer は createPhysicsState を physics_state.js から import、 physics_state.js が integratePhysics を bike_physics.js から import (= SoT chain)', () => {
+    // b125a: viewer は物理積分 state を physics_state.js の closure 経由で持つ。 共有 substep 関数
+    // integratePhysics への依存は viewer から physics_state.js に移ったが、 SoT chain (= 積分は
+    // 1 つの bike_physics.integratePhysics 経由) は physics_state.js が import することで維持される。
+    expect(viewer).toMatch(/import\s+\{[^}]*createPhysicsState[^}]*\}\s+from\s+['"]\.\/lib\/physics_state\.js['"]/);
+    expect(physicsStateSrc).toMatch(/import\s+\{[^}]*integratePhysics[^}]*\}\s+from\s+['"]\.\/bike_physics\.js['"]/);
   });
 
-  it('wsHandlers.state 内で integratePhysics を呼ぶ (= 共有 substep 関数経由)', () => {
+  it('wsHandlers.state 内で physicsState.advance を呼ぶ (= 物理積分は physics_state.js に集約)', () => {
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/integratePhysics\(/);
+    expect(m[0]).toMatch(/physicsState\.advance\(/);
   });
 
   it('wsHandlers.state はサブステップループを直書きしていない (= SoT 三重複の解消)', () => {
@@ -62,19 +68,21 @@ describe('viewer 物理駆動: bike_physics 統合 (静的走査)', () => {
     expect(m[0]).not.toMatch(/SUB\s*=\s*1\s*\/\s*120/);
   });
 
-  it('wsHandlers.state は計算速度を physicsSpeedMps へ書く (= b83: setSpeed は rAF tick 経由)', () => {
-    // b83 仕様変更: state ハンドラは integratePhysics の戻りを physicsSpeedMps へ代入するのみ。
-    // rider.setSpeed は tick (rAF) で displaySpeedMps を EMA 追従させてから呼ぶ。
-    // SoT は維持 (= 外から rider.speed を上書きする経路は依然 1 本、 場所が tick に移った)。
+  it('b125a: wsHandlers.state は rider.setSpeed を直接呼ばない (= setSpeed は rAF tick 経由のみ)', () => {
+    // b83/b125a 仕様: state ハンドラは physicsState.advance で物理 state を進めるだけ。
+    // rider.setSpeed は tick (rAF 60Hz) が physicsState.interpolate の戻りで呼ぶ唯一の経路。
+    // SoT は維持 (= 外から rider.speed を上書きする経路は依然 1 本、 場所が tick に固定)。
     const m = viewer.match(/state\s*\(\s*msg\s*\)\s*\{[\s\S]*?^\s{2}\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/physicsSpeedMps\s*=\s*integratePhysics\(/);
+    expect(m[0]).toMatch(/physicsState\.advance\(/);
+    expect(m[0]).not.toMatch(/rider\.setSpeed\(/);
   });
 
-  it('b83: rider.setSpeed は rAF tick で displaySpeedMps (= EMA 平滑化) 経由で呼ばれる', () => {
+  it('b125a: rider.setSpeed は rAF tick で physicsState.interpolate(t) の戻り (speedMps) 経由で呼ばれる', () => {
     const m = viewer.match(/function\s+tick\s*\([^)]*\)\s*\{[\s\S]*?^\}/m);
     expect(m).not.toBeNull();
-    expect(m[0]).toMatch(/rider\.setSpeed\(\s*displaySpeedMps\s*\)/);
+    expect(m[0]).toMatch(/physicsState\.interpolate\(/);
+    expect(m[0]).toMatch(/rider\.setSpeed\(\s*speedMps\s*\)/);
   });
 });
 

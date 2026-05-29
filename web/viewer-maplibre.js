@@ -31,7 +31,7 @@ import { createRideState } from './lib/ride_state.js';
 // rideState.startFrom / rideState.appendTrkpt 等) を維持する shim 経路で残す (= 同じ Rider を
 // 内側に持つため二重 state にはならない).
 import { createRider } from './lib/rider.js';
-import { integratePhysics } from './lib/bike_physics.js';
+import { createPhysicsState } from './lib/physics_state.js';
 // b51: minimap (course polyline + OSM 1-shot + 標高プロファイル) は minimap.js に切り出し済。
 //   tile 座標変換 / 再描画判定もそちらが内側で import する。
 import { createMinimap } from './lib/minimap.js';
@@ -352,23 +352,13 @@ let bikeCrr  = _lsNum('fujihill.crr', 0.001);  // 転がり抵抗係数 (= 既�
 let bikeCda  = _lsNum('fujihill.cda', 0.35);   // 空気抵抗 CdA (m^2)
 // b53: 観る / デモ / TEST モードの手動パワー (W)。 パワースライダー (CONTROL_DEFS の
 // power def) が apply で書き換える。 createFakeStateGenerator に () => manualPowerW で
-// 渡し、 fake state の power_w として 1Hz で wsHandlers.state → integratePhysics に届く。
+// 渡し、 fake state の power_w として 1Hz で wsHandlers.state → physicsState.advance に届く。
 // 実ライド (bridge / BLE) は fake generator を通らないため、 trainer 接続中は実 power 優先。
 let manualPowerW = _lsNum('fujihill.power', 250);
-// 物理速度の内部状態 (m/s)。 wsHandlers.state が applyPhysicsStep で積分し rider.setSpeed に渡す。
-// 2026-05-17: ?restore 復元経路では autosave データに速度が無いため (= trkpts は t/power/cad/hr
-// のみ、 distanceM も速度を持たない) seed できず 0 始動とする。 復元直後の 1 state メッセージ分
-// だけ速度が低めに出るが、 1Hz で即積分されるため軽微 (= 数百 ms で復帰)。 autosave に速度を
-// 足せば seed 可能になるが現状はデータが無いので 0 のまま。
-let physicsSpeedMps = 0;
-// 直近 state メッセージの受信時刻 (= dt 算出用、 state push は約 1Hz)。
-let lastPhysicsStateT = null;
-// b83-fix: EMA は 1Hz 階段を消す道具でない (sub-agent review 結論) ── 線形補間に置換。
-// wsHandlers.state で「seed = 現在表示値」 を覚えて、 tick で elapsed/expectedDt の比率で
-// prev → next を線形に繋ぐ。 階段が rAF 60Hz で連続化、 tau slider 不要 (= 撤去)。
-let displaySpeedMps = 0;
-let prevPhysicsSpeedMps = 0;
-const EXPECTED_STATE_DT = 1.0;  // state push 期待間隔 (秒)、 fake state interval と整合
+// b125a: 物理積分 state 4 値 (目標速度 / 受信時刻 / 表示値 / 補間 seed) と補間定数
+// (state push 期待間隔 1.0s) は web/lib/physics_state.js の closure に集約済。 viewer は描画と入力
+// 配線だけを持つ。 state push は physicsState.advance、 rAF tick は physicsState.interpolate を叩く。
+const physicsState = createPhysicsState();
 let lastPositionSendT = 0;
 let rideStartedAt = null;
 // ride 終了時の走行時間 (秒) を確定保存する。 ended ハンドラが rideStartedAt を null に
@@ -748,11 +738,6 @@ const wsHandlers = {
 
     if (rider) {
       const now = performance.now();
-      // dt = 前回 state メッセージからの経過秒。 state push は約 1Hz。 初回は 1 秒とみなす。
-      let dt = (lastPhysicsStateT != null) ? (now - lastPhysicsStateT) / 1000 : 1.0;
-      lastPhysicsStateT = now;
-      if (dt < 0.1) dt = 0.1;
-      if (dt > 2.0) dt = 2.0;
       // パワーは rider に sticky 保持された値を使う ── 生の msg.power_w を使うと、 power を
       // 含まない心拍 message のたびに 0 となり、 物理に偽の「足止め」減速が入る。
       const power = Number.isFinite(rider.power) ? rider.power : 0;
@@ -763,16 +748,15 @@ const wsHandlers = {
       // Terrain query 経由でいつでも現在位置のコース勾配を返すので、 そこを直接 source にする。
       const riderPos = rider.snapshot().position;
       const slopePct = (riderPos && Number.isFinite(riderPos.slope_pct)) ? riderPos.slope_pct : 0;
-      // 物理は固定 1/120s でサブステップ (= 大きい dt でも安定、 inertia-sim.html と同方式)。
-      // サブステップ積分ループは bike_physics.integratePhysics に集約済 (= SoT 三重複の解消)。
-      // dt は上の [0.1, 2.0] クランプ済を渡す。 空気抵抗は CdA を 1 本にまとめるため
-      // c_d=CdA / area=1 で渡す。
-      physicsSpeedMps = integratePhysics(physicsSpeedMps, dt, power, slopePct,
-        { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg });
-      // b83-fix: 線形補間の seed ── 「補間開始値 = 現在表示値」 を pin、 tick がここから
-      //   physicsSpeedMps (= 新目標) へ EXPECTED_STATE_DT 秒かけて線形に進む。
-      //   階段の跳びを起こさず rAF 60Hz で連続化される。
-      prevPhysicsSpeedMps = displaySpeedMps;
+      // b125a: dt 算出 / [0.1, 2.0] clamp / 固定 1/120s サブステップ積分 / 補間 seed pin は
+      // physics_state.js の advance() に集約 (= SoT 三重複の解消は維持)。 viewer は now + power +
+      // slope + 自転車 opts を渡すだけ。 空気抵抗は CdA を 1 本にまとめるため c_d=CdA / area=1。
+      physicsState.advance({
+        nowMs: now,
+        power,
+        slopePct,
+        physicsOpts: { mass: bikeMass, c_rr: bikeCrr, c_d: bikeCda, area: 1, inertia: inertiaKg },
+      });
     }
     // b124: trainer 値の整形は hud.js が SoT (= 整形ロジックの二重化なし)。 HUD は hud.trainer、
     // ペアリングパネル p-* も hud.js の export した整形関数で書く。 全 read 経路は rider、
@@ -1518,10 +1502,7 @@ function initViewMode() {
         // これをしないと次 tick の線形補間が「古い prev → 新 next」 で再計算して
         // setSpeed(20/3.6) を上書きしてしまい、 ride 開始がじわっと加速になる。
         if (rider) rider.setSpeed(20 / 3.6);
-        physicsSpeedMps = 20 / 3.6;
-        prevPhysicsSpeedMps = 20 / 3.6;
-        displaySpeedMps = 20 / 3.6;
-        lastPhysicsStateT = performance.now();
+        physicsState.reset({ nowMs: performance.now(), speedMps: 20 / 3.6 });
         lastT = performance.now();
         rideStartedAt = performance.now();
         setAppState('riding');
@@ -2020,16 +2001,13 @@ function tick(t) {
   // brief 35: 1 source-of-truth 化. 旧 viewer は tick 内で curIdx / curDist / 補間 frac /
   // courseBearing / smoothBearing / riderHeadingRad / spinAngle を全部 inline 計算していたが、
   // すべて rider.tick + rider.snapshot.position に集約済. viewer は snapshot を描画に流すだけ.
-  // b83-fix: 1Hz 物理速度を rAF 60Hz に線形補間。 wsHandlers.state が 1 秒ごとに
-  // physicsSpeedMps を更新 + prevPhysicsSpeedMps に「表示中の値」 を seed、 ここで
-  // 経過 elapsed / EXPECTED_STATE_DT を比率に prev → next を線形に繋ぐ。
-  // EMA と違い「階段を 60Hz で消す」 効果が確実、 定常偏差なし。 物理急変 (= ペダル踏み始め
-  // / 止め) は次の state push 時の seed 更新で「現在値」 から滑らかに新目標へ進む。
-  if (Number.isFinite(physicsSpeedMps) && physicsSpeedMps >= 0 && lastPhysicsStateT != null) {
-    const elapsed = (t - lastPhysicsStateT) / 1000;
-    const frac = Math.min(1, Math.max(0, elapsed / EXPECTED_STATE_DT));
-    displaySpeedMps = prevPhysicsSpeedMps + (physicsSpeedMps - prevPhysicsSpeedMps) * frac;
-    rider.setSpeed(displaySpeedMps);
+  // b83-fix → b125a: 1Hz 物理速度を rAF 60Hz に線形補間。 補間ロジック (elapsed / 期待間隔 を
+  // frac にし min/max 2 段 clamp で prev → next を繋ぐ) は physics_state.js の interpolate() に
+  // 集約。 EMA と違い「階段を 60Hz で消す」 効果が確実、 定常偏差なし。 物理急変 (= ペダル踏み
+  // 始め / 止め) は次の advance 時の seed 更新で「現在値」 から滑らかに新目標へ進む。
+  const speedMps = physicsState.interpolate(t);
+  if (Number.isFinite(speedMps) && speedMps >= 0) {
+    rider.setSpeed(speedMps);
   }
   rider.tick(dt, { speedMultiplier: speedMult });
   const snap = rider.snapshot();
@@ -2360,10 +2338,7 @@ document.getElementById('btnConfirmDemo').addEventListener('click', () => {
   // b83-fix: section click と同型の補間 state 4 値同期 (= 次 tick で線形補間が「古い prev」
   //   から再計算して setSpeed を上書きする副次バグの防止)。
   if (rider) rider.setSpeed(20 / 3.6);
-  physicsSpeedMps = 20 / 3.6;
-  prevPhysicsSpeedMps = 20 / 3.6;
-  displaySpeedMps = 20 / 3.6;
-  lastPhysicsStateT = performance.now();
+  physicsState.reset({ nowMs: performance.now(), speedMps: 20 / 3.6 });
   if (rideState) rideState.start();
   lastT = performance.now();
   status('デモモード (記録は保存されません)');
