@@ -109,6 +109,10 @@ describe('brief 35 → b83: state は physicsSpeedMps を更新、 setSpeed は 
     expect(m).not.toBeNull();
     // b124: rider.setSensors は trainer_handler.js に切り出し、 state ハンドラは handler を呼ぶだけ。
     expect(m[0]).toMatch(/handleTrainerStatePush\s*\(\s*msg\s*,\s*\{\s*rider\s*\}\s*\)/);
+    // b124 完了条件 2/§3: handleTrainerStatePush は physics (integratePhysics) より前に呼ぶ
+    // (= physics が rider.power の最新値を読めるため)。 呼び順を物理 pin する ── handler を
+    // physics の後ろに動かす将来 regression を捕まえる (= 存在 pin だけでは順序逆転を通してしまう)。
+    expect(m[0]).toMatch(/handleTrainerStatePush[\s\S]*?integratePhysics/);
   });
 });
 

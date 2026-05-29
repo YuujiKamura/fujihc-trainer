@@ -322,7 +322,7 @@ let course = [];
 let totalDist = 0;
 // brief 35: 移動モデルの第一級表現は Rider (= 主体) + Terrain (= 客観). 旧 module global
 // (= playSpeed / curIdx / curDist / spinAngle) は rider 内部に集約済. b124 で sensor 値
-// (ケイデンス / パワー / 心拍 / trainer 報告速度) の module global も撤去し rider に一本化.
+// (ケイデンス / パワー / 心拍 / trainer 報告速度) の module-global も撤去し rider に一本化.
 // rideState は createRideState() の戻り値 (= 後方互換 shim、 同じ Rider を内側に持つ) で、
 // HTML 既存 grep gate + viewer 既存 caller の名前空間互換を取る.
 let terrain = null;
@@ -724,10 +724,11 @@ const SLOPE_SEND_INTERVAL_MS = 1000;
 const wsHandlers = {
   state(msg) {
     // brief 35: speed / sensor 値はすべて rider 経由で 1 経路に集約.
-    // 旧 viewer は playSpeed と sensor 値 (ケイデンス / パワー / 心拍) を module global に
+    // 旧 viewer は playSpeed と sensor 値 (ケイデンス / パワー / 心拍) を module-global に
     // 直書きしていた。 fake state push (1Hz) と section click (即時) が同じ場所を奪い合うため、
     // 観るモードで「click → 動かない」 体感 bug の元凶になっていた. 新 path では rider.setSpeed /
-    // rider.setSensors が唯一の入口、 fake state も BLE も section click も同じ API を叩く.
+    // rider.setSensors が唯一の入口 (= b124 以降 trainer message は handleTrainerStatePush 経由で
+    // この 2 setter を叩く)、 fake state も BLE も section click も同じ API を叩く.
     // 2026-05-17: rider の速度は trainer の speed_mps を直接使わず、 viewer 側で物理積分する。
     // trainer の speed は「平地 + power のみ」 の機種が多く、 下り勾配の重力加速や慣性が入らない
     // ため「足を止めて即減速」 の不自然挙動になっていた。 新経路は web/lib/bike_physics.js の
@@ -773,10 +774,9 @@ const wsHandlers = {
       //   階段の跳びを起こさず rAF 60Hz で連続化される。
       prevPhysicsSpeedMps = displaySpeedMps;
     }
-    // trainer 値の整形は hud.js が SoT。 HUD は hud.trainer、 ペアリングパネル p-* は
-    // hud.js の export した整形関数で書く (= 整形ロジックの二重化なし)。
-    // b124: trainer 値の整形は hud.js が SoT。 全 read 経路は rider。 setSensors は上の
-    // handleTrainerStatePush に集約済 (= ここでの再呼び出しは廃止)。
+    // b124: trainer 値の整形は hud.js が SoT (= 整形ロジックの二重化なし)。 HUD は hud.trainer、
+    // ペアリングパネル p-* も hud.js の export した整形関数で書く。 全 read 経路は rider、
+    // setSensors は上の handleTrainerStatePush に集約済 (= ここでの再呼び出しは廃止)。
     const pw = formatPower(rider?.power);
     const cd = formatCadence(rider?.cadence);
     const hr = formatHr(rider?.hr);
