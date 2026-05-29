@@ -1,6 +1,33 @@
 // save_summary: ride 終了時に「実際に保存される値」を trkpts + course から導出する pure module.
 // 2 時間走った ride が壊れて保存される事故 (= 2026-05-15 起点固定 bug) の事後検出層。
 // postride-overlay の冒頭で summary を表示、 異常時は abort confirm。
+// b129: 獲得標高 calcElevationGainM を追加 (= viewer-maplibre.js の buildRideSummary が呼ぶ).
+
+/**
+ * trkpts から獲得標高 (m) を計算する。 下りは 0 として扱う、 平地も 0。
+ * noise 抑制のため、 連続 trkpt 間の ele 差が threshold (default 0.5m) 未満は無視。
+ * GPS / 気圧センサーの jitter (±0.5m 程度) を水増ししない設計。
+ *
+ * @param {Array<{ele?:number}>} trkpts
+ * @param {{threshold?: number}} [opts]
+ * @returns {number}
+ */
+export function calcElevationGainM(trkpts, opts = {}) {
+  if (!Array.isArray(trkpts) || trkpts.length < 2) return 0;
+  const threshold = Number.isFinite(opts?.threshold) ? opts.threshold : 0.5;
+  let gain = 0;
+  let prev = null;
+  for (const p of trkpts) {
+    const ele = Number(p?.ele);
+    if (!Number.isFinite(ele)) continue;
+    if (prev != null) {
+      const dz = ele - prev;
+      if (dz >= threshold) gain += dz;
+    }
+    prev = ele;
+  }
+  return Math.round(gain);
+}
 
 /**
  * trkpts と course から保存予定 summary を build する.

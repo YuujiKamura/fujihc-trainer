@@ -43,6 +43,7 @@ import { checkSetupStatus as checkSetupStatusLib } from './lib/check_setup_statu
 // IndexedDB 履歴 / Strava OAuth / 一覧 UI を viewer 側 inline 化せず module 経由で呼ぶ
 // (= NG-R1-7 同型予防、 4 module 分離).
 import { bindPostRideButtons } from './lib/postride_buttons.js';
+import { calcElevationGainM } from './lib/save_summary.js';
 import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
 import { appendHistoryRow } from './lib/history_row.js';
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
@@ -2685,6 +2686,7 @@ function setPostrideStatus(text) {
 
 function buildRideSummary(rideState, course) {
   const snap = rideState ? rideState.snapshot() : { distance: 0 };
+  const trkpts = rideState ? rideState.getTrkpts() : [];
   return {
     id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
     date: new Date().toISOString(),
@@ -2692,7 +2694,7 @@ function buildRideSummary(rideState, course) {
     duration_s: clock.isActive()
       ? Math.round((performance.now() - clock.snapshot().rideStartedAt) / 1000)
       : clock.getDurationS(),
-    elevation_gain_m: 0,  // TODO: course から差分計算 (= 別 brief、 brief 33 範囲外)
+    elevation_gain_m: calcElevationGainM(trkpts),
     avg_power_w: null,
     course_name: 'fujihill',
   };
