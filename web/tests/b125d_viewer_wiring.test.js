@@ -72,4 +72,31 @@ describe('b125d: 4 module-global が viewer-maplibre.js から撤去されてい
   it('labelSizeScale 起動時 localStorage 直読みが消えている (= bike_settings が constructor で読む)', () => {
     expect(srcLive).not.toMatch(/parseFloat\(localStorage\.getItem\(['"]fujihill\.labelSize['"]\)\)/);
   });
+
+  // strict gate (2026-05-29 追加): 旧 grep gate は `let X =` 宣言と `X = value` 代入の
+  // 2 形式だけ block していたため、 object literal の value 位置 (= `env: ENV`) の identifier
+  // 参照を素通りさせていた. 本 gate は live コード全体での identifier 参照 0 件を pin する.
+  // 落ちた時はその行を直接読んで「これは viewerSession 経由に置換すべきだった」 と判定する.
+  it.each([
+    'ENV',
+    'scanMode',
+    'labelSizeScale',
+    '_advancedFromDbinit',
+  ])('strict gate: 撤去済 identifier %s が live コードのどこにも参照されていない (object value 位置含む)', (name) => {
+    const pattern = new RegExp(`\\b${name}\\b`, 'g');
+    const matches = [...srcLive.matchAll(pattern)];
+    // 残存があれば該当行を一意に表示するため (= 失敗時の原因究明).
+    const lines = matches.map((m) => {
+      const before = srcLive.slice(0, m.index);
+      const lineNo = before.split('\n').length;
+      const lineStart = before.lastIndexOf('\n') + 1;
+      const lineEnd = srcLive.indexOf('\n', m.index);
+      return `L${lineNo}: ${srcLive.slice(lineStart, lineEnd === -1 ? srcLive.length : lineEnd).trim()}`;
+    });
+    expect({ identifier: name, count: matches.length, lines }).toEqual({
+      identifier: name,
+      count: 0,
+      lines: [],
+    });
+  });
 });
