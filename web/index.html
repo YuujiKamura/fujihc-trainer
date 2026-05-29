@@ -517,8 +517,8 @@
     pointer-events: none;
   }
   /* brief 35: ロード overlay 拡張 (= 既存 #loading-indicator を進捗 UI に拡張)。
-     visible 時のみ flex column、 子要素 (= title / progress / bar / note / warning / button) を縦並び。
-     pointer-events: auto に変えるのは「地形なしで進む」 button を click 可能にするため。 */
+     visible 時のみ flex column、 子要素 (= title / progress / bar / note / warning) を縦並び。
+     pointer-events: auto はロード中に背後の地図操作を遮るため。 */
   #loading-indicator.visible {
     display: flex !important;
     flex-direction: column;
@@ -547,13 +547,6 @@
     padding: 0.4rem 0.6rem; background: rgba(255, 153, 102, 0.12);
     border-radius: 4px;
   }
-  #loading-indicator #btnLoadingGiveUp {
-    align-self: center; padding: 0.5rem 1rem;
-    background: rgba(255, 153, 102, 0.18); color: #ff9966;
-    border: 1px solid #ff9966; border-radius: 4px;
-    font: bold 14px ui-monospace, monospace; cursor: pointer;
-  }
-  #loading-indicator #btnLoadingGiveUp:hover { background: rgba(255, 153, 102, 0.3); }
   /* brief b-segment-labels: 道路セグメントの距離+勾配ラベルは MapLibre の symbol
      レイヤー (icon-image / canvas 画像) で地面平面に描く。 DOM 要素ではないため
      ここに CSS は無い (= viewer-maplibre.js の makeSegLabelImage が canvas に描画)。 */
@@ -724,7 +717,7 @@
      期間 (= 10-30 秒) を、 進捗数値 + バー + 注記で「動いてる」 状態に変える。
      `#loading-progress-den` は course bounds + DEM_ZOOM から動的算出する (= ハードコードしない、
      コース変更で fail しない設計、 b35 軸 4 HIGH 反映)。
-     状態 (= 通常 / timeout / IndexedDB 不在 / 無音) は `data-loading-state` 属性で expose、
+     状態 (= 通常 / IndexedDB 不在) は `data-loading-state` 属性で expose、
      e2e は属性遷移を pin する (= 文言 grep だけの misleading test 回避)。 -->
 <div id="loading-indicator" data-loading-state="idle">
   <div class="loading-title">地形タイルを取得中</div>
@@ -734,7 +727,6 @@
   <div class="loading-bar"><div id="loading-bar-fill"></div></div>
   <div class="loading-note">国土地理院のサーバから初回のみ取得します。 2 回目以降はブラウザ内キャッシュから即時表示されます。</div>
   <div id="loading-warning" class="loading-warning" hidden></div>
-  <button id="btnLoadingGiveUp" type="button" hidden>地形なしで進む</button>
 </div>
 
 <div id="hud">

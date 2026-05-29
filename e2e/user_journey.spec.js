@@ -45,8 +45,9 @@ test('「開始」 ボタン押下まで地形ロード進捗が出ない (= 配
 
 test('「開始」 押下で地形ロードが走り、 進捗がロード overlay に出る', async ({ page }) => {
   // 配布元 (GSI) を実際には叩かない ── 地形タイルを偽 PNG で intercept する。
-  await page.route('https://cyberjapandata.gsi.go.jp/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG }));
+  // b46 fix: ~1.2s 遅延 fulfill ── 即 fulfill だと probe が一瞬で done になり、 click 後に
+  // #terrain-loader-progress が visible である時間が無く assert 前に setup 画面へ抜けてしまう。
+  await page.route('https://cyberjapandata.gsi.go.jp/**', fulfillGsiPngSlow);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   // 「開始」 を押す → 地形ロード起動 → ロード overlay が visible 化
@@ -326,7 +327,22 @@ const GSI_DELAY_PNG = Buffer.from(
   'base64',
 );
 
+// b46 fix: GSI 直タイル (cyberjapandata) を偽 PNG で intercept ── 配布元を一切叩かず
+// b40 見張り gate を満たす。 ~1.2s 遅延して fulfill するのは、 即 fulfill だと terrain_loader の
+// probe が一瞬で done → overlay が fade out してしまい、 loading / 進捗 N/M / no-cache 警告
+// といった「ロード中」 の transient state を assert する前に消えるため (= L356 の instant 版だと
+// 観測できないケースを遅延で観測可能にする)。 b69 で fetch chain は IndexedDB → GSI 直の
+// 2 段に統一済 (= bridge の /tiles/gsi_dem 段は撤去) なので、 GSI 直の 1 経路だけ mock すれば
+// 配布元アクセスは塞がる。
+const fulfillGsiPngSlow = async (route) => {
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
+};
+
 test('b46 happy: 「開始」 押下でロード overlay が表示される', async ({ page }) => {
+  // b46 fix: GSI 直タイルを偽 PNG (~1.2s 遅延) で mock ── 実 cyberjapandata を叩かず
+  // (b40 gate を満たす)、 かつ probe が即 done にならず「ロード中」 state を観測できる。
+  await page.route('https://cyberjapandata.gsi.go.jp/**', fulfillGsiPngSlow);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await page.locator('#btnTerrainLoaderStart').click();
@@ -338,6 +354,8 @@ test('b46 happy: 「開始」 押下でロード overlay が表示される', as
 });
 
 test('b46 happy: ロード overlay の進捗数値が 0 から増えて den は course 動的算出値', async ({ page }) => {
+  // b46 fix: GSI 直タイルを偽 PNG (~1.2s 遅延) で mock ── 配布元を叩かず progress N/M を観測。
+  await page.route('https://cyberjapandata.gsi.go.jp/**', fulfillGsiPngSlow);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await page.locator('#btnTerrainLoaderStart').click();
@@ -372,30 +390,13 @@ test('b46 happy: タイル取得完了でロード overlay が fade out して�
   await expect(page.locator('#setup-overlay')).toHaveClass(/visible/, { timeout: 10_000 });
 });
 
-test('b46 edge: GSI 通信無音 10s でロード overlay が silent state + 諦め button visible', async ({ page }) => {
-  // GSI / bridge の全タイル fetch を 30s delay (= 進捗が 10s 以内に来ない状況を mock)
-  const delayFulfill = async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 30_000));
-    await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
-  };
-  await page.route('http://127.0.0.1:8000/static/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
-  await page.route('http://127.0.0.1:8000/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
-  await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
-  await page.goto(VIEWER_URL);
-  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
-  // 「開始」 を押して地形ロードを起動 ── GSI 無音なので進捗が来ない。
-  await page.locator('#btnTerrainLoaderStart').click();
-  await expect(page.locator('#loading-indicator')).toHaveClass(/visible/, { timeout: 10_000 });
-  // 10s 無音 → silent state 遷移 + 警告文言 + 諦め button visible
-  await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', 'silent', { timeout: 15_000 });
-  await expect(page.locator('#loading-warning')).toBeVisible();
-  await expect(page.locator('#btnLoadingGiveUp')).toBeVisible();
-});
-
 test('b46 edge: IndexedDB 不在環境でロード overlay に「キャッシュが使えない」 警告 + 続行', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'indexedDB', { get: () => undefined });
   });
+  // b46 fix: GSI 直タイルを偽 PNG (~1.2s 遅延) で mock ── 実 cyberjapandata を叩かず
+  // (b40 gate)、 probe を即 done にせず no-cache 警告 state を assert する時間を確保する。
+  await page.route('https://cyberjapandata.gsi.go.jp/**', fulfillGsiPngSlow);
   await page.goto(VIEWER_URL);
   await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
   await page.locator('#btnTerrainLoaderStart').click();
@@ -403,24 +404,6 @@ test('b46 edge: IndexedDB 不在環境でロード overlay に「キャッシュ
   await expect(page.locator('#loading-indicator')).toHaveAttribute('data-loading-state', 'no-cache');
   await expect(page.locator('#loading-warning')).toBeVisible();
   await expect(page.locator('#loading-warning')).toContainText('キャッシュが使えない');
-});
-
-test('b46 edge: 諦め button click でロード overlay が即時消えて viewer 続行', async ({ page }) => {
-  const delayFulfill = async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 30_000));
-    await route.fulfill({ status: 200, contentType: 'image/png', body: GSI_DELAY_PNG });
-  };
-  await page.route('http://127.0.0.1:8000/static/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
-  await page.route('http://127.0.0.1:8000/tiles/gsi_dem/**', route => route.fulfill({ status: 404 }));
-  await page.route('https://cyberjapandata.gsi.go.jp/**', delayFulfill);
-  await page.goto(VIEWER_URL);
-  await expect(page.locator('#intro-overlay')).toHaveClass(/visible/, { timeout: 20_000 });
-  // 「開始」 を押して地形ロード起動 → GSI 無音 → 10s 後に諦め button が出る。
-  await page.locator('#btnTerrainLoaderStart').click();
-  await expect(page.locator('#btnLoadingGiveUp')).toBeVisible({ timeout: 15_000 });
-  await page.locator('#btnLoadingGiveUp').click();
-  // overlay が fade out して visible class が外れる
-  await expect(page.locator('#loading-indicator')).not.toHaveClass(/visible/, { timeout: 3_000 });
 });
 
 // ============================================================

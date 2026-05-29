@@ -46,6 +46,7 @@ import { bindPostRideButtons } from './lib/postride_buttons.js';
 import { calcElevationGainM } from './lib/save_summary.js';
 import { openRideDb, addRide as rideDbAdd, listRides as rideDbList, deleteRide as rideDbDelete } from './lib/ride_db.js';
 import { appendHistoryRow } from './lib/history_row.js';
+import { resumeFromRecord } from './lib/ride_resume.js';
 import { ensureAccessToken, revokeLocalToken, STRAVA_TOKEN_LS_KEY } from './lib/strava_oauth.js';
 // brief 34 ε / b46: 公開ガードレール (= ride consent 同意管理).
 // b46: intro consent (= getIntroConsent / setIntroConsent / clearIntroConsent) は撤去。
@@ -188,15 +189,9 @@ function bootMap(env) {
   });
 }
 
-// brief 35: ロード overlay 制御 helper。 viewer の起動経路から `#loading-indicator` の
-// visible / 進捗数値 / バー / fade out / 警告状態を一元的に書く。 内部 state を
-// data-loading-state 属性に expose して e2e は属性遷移で pin する (= 文言 grep 退却)。
-let _loadingSilenceTimer = null;
-let _loadingGiveUpTimer = null;
-let _loadingLastProgressAt = 0;
-const LOADING_SILENCE_MS = 10_000;   // 10s 進捗無音で「応答がありません」 警告 + 諦め button 表示
-const LOADING_GIVE_UP_MS = 30_000;   // 30s 経過で強制諦め (= 自動 fade out + 諦め経路)
-
+// ロード overlay 制御 helper。 viewer の起動経路から `#loading-indicator` の visible /
+// 進捗数値 / バー / fade out / 警告状態を一元的に書く。 内部 state を data-loading-state
+// 属性に expose して e2e は属性遷移で pin する (= 文言 grep 退却)。
 function showLoadingOverlay(state) {
   // b41: ?noterrain= では地形タイルを取得しない ── 取得進捗を映す overlay も出さない。
   // 出すと進捗が永遠に来ず overlay が出っぱなしになり、 後続操作を覆って e2e を妨げる。
@@ -206,26 +201,17 @@ function showLoadingOverlay(state) {
   ov.classList.add('visible');
   ov.classList.remove('fade-out');
   ov.dataset.loadingState = state || 'idle';
-  // 進捗バー / 警告 / 諦め button を初期化 (= 前回起動の残りを消す)。
+  // 進捗バー / 警告を初期化 (= 前回起動の残りを消す)。
   const fillEl = document.getElementById('loading-bar-fill');
   if (fillEl) fillEl.style.width = '0%';
   setLoadingWarning('', null);
-  const giveBtn = document.getElementById('btnLoadingGiveUp');
-  if (giveBtn) giveBtn.hidden = true;
   // IndexedDB 不在 (= プライベートウィンドウで quota 不足等) を起動時 chk。 cache が
   // 使えなくても viewer は続行できるので、 warning に留めて続行する。
   if (typeof indexedDB === 'undefined') {
     setLoadingWarning('キャッシュが使えない環境です、 毎回タイルを取得します。', 'no-cache');
   }
-  // 10s 無音 detector を仕掛ける。 onProgress が来るたび reset、 来ないまま 10s 経過なら警告。
-  _loadingLastProgressAt = performance.now();
-  if (_loadingSilenceTimer) clearTimeout(_loadingSilenceTimer);
-  _loadingSilenceTimer = setTimeout(onLoadingSilent, LOADING_SILENCE_MS);
-  if (_loadingGiveUpTimer) clearTimeout(_loadingGiveUpTimer);
-  _loadingGiveUpTimer = setTimeout(onLoadingGiveUpAuto, LOADING_GIVE_UP_MS);
 }
 function updateLoadingProgress(done, total) {
-  _loadingLastProgressAt = performance.now();
   const numEl = document.getElementById('loading-progress-num');
   const denEl = document.getElementById('loading-progress-den');
   const fillEl = document.getElementById('loading-bar-fill');
@@ -234,11 +220,7 @@ function updateLoadingProgress(done, total) {
   if (fillEl) fillEl.style.width = total > 0 ? `${(done / total * 100).toFixed(1)}%` : '0%';
   const ov = document.getElementById('loading-indicator');
   if (ov && ov.dataset.loadingState === 'idle') ov.dataset.loadingState = 'loading';
-  // 進捗が来たので無音 detector を再仕掛け (= 「タイル取得中だが時々止まる」 ケースを警告しない)。
-  if (_loadingSilenceTimer) clearTimeout(_loadingSilenceTimer);
-  _loadingSilenceTimer = setTimeout(onLoadingSilent, LOADING_SILENCE_MS);
-  // brief 35: タイル取得が完了 (= 全 done) で overlay を fade out。 onMapLoaded 経由ではなく
-  // ここで判定するのは、 onMapLoaded が 8 秒 fallback でも発火するため (= fetch 完了と独立)。
+  // タイル取得が完了 (= 全 done) で overlay を fade out。
   if (total > 0 && done >= total) {
     fadeOutLoadingOverlay();
   }
@@ -253,39 +235,15 @@ function setLoadingWarning(message, state) {
     warn.hidden = !message;
   }
 }
-function onLoadingSilent() {
-  // brief 35 異常系: 10s 進捗無音で警告 + 諦め button を visible 化。 訪問者は自分の判断で
-  // 「地形なしで進む」 を押せる、 自動 fade out (= 30s) を待たずに離脱可能。
-  setLoadingWarning('応答がありません。 タイルが取れません、 再試行しています。', 'silent');
-  const btn = document.getElementById('btnLoadingGiveUp');
-  if (btn) btn.hidden = false;
-  console.warn('[brief 35] loading overlay: 10s 進捗無音、 諦め button を表示');
-}
-function onLoadingGiveUpAuto() {
-  // 30s 経過で強制諦め: overlay を fade out + map3d の 8s fallback と同じ経路で続行。
-  console.warn('[brief 35] loading overlay: 30s 経過、 自動諦め');
-  fadeOutLoadingOverlay();
-}
 function fadeOutLoadingOverlay() {
   const ov = document.getElementById('loading-indicator');
   if (!ov) return;
   ov.dataset.loadingState = 'done';
   ov.classList.add('fade-out');
-  if (_loadingSilenceTimer) { clearTimeout(_loadingSilenceTimer); _loadingSilenceTimer = null; }
-  if (_loadingGiveUpTimer) { clearTimeout(_loadingGiveUpTimer); _loadingGiveUpTimer = null; }
   setTimeout(() => {
     ov.classList.remove('visible');
     ov.classList.remove('fade-out');
   }, 320);
-}
-
-// brief 35: 「地形なしで進む」 button の click handler。 訪問者が待ちきれず諦める経路。
-if (typeof document !== 'undefined') {
-  const btnGiveUp = document.getElementById('btnLoadingGiveUp');
-  if (btnGiveUp) btnGiveUp.addEventListener('click', () => {
-    console.warn('[brief 35] 訪問者が「地形なしで進む」 を選択');
-    fadeOutLoadingOverlay();
-  });
 }
 
 // 地図 'load' 完了後の viewer 側起動継続。 setTerrain / 操作系 disable は renderer が
@@ -295,11 +253,11 @@ if (typeof document !== 'undefined') {
 // 'load' と 8 秒 fallback の両方から onLoaded を呼ぶため、 ここは必ず 1 度実行される。
 function onMapLoaded() {
   status('map loaded');
-  // brief 35: ここで fadeOutLoadingOverlay は呼ばない。 onMapLoaded は map3d boot の
-  // 8 秒 fallback でも発火する経路で、 タイル取得が実際に完了したかと独立した signal。
-  // タイル fetch が永遠 delay でも 8 秒で発火するため、 ここで fade out すると 10s 無音
-  // detector が clear されて諦め button が出ない設計欠陥になる。 ロード overlay の
-  // fade out は updateLoadingProgress 内で done === total を検出した時に行う。
+  // 地形タイル取得が遅い / ハングしても、 onMapLoaded は map3d の 8 秒 fallback で必ず
+  // 1 度発火する。 通常は updateLoadingProgress が done === total で overlay を閉じるが、
+  // タイルが揃わないまま 8 秒 fallback が来た時はここで黙って閉じて先に進む (= 待たせ
+  // っぱなしにしない安全弁)。 既に閉じていれば二重でも無害。
+  fadeOutLoadingOverlay();
   // 'idle' = viewport 内の全 source / tile load 完了。 terrain probe ok と AND で
   // button enable する (= mapFullyLoaded)。
   mapRenderer.onceIdle(() => {
@@ -2687,9 +2645,16 @@ function setPostrideStatus(text) {
 function buildRideSummary(rideState, course) {
   const snap = rideState ? rideState.snapshot() : { distance: 0 };
   const trkpts = rideState ? rideState.getTrkpts() : [];
+  const riderDistance = (rider && Number.isFinite(rider.distanceTraveled))
+    ? rider.distanceTraveled
+    : (snap.distance || 0);
   return {
     id: `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 5)}`,
     date: new Date().toISOString(),
+    // b127: 履歴続きから機能のための後方互換 schema 拡張. v1 record (= schemaVersion 不在)
+    // も listRides で問題なく load できる、 ride_resume.js 側で v1 を物理 0 / distance
+    // fallback として扱う.
+    schemaVersion: 2,
     distance_m: snap.distance || 0,
     duration_s: clock.isActive()
       ? Math.round((performance.now() - clock.snapshot().rideStartedAt) / 1000)
@@ -2697,6 +2662,9 @@ function buildRideSummary(rideState, course) {
     elevation_gain_m: calcElevationGainM(trkpts),
     avg_power_w: null,
     course_name: 'fujihill',
+    // b127: 続きから復元用の物理 snapshot + rider 距離.
+    physicsSnap: physicsState.snapshot(),
+    riderDistance,
   };
 }
 
@@ -2776,6 +2744,24 @@ async function showHistoryOverlay() {
       onDelete: async () => {
         try { const db = await getRideDb(); await rideDbDelete(db, r.id); showHistoryOverlay(); }
         catch (err) { if (status) status.textContent = `削除失敗: ${err.message}`; }
+      },
+      // b127: 履歴から「続きから」 走る. ride_resume.js (= model) で位置 + 物理を復元、
+      // viewer (= controller) は state 遷移と rideState.start を担当する.
+      onResume: () => {
+        const result = resumeFromRecord(r, {
+          rider,
+          physicsState,
+          rideClock: clock,
+          nowMs: performance.now(),
+        });
+        if (!result.ok) {
+          if (status) status.textContent = `続きから失敗: ${result.reason}`;
+          return;
+        }
+        setAppState('riding');
+        if (rideState) rideState.start();
+        const km = (result.restored.riderDistance / 1000).toFixed(1);
+        if (status) status.textContent = `${km} km 地点から再開しました`;
       },
       onGpxDownloaded: ({ filename, points }) => {
         if (status) status.textContent = `${filename} を保存しました (${points} 点)`;
