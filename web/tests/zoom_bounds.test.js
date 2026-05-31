@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
+import { loadCourse } from './_fixtures.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 // b12 Phase 1: 富士ヒル固有値の正本は course 定義オブジェクト.
@@ -93,7 +94,7 @@ describe('brief 34 ε-7: 外部サーバ負担評価 (= GSI / OSM への再ア�
 });
 
 describe('brief 34 ε-7 integration: course.json と DB bbox の整合 (= 課題 source 側の妥当性)', () => {
-  const COURSE = JSON.parse(readFileSync(resolve(__dirname, '..', 'course.json'), 'utf8'));
+  const COURSE = loadCourse();
 
   it('course.json の全 lat/lon が DB bbox 内 (= bounds が tight すぎないかの sanity check)', () => {
     const [minLon, minLat, maxLon, maxLat] = [138.65, 35.30, 138.85, 35.50];
@@ -118,7 +119,7 @@ describe('brief 34 ε-7 integration: course.json と DB bbox の整合 (= 課題
 describe('b71: demBounds (= Three.js 地形メッシュ用の DEM 取得範囲、 terrainConfig 派生)', () => {
   // 富士山頂 (tile_constants.py / dbinit の covers_fuji_summit と同じ点)。
   const FUJI_SUMMIT = [138.7274, 35.3606];
-  const COURSE = JSON.parse(readFileSync(resolve(__dirname, '..', 'course.json'), 'utf8'));
+  const COURSE = loadCourse();
   // b71: demBounds は fujihill.terrainConfig からの算出値、 値は変わりうるので
   // 範囲条件 (= 富士山頂・コース全点を覆う、 dbBounds 内、 MAX_TILES 内) で pin する。
   // terrainConfig.zoom / bboxKm を変えれば demBounds も連動して変わる。

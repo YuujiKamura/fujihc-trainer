@@ -448,7 +448,7 @@ async function main() {
 
   // 1. course.json からコース bounding box を出す。
   status('コース読み込み中…');
-  const courseResp = await fetch('./course.json', { cache: 'no-store' });
+  const courseResp = await fetch('./static/course.json', { cache: 'no-store' });
   if (!courseResp.ok) throw new Error(`course.json HTTP ${courseResp.status}`);
   const course = await courseResp.json();
   if (!Array.isArray(course) || course.length === 0) {

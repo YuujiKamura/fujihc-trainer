@@ -178,14 +178,13 @@ def test_minimap_bbox_covers_viewer_request_set():
     要求 set を superset 包含することを assert する。 MINIMAP_BBOX を再度
     narrowing したらここで fail し、 console 404 の再演を物理的に止める。
     """
-    import json
     import math
 
+    from conftest import load_course
     from fujihill.tile_constants import MINIMAP_BBOX, MINIMAP_OSM_ZOOM
     from fujihill.tile_coverage import enumerate_bbox_tiles
 
-    course_p = REPO_ROOT / 'web' / 'course.json'
-    course = json.loads(course_p.read_text(encoding='utf-8'))
+    course = load_course()
     assert len(course) > 0
 
     # === viewer JS と同一ロジックで 16 タイル set を構築 (=

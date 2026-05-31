@@ -166,7 +166,7 @@ async function bootEnv() {
     mode,
     bridgeReachable: s.bridgeReachable,
     tileBase: s.bridgeReachable ? BRIDGE_TILE_BASE_URL : STATIC_TILE_BASE_URL,
-    courseUrl: s.bridgeReachable ? fujihill.courseFile : `${BASE_PATH}static/${fujihill.courseFile}`,
+    courseUrl: `${BASE_PATH}static/${fujihill.courseFile}`,
     setupStatus: s,
   });
 }
@@ -1872,7 +1872,7 @@ async function loadCourse() {
   // bootEnv() で freeze 済の値、 caller 全部 await 経由なので未確定状態で呼ばれることはない。
   // 万一 ENV 未初期化なら bridge mode の旧 default で fallback (= localhost 起動の従来挙動)。
   const env = viewerSession.getEnv();
-  const url = env ? env.courseUrl : 'course.json';
+  const url = env ? env.courseUrl : 'static/course.json';
   // b50: fetch → 平滑化 → terrain 構築の純粋部は course_loader.js に切り出し済。
   //   失敗時の status 文言は旧挙動を維持 ── 空 course は「course.json empty」、
   //   それ以外 (HTTP / network / JSON parse) は「course.json load failed: …」。
@@ -2961,6 +2961,54 @@ window.addEventListener('message', (ev) => {
 
 // Svelte Interop
 window.fujihillInterop = { startTerrainPhase, onTerrainLoaderDone };
+
+// ?cap=1 のとき、 2 秒おきに「現在 visible な overlay 一覧」 を /api/debug/chart-state に
+// POST する。 ride loop 非依存で動く、 main session が curl で GET すれば「user の画面に
+// どの overlay が出てるか」 を文字で確認できる。 PNG では DOM overlay が写らない補い。
+if (new URLSearchParams(location.search).get('cap') === '1') {
+  setInterval(() => {
+    const ids = ['intro-overlay','consent-overlay','setup-overlay','dbinit-overlay','section-overlay','controls','postride-overlay','section-list-panel'];
+    const overlays = ids.map(id => {
+      const el = document.getElementById(id);
+      if (!el) return { id, state: 'missing' };
+      const cs = getComputedStyle(el);
+      return { id, display: cs.display, opacity: cs.opacity, hasVisible: el.classList.contains('visible') };
+    });
+    fetch('/api/debug/dom-state', {
+      method: 'POST',
+      body: JSON.stringify({ overlays, bodyClass: document.body.className, t: Date.now() }),
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {});
+  }, 2000);
+}
+
+// ?dbinit_skip=1 dbinit overlay 自動 skip。 main session が target tab を勝手に進める
+// ための物理層 debug hook。 起動から 2 秒後に skipDbinit() を発火 (= load 完了を待つ)。
+if (new URLSearchParams(location.search).get('dbinit_skip') === '1') {
+  setTimeout(() => { try { skipDbinit(); console.log('[dbinit_skip] fired'); } catch (e) { console.warn('[dbinit_skip] failed', e); } }, 2000);
+}
+
+// ?cap=1 観るための物理層 CP。 viewer の WebGL canvas を /debug/frame に POST、
+// main session が data/debug-frame.png を Read で目視確認するための経路。
+// 既存 BitBlt 系の OS window capture は Chrome GPU rendering を取れず blank になるため、
+// canvas を viewer 内から送るしかない。 bridge は body を生 PNG bytes として write、
+// なので toBlob で binary を送る (= toDataURL の base64 prefix は送らない)。
+// タイル配置完了を期待して 6 秒後に 1 回だけ撮る。
+if (new URLSearchParams(location.search).get('cap') === '1') {
+  setTimeout(() => {
+    requestAnimationFrame(() => {
+      const c = document.querySelector('canvas');
+      if (!c || !c.toBlob) { console.warn('[cap] no canvas'); return; }
+      c.toBlob(async (blob) => {
+        if (!blob) { console.warn('[cap] toBlob null (preserveDrawingBuffer?)'); return; }
+        try {
+          const r = await fetch('/debug/frame', { method: 'POST', body: blob });
+          console.log('[cap] posted', c.width, 'x', c.height, 'status', r.status);
+        } catch (e) { console.warn('[cap] failed', e); }
+      }, 'image/png');
+    });
+  }, 6000);
+}
 
 // Phase 3: Svelte 版 Map3D を使用する場合、既存の viewer-map3d の初期化をバイパスする
 if (new URLSearchParams(location.search).has('svelte_map')) {

@@ -1,7 +1,8 @@
 """brief 31 + b69: scripts/export_static.py の単体 test.
 
 b69 で GSI DEM タイルの静的展開 (= `export_gsi_dem_tree`) を撤去した。
-本 test は pmtiles / course.json のコピーと main() 接続 + 物理 grep gate を pin する。
+SoT 統一で course.json は web/static/ 自体が source、 `copy_course` も撤去。
+本 test は pmtiles コピーと main() 接続 + 物理 grep gate を pin する。
 """
 
 from __future__ import annotations
@@ -27,18 +28,6 @@ def test_copy_pmtiles_size_match(tmp_path: Path) -> None:
     assert dst.exists()
     assert size == len(payload)
     assert dst.read_bytes() == payload
-
-
-def test_copy_course_content_match(tmp_path: Path) -> None:
-    """copy_course 後 内容一致 (= shutil.copy2、 JSON 改変なし)。"""
-    src = tmp_path / "course.json"
-    payload = '[{"lat": 35.4, "lon": 138.7, "elevation_m": 1000}]'
-    src.write_text(payload, encoding="utf-8")
-    dst = tmp_path / "out" / "course.json"
-    size = export_static.copy_course(src, dst)
-    assert dst.exists()
-    assert size == len(payload.encode("utf-8"))
-    assert dst.read_text(encoding="utf-8") == payload
 
 
 def test_export_static_no_http_url_in_source() -> None:
@@ -72,24 +61,20 @@ def test_export_static_no_gsi_dem_extraction_in_source() -> None:
 
 
 def test_main_argparse_smoke(tmp_path: Path) -> None:
-    """main() が argparse + pmtiles + course の 2 ファイル展開で 0 を返す (= CLI 接続 smoke)。
+    """main() が argparse + pmtiles 展開で 0 を返す (= CLI 接続 smoke)。
 
-    b69: --db 引数と GSI DEM 出力 ('tiles/gsi_dem/.../.png') の assert を撤去。
-    pmtiles と course.json のコピーが残っていることのみ pin する。
+    b69: --db 引数と GSI DEM 出力の assert を撤去。
+    SoT 統一: --course 引数と course.json コピー assert を撤去 (= web/static/ 自体が source)。
     """
     pmt = tmp_path / "fuji.pmtiles"
     pmt.write_bytes(b"PMTILES" + b"\x00" * 16)
-    course = tmp_path / "course.json"
-    course.write_text("[]", encoding="utf-8")
     out = tmp_path / "out"
     rc = export_static.main([
         "--pmtiles", str(pmt),
-        "--course", str(course),
         "--out", str(out),
     ])
     assert rc == 0
     assert (out / "map.pmtiles").exists()
-    assert (out / "course.json").exists()
     # GSI DEM 出力は生成されない (= b69 撤去)
     assert not (out / "tiles" / "gsi_dem").exists(), (
         "b69 撤去後は web/static/tiles/gsi_dem/ が生成されてはならない"

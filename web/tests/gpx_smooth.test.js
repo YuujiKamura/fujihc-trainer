@@ -10,9 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { movingAverage, smoothCourse } from '../lib/gpx_smooth.js';
 
+import { COURSE_PATH } from './_fixtures.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = join(__dirname, 'fixtures', 'py_gpx_smooth.json');
-const COURSE_PATH = join(__dirname, '..', 'course.json');
 
 describe('movingAverage', () => {
   it('window=3 で [1,2,3,4,5] → [1.5, 2, 3, 4, 4.5] (端は縮む)', () => {

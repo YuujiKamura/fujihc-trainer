@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { enumerateCoverageTiles, computeBounds, estimateTileCount } from '../lib/tile_coverage.js';
 
+import { COURSE_PATH } from './_fixtures.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const COURSE_PATH = resolve(__dirname, '..', 'course.json');
 const FIXTURE_PATH = resolve(__dirname, 'fixtures', 'py_coverage_z14.json');
 
 function loadCourse() {

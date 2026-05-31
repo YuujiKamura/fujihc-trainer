@@ -61,9 +61,9 @@ def make_http_app(
     handlers = tile_server.register_tile_routes(str(db_path))
     app = web.Application()
 
-    # course_path default は repo root の web/course.json
+    # course_path default は repo root の web/static/course.json (= SoT 統一、 bridge / Pages 共通)
     if course_path is None:
-        course_path = Path(__file__).resolve().parent.parent.parent / 'web' / 'course.json'
+        course_path = Path(__file__).resolve().parent.parent.parent / 'web' / 'static' / 'course.json'
     course_path_s = str(course_path)
 
     # dbinit task の二重起動防止 (= fire-and-forget, 1 source につき 1 task)
@@ -243,6 +243,26 @@ def make_http_app(
     async def h_debug_chart_state_get(request: web.Request) -> web.Response:
         return web.json_response(dict(chart_state_store))
 
+    # main session が「user 画面の現在 overlay」 を観るための debug CP。
+    # canvas.toBlob では DOM overlay が写らない (= dbinit-overlay 等が分からない) ため、
+    # viewer 側で visible overlay の list を JSON で POST、 main session が GET で観る。
+    dom_state_store: dict = {}
+
+    async def h_debug_dom_state_post(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({'error': 'invalid json'}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({'error': 'object expected'}, status=400)
+        dom_state_store.clear()
+        dom_state_store.update(body)
+        dom_state_store['_server_received_iso'] = _now_iso()
+        return web.Response(status=204)
+
+    async def h_debug_dom_state_get(request: web.Request) -> web.Response:
+        return web.json_response(dict(dom_state_store))
+
     app.router.add_get("/tiles/{source}/metadata.json", h_metadata)
     app.router.add_get("/tiles/_style.json", h_style)
     app.router.add_get("/tiles/_metrics", h_metrics)
@@ -252,6 +272,8 @@ def make_http_app(
     app.router.add_post("/tiles/_fetch_minimap_raster", h_fetch_minimap_raster)
     app.router.add_post("/debug/frame", h_debug_frame)
     app.router.add_post("/api/debug/chart-state", h_debug_chart_state_post)
+    app.router.add_post("/api/debug/dom-state", h_debug_dom_state_post)
+    app.router.add_get("/api/debug/dom-state", h_debug_dom_state_get)
     app.router.add_get("/api/debug/chart-state", h_debug_chart_state_get)
     app.router.add_get(r"/tiles/{source}/{z:\d+}/{x:\d+}/{y:\d+}.{ext:\w+}", h_tile)
 

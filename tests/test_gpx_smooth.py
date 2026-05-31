@@ -16,17 +16,16 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from conftest import load_course  # noqa: E402
 from fujihill.gpx_smooth import moving_average, smooth_course  # noqa: E402
 
-COURSE_JSON = REPO_ROOT / "web" / "course.json"
 FIXTURE_DIR = REPO_ROOT / "web" / "tests" / "fixtures"
 FIXTURE_PATH = FIXTURE_DIR / "py_gpx_smooth.json"
 
 
 @pytest.fixture(scope="module")
 def fuji_course():
-    with COURSE_JSON.open(encoding="utf-8") as f:
-        return json.load(f)
+    return load_course()
 
 
 # ---------- moving_average ----------

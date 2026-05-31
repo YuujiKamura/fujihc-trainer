@@ -217,9 +217,8 @@ describe('brief 31 commit β / b125d: course.json fetch URL は env.courseUrl �
   it('bootEnv 内で courseUrl が bridge / static 別に設定される', () => {
     const m = viewer.match(/async\s+function\s+bootEnv\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
     expect(m).not.toBeNull();
-    // b12 Phase 1: course.json リテラルは course 定義 (fujihill.courseFile) 経由に。
-    // bridge / static で別 URL になる構造は不変。
-    expect(m[0]).toMatch(/courseUrl:\s*s\.bridgeReachable\s*\?\s*fujihill\.courseFile\s*:\s*`\$\{BASE_PATH\}static\/\$\{fujihill\.courseFile\}`/);
+    // SoT 統一 (= web/static/course.json 1 本)。 bridge / Pages 共通で BASE_PATH+static+ファイル名。
+    expect(m[0]).toMatch(/courseUrl:\s*`\$\{BASE_PATH\}static\/\$\{fujihill\.courseFile\}`/);
   });
 });
 

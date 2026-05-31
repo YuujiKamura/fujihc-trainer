@@ -284,7 +284,7 @@ class Bridge:
         self.http_port = http_port
         self.db_path = db_path or Path("data/tiles.sqlite")
         # brief 26b: course path も substrate に持つ (= /tiles/_setup_status 用)
-        self.course_path = course_path or Path("web/course.json")
+        self.course_path = course_path or Path("web/static/course.json")
 
         self.state = RideState()
         self._state_lock = asyncio.Lock()
@@ -875,7 +875,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="HTTP tile server port (default 8000, 127.0.0.1 only)")
     parser.add_argument("--db-path", default="data/tiles.sqlite",
                         help="ローカル tile DB の path (brief 14)")
-    parser.add_argument("--course-path", default="web/course.json",
+    parser.add_argument("--course-path", default="web/static/course.json",
                         help="course.json の path (brief 26b setup_status 用)")
     parser.add_argument("--log-dir", default="~/fujihill-trainer/logs", help="CSV output dir")
     parser.add_argument("--verbose", "-v", action="store_true")

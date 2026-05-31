@@ -1,12 +1,11 @@
 """brief 14: tile_coverage.py の 3 pure 関数 全関数 mandate test.
 
 happy / edge / 決定性 / boundary を網羅する.
-富士ヒル course (web/course.json, 1968 点) を実 input にした assertion を含む.
+富士ヒル course (web/static/course.json, 1968 点) を実 input にした assertion を含む.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -15,6 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from conftest import load_course  # noqa: E402
 from fujihill.tile_constants import DEFAULT_BUFFER_M, DEFAULT_CORRIDOR_TILES  # noqa: E402
 from fujihill.tile_coverage import (  # noqa: E402
     compute_bounds,
@@ -22,14 +22,11 @@ from fujihill.tile_coverage import (  # noqa: E402
     estimate_tile_count,
 )
 
-COURSE_JSON = REPO_ROOT / "web" / "course.json"
-
 
 @pytest.fixture(scope="module")
 def fuji_course():
     """富士ヒル course (1968 点) を load. brief 14 の数値根拠."""
-    with COURSE_JSON.open(encoding="utf-8") as f:
-        course = json.load(f)
+    course = load_course()
     assert len(course) == 1968, f"expected 1968 points, got {len(course)}"
     return course
 

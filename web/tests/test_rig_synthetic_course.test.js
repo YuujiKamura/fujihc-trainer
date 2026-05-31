@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadCourse } from './_fixtures.js';
 import {
   generateCourse, loadFujiPrefix, slicePrefix, COURSE_KINDS,
 } from '../lib/test_rig_synthetic_course.js';
@@ -133,8 +134,7 @@ describe('test_rig_synthetic_course', () => {
     });
 
     it('実 course.json の先頭 500 点が読める (= node fs で同じ data を確認)', async () => {
-      const coursePath = path.join(__dirname, '..', 'course.json');
-      const raw = JSON.parse(fs.readFileSync(coursePath, 'utf8'));
+      const raw = loadCourse();
       const prefix = await loadFujiPrefix({
         fetcher: async () => raw,
         count: 500,
